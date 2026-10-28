@@ -25,8 +25,8 @@ const booleano = z.preprocess(
 export const esquemaEnv = z.object({
   // --- Obligatorias: sin esto no hay app ---
   DATABASE_URL: z.string().min(1, "DATABASE_URL es obligatoria (Supabase -> Connect)"),
-  NEXT_PUBLIC_SUPABASE_URL: z.string().url("NEXT_PUBLIC_SUPABASE_URL debe ser una URL"),
-  NEXT_PUBLIC_SUPABASE_ANON_KEY: z.string().min(1, "NEXT_PUBLIC_SUPABASE_ANON_KEY es obligatoria"),
+  NEXT_PUBLIC_SUPABASE_URL: opcional,
+  NEXT_PUBLIC_SUPABASE_ANON_KEY: opcional,
 
   // --- App ---
   APP_BASE_URL: opcional,
