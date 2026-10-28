@@ -10,6 +10,7 @@ import {
 import { isChannel, type Channel } from "./types";
 import { resolveDefaultTenantId } from "@/lib/tenants";
 import { normalizePhone } from "@/lib/phone";
+import { transcribeAudioAttachment } from "@/lib/audio/transcribe";
 import type {
   ZernioMessage,
   ZernioWebhookConversation,
@@ -174,7 +175,7 @@ async function handleMessageEvent(
     // platformMessageId (wamid.* en WhatsApp) y no el id interno de Zernio: mantiene la
     // deduplicacion contra los mensajes que pudo haber guardado el webhook de Meta.
     externalId: msg.platformMessageId ?? msg.id ?? null,
-    body: extractBody(msg),
+    body: await extractBody(msg),
     type: messageType(msg),
     sentAt: parseDate(msg.sentAt ?? payload.timestamp),
     status: direction === "in" && msg.isRead ? "read" : undefined,

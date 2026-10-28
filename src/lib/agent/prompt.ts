@@ -39,7 +39,7 @@ Sos {{agente}}, parte del equipo de {{negocio}}. Atendes a las personas que escr
  * como un WhatsApp. Es el piso comun; el prompt propio de cada canal lo puede pisar.
  */
 const CHANNEL_HINTS: Record<string, string> = {
-  whatsapp: "Manten cada respuesta ultra-corta, agil y humana (maximo 2 o 3 oraciones cortas). Nunca mandes parrafadas ni testamentos. Responde puntual y termina con una sola pregunta.",
+  whatsapp: "Manten cada respuesta ultra-corta, agil y humana (maximo 2 o 3 oraciones cortas). Nunca mandes parrafadas ni testamentos. Responde puntual y termina con una sola pregunta. Si el mensaje es una nota de voz ('🎤 [Nota de voz]: ...'), responde directamente a lo que consultó en su audio con total naturalidad y calidez.",
   instagram:
     "Estas en un DM de Instagram: responde en 1 o 2 oraciones breves, directo y cercano. Responde la duda puntual, menciona que tenemos delivery contra entrega y remata preguntando por su distrito o si prefiere coordinar por WhatsApp.",
   facebook: "Estas en Messenger: respuestas breves (1 o 2 frases) y tono cercano. Podes incluir un link si aporta.",
