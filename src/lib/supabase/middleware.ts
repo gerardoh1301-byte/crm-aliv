@@ -17,7 +17,7 @@ const PUBLIC_API_PREFIXES = [
 
 export async function updateSession(request: NextRequest) {
   // Modo PIN (local o autoalojado sin Supabase Auth)
-  if (modoLocal() || !process.env.NEXT_PUBLIC_SUPABASE_URL) {
+  if (modoLocal() || !process.env.NEXT_PUBLIC_SUPABASE_URL || !process.env.NEXT_PUBLIC_SUPABASE_URL.includes("supabase.co")) {
     const sessionCookie = request.cookies.get(COOKIE_SESION_LOCAL)?.value;
     const { pathname } = request.nextUrl;
     const isPublicPath = PUBLIC_PATHS.some(

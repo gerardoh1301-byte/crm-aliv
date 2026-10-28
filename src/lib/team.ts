@@ -36,7 +36,7 @@ export function displayName(member: TeamMember | null | undefined): string {
  */
 export async function getCurrentMember(): Promise<TeamMember | null> {
   // Autenticacion por perfil/PIN (local o en la nube sin Supabase Auth)
-  if (modoLocal() || !process.env.NEXT_PUBLIC_SUPABASE_URL) {
+  if (modoLocal() || !process.env.NEXT_PUBLIC_SUPABASE_URL || !process.env.NEXT_PUBLIC_SUPABASE_URL.includes("supabase.co")) {
     let memberId: string | undefined;
     try {
       const cookieStore = await cookies();
