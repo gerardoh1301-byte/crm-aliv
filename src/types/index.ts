@@ -89,6 +89,8 @@ export interface DealWithContact extends Deal {
   contact?: Contact;
   stage?: PipelineStage;
   contactName?: string | null;
+  contactPhone?: string | null;
+  contactEmail?: string | null;
   /** Documentos listos en la ficha del contacto (contador del kanban). */
   docCount?: number;
 }

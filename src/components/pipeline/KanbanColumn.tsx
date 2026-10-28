@@ -8,6 +8,7 @@ import {
 import { DealCard } from "./DealCard";
 import { formatCurrency } from "@/lib/constants";
 import { cn } from "@/lib/utils";
+import type { DealWithContact } from "@/types";
 
 interface Deal {
   id: string;
@@ -22,7 +23,7 @@ interface KanbanColumnProps {
   id: string;
   name: string;
   color: string;
-  deals: Deal[];
+  deals: DealWithContact[];
 }
 
 export function KanbanColumn({ id, name, color, deals }: KanbanColumnProps) {

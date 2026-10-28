@@ -36,6 +36,8 @@ export default async function PipelinePage() {
       createdAt: deals.createdAt,
       updatedAt: deals.updatedAt,
       contactName: contacts.name,
+      contactPhone: contacts.phone,
+      contactEmail: contacts.email,
     })
     .from(deals)
     .leftJoin(contacts, eq(deals.contactId, contacts.id))
@@ -64,6 +66,8 @@ export default async function PipelinePage() {
     createdAt: d.createdAt,
     updatedAt: d.updatedAt,
     contactName: d.contactName,
+    contactPhone: d.contactPhone,
+    contactEmail: d.contactEmail,
     docCount: docCounts[d.contactId] ?? 0,
   }));
 

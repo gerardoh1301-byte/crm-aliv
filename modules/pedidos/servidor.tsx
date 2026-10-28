@@ -767,7 +767,7 @@ async function sembrarPedidosDemo() {
       items: [
         {
           sku: "ALIV-NAC600",
-          titulo: "NAC600 + NAD+ (60 cápsulas blandas)",
+          titulo: "NAC600 + NAD+ (60 cápsulas)",
           cantidad: 1,
           precioUnitario: 119,
         },

@@ -93,7 +93,7 @@ const GUIONES: Array<Array<{ dir: "in" | "out"; origen?: "agent" | "human"; body
   ],
   [
     { dir: "in", body: "Buenas tardes, tienen envios a Arequipa del suplemento NAC600 + NAD+?" },
-    { dir: "out", origen: "agent", body: "¡Hola Carlos! Sí, enviamos a todo el Perú por agencia Shalom u Olva Courier. El frasco de NAC600 + NAD+ (60 cápsulas blandas en aceite de coco y MCT) está a S/ 119.00. ¿Te gustaría recibirlo en agencia Shalom o en tu domicilio?" },
+    { dir: "out", origen: "agent", body: "¡Hola Carlos! Sí, enviamos a todo el Perú por agencia Shalom u Olva Courier. El frasco de NAC600 + NAD+ (60 cápsulas en aceite de coco y MCT) está a S/ 119.00. ¿Te gustaría recibirlo en agencia Shalom o en tu domicilio?" },
     { dir: "in", body: "En Shalom de Av. Parra en Arequipa por favor, y agregame un roll-on Herbia para la migrana." },
     { dir: "out", origen: "agent", body: "Perfecto, el NAC600 (S/ 119.00) + Herbia Roll-On (S/ 30.00) suman S/ 149.00 en total. Tu pedido #ALIV-1002 ya fue despachado por Shalom con guía SH-9048127." },
   ],

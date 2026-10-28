@@ -165,14 +165,7 @@ export function KanbanBoard({ initialColumns, filters, sort }: KanbanBoardProps)
             id={column.id}
             name={column.name}
             color={column.color}
-            deals={column.deals.map((d) => ({
-              id: d.id,
-              title: d.title,
-              value: d.value,
-              contactName: d.contactName || (d.contact?.name ?? null),
-              probability: d.probability,
-              docCount: d.docCount,
-            }))}
+            deals={column.deals}
           />
         ))}
         </div>

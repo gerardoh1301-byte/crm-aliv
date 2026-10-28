@@ -32,14 +32,14 @@ export const CATALOGO_ALIV_BASE: ProductoSemilla[] = [
     shopifyId: "15425180696788",
     sku: "ALIV-NAC600",
     handle: "nac600",
-    titulo: "NAC600 + NAD+ (60 cápsulas blandas)",
+    titulo: "NAC600 + NAD+ (60 cápsulas)",
     categoria: "Suplementos y Antioxidantes",
     descripcion:
-      "Complejo diario en cápsulas blandas: 600 mg de N-acetil-L-cisteína (NAC) por porción con NAD+, suspendidos en aceite de coco y MCT. Sin olor ni sabor a azufre. Frasco de 60 cápsulas blandas (30 porciones: 2 al día con el desayuno).",
+      "Complejo diario en cápsulas: 600 mg de N-acetil-L-cisteína (NAC) por porción con NAD+, suspendidos en aceite de coco y MCT. Sin olor ni sabor a azufre. Frasco de 60 cápsulas (30 porciones: 2 al día con el desayuno).",
     beneficios:
       "Aporta cisteína para producir glutatión (el antioxidante maestro que apoya los procesos naturales del hígado), energía celular gracias al NAD+ y mejor absorción con aceite MCT.",
     precauciones:
-      "Este producto no es un medicamento y no está destinado a diagnosticar, tratar, curar ni prevenir ninguna enfermedad. Tomar 2 cápsulas blandas al día con el desayuno.",
+      "Este producto no es un medicamento y no está destinado a diagnosticar, tratar, curar ni prevenir ninguna enfermedad. Tomar 2 cápsulas al día con el desayuno.",
     precio: "119.00",
     precioRegular: null,
     moneda: "PEN",
