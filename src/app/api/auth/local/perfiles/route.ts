@@ -11,8 +11,19 @@ export async function GET() {
     // Asegurar que existan administrador y vendedor por defecto
     const rows = await db.select().from(teamMembers).orderBy(asc(teamMembers.createdAt));
     
-    // Si no estuviera el vendedor por defecto, lo insertamos
-    const tieneVendedor = rows.some((r) => r.id === ID_VENDEDOR_LOCAL);
+    // Asegurar que existan administrador y vendedor por defecto
+    const tieneAdmin = rows.some((r) => r.id === ID_MIEMBRO_LOCAL || r.role === "admin");
+    if (!tieneAdmin) {
+      await db.insert(teamMembers).values({
+        id: ID_MIEMBRO_LOCAL,
+        email: "admin@alivstore.shop",
+        name: "Administrador Aliv",
+        role: "admin",
+        active: true,
+      }).onConflictDoNothing();
+    }
+
+    const tieneVendedor = rows.some((r) => r.id === ID_VENDEDOR_LOCAL || r.role === "asesor");
     if (!tieneVendedor) {
       await db.insert(teamMembers).values({
         id: ID_VENDEDOR_LOCAL,
