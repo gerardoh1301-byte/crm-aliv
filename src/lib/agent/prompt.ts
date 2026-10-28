@@ -41,7 +41,7 @@ Sos {{agente}}, parte del equipo de {{negocio}}. Atendes a las personas que escr
 const CHANNEL_HINTS: Record<string, string> = {
   whatsapp: "Manten cada respuesta ultra-corta, agil y humana (maximo 2 o 3 oraciones cortas). Nunca mandes parrafadas ni testamentos. Responde puntual y termina con una sola pregunta.",
   instagram:
-    "Estas en un DM de Instagram: responde en 1 o 2 frases, tono informal y directo. Evita pegar URLs largas; si hace falta detalle, ofrece seguir por WhatsApp y pedi el numero.",
+    "Estas en un DM de Instagram: responde en 1 o 2 oraciones breves, directo y cercano. Responde la duda puntual, menciona que tenemos delivery contra entrega y remata preguntando por su distrito o si prefiere coordinar por WhatsApp.",
   facebook: "Estas en Messenger: respuestas breves (1 o 2 frases) y tono cercano. Podes incluir un link si aporta.",
 };
 
