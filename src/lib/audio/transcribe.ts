@@ -1,5 +1,6 @@
 /**
  * Transcribe notas de voz y audios entrantes desde Zernio usando Google Gemini ($0 Costo).
+ * Modelo optimizado: gemini-3.5-transcribe (Speech-to-Text especializado de ultra baja latencia, ~2s).
  */
 
 export interface TranscribeOptions {
@@ -24,7 +25,8 @@ export async function transcribeAudioAttachment(
     return null;
   }
 
-  const timeoutMs = options.timeoutMs ?? 15000;
+  // Aumentado a 35s para tolerar descarga de Zernio (3-4s) + transcripción Gemini (2s)
+  const timeoutMs = options.timeoutMs ?? 35000;
 
   try {
     // 1. Descargar audio desde Zernio
@@ -55,31 +57,50 @@ export async function transcribeAudioAttachment(
       "audio/ogg";
     const cleanMime = rawMime.split(";")[0].trim().toLowerCase();
 
-    // 2. Transcripción con Google Gemini (Interactions API oficial)
-    const model = options.model || process.env.AGENT_AUDIO_MODEL || "gemini-3.8-flash";
+    // 2. Modelo especializado de transcripción (gemini-3.5-transcribe responde en ~2s sin razonamiento pesado)
+    const primaryModel = options.model || process.env.AGENT_AUDIO_MODEL || "gemini-3.5-transcribe";
     const geminiUrl = `https://generativelanguage.googleapis.com/v1beta/interactions?key=${geminiKey}`;
 
-    const payload = {
-      model,
-      input: [
-        {
-          type: "text",
-          text: "Transcribe con total exactitud y fidelidad lo que dice esta nota de voz en español (Perú). Devuelve ÚNICAMENTE el texto hablado tal cual, sin prefijos, sin explicaciones ni comillas añadidas. Si es inaudible o silencio puro, responde [inaudible].",
-        },
-        {
-          type: "audio",
-          data: base64Audio,
-          mime_type: cleanMime,
-        },
-      ],
+    const makeRequest = async (modelName: string) => {
+      const payload: Record<string, unknown> = {
+        model: modelName,
+        input: [
+          {
+            type: "text",
+            text: "Transcribe con total exactitud y fidelidad lo que dice esta nota de voz en español de Perú. Devuelve ÚNICAMENTE el texto hablado tal cual, sin introducciones ni comillas.",
+          },
+          {
+            type: "audio",
+            data: base64Audio,
+            mime_type: cleanMime,
+          },
+        ],
+      };
+
+      if (modelName === "gemini-3.8-flash") {
+        payload.generation_config = {
+          thinking_level: "low",
+          transcription_config: {
+            language_codes: ["es-PE", "es"],
+          },
+        };
+      }
+
+      return fetch(geminiUrl, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+        signal: AbortSignal.timeout(timeoutMs),
+      });
     };
 
-    const gRes = await fetch(geminiUrl, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(payload),
-      signal: AbortSignal.timeout(timeoutMs),
-    });
+    let gRes = await makeRequest(primaryModel);
+
+    // Fallback automático si el modelo primario tuviera algún inconveniente
+    if (!gRes.ok && primaryModel !== "gemini-3.8-flash") {
+      console.warn(`[transcribe] Falló ${primaryModel} (${gRes.status}), reintentando con gemini-3.8-flash...`);
+      gRes = await makeRequest("gemini-3.8-flash");
+    }
 
     if (!gRes.ok) {
       const errText = await gRes.text().catch(() => "");
@@ -97,7 +118,9 @@ export async function transcribeAudioAttachment(
       return null;
     }
 
-    return transcript;
+    // Limpieza de comillas periféricas si el modelo las agregó
+    const cleanTranscript = transcript.replace(/^["'«]+|["'»]+$/g, "").trim();
+    return cleanTranscript || null;
   } catch (err) {
     console.error("[transcribe] Error transcribiendo audio:", err);
     return null;
