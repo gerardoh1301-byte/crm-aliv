@@ -22,10 +22,10 @@ CRM ───────┘     panel → director              Resumen · Diar
 |---|---|
 | `reglas-comerciales.md` | **Fuente única** de precios, condiciones y salud, para el bot y las skills |
 | `decisiones-pago.md` | Qué servicio pagar y con qué medida decidirlo |
-| `configuracion.md` | Datos del sistema y **checklist de lo que falta hacer** |
+| `configuracion.md` | Datos del sistema y **checklist de lo que falta hacer** (solo en la PC) |
 | `tareas-nube.md` | Las 3 tareas programadas (prompts, horarios, entorno) |
-| `crm/CAMBIOS-CRM.md` | Qué cambió en el CRM, cómo fusionarlo y qué verifiqué |
-| `crm/boton-confirmar-easysell.md` | Confirmación de pedidos sin pagar plantillas |
+| `crm/CAMBIOS-CRM.md` | Qué cambió en el CRM, cómo fusionarlo y qué verifiqué (solo en la PC: el repo es público) |
+| `crm/boton-confirmar-easysell.md` | Confirmación de pedidos sin pagar plantillas (solo en la PC) |
 | `skills/panel-crecimiento` | Meta + Shopify + CRM → hoja (script `consolidar.py`, estructura `hoja_inicial.py`) |
 | `skills/director-crecimiento` | Alertas, lectura del día, propuestas y "aplica las aprobadas" |
 | `skills/optimizador-presupuesto` | Reparto del presupuesto dentro del tope (solo propone) |
