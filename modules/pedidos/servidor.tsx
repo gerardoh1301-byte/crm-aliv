@@ -744,31 +744,34 @@ const tools: ToolModulo[] = [
       function: {
         name: "confirmar_pedido",
         description:
-          "Confirma un pedido web (alivstore.shop) que esta 'Por confirmar' cuando el propio cliente escribe para confirmarlo, por ejemplo con el boton 'Confirmar por WhatsApp' de la pagina de gracias ('Hola Aliv, quiero confirmar mi pedido #1234'). Solo encuentra pedidos de este mismo cliente (mismo telefono). Devuelve productos, total y direccion para repetirselos.",
+          "Confirma un pedido web (alivstore.shop) que esta 'Por confirmar' cuando el propio cliente escribe para confirmarlo, por ejemplo con el boton 'Confirmar por WhatsApp' de la pagina de gracias ('Hola Aliv, quiero confirmar mi pedido'). Solo encuentra pedidos de este mismo cliente (mismo telefono). Sin numero, toma su pedido pendiente mas reciente de los ultimos 7 dias. Devuelve productos, total y direccion para repetirselos.",
         parameters: {
           type: "object",
           properties: {
             numero_orden: {
               type: "string",
-              description: "Numero del pedido que menciona el cliente (ej. '#1234', '1234' o '#ALIV-1234').",
+              description: "Numero del pedido si el cliente lo menciona (ej. '#1234', '1234' o '#ALIV-1234'). Dejar vacio si no lo dice.",
             },
           },
-          required: ["numero_orden"],
           additionalProperties: false,
         },
       },
     },
     descripcionUI: "Permite al agente confirmar pedidos web pendientes cuando el cliente escribe para confirmarlos (ventana gratuita de 24 h).",
     async ejecutar(args, ctx) {
-      const filtroNumero = condicionNumeroOrden(String(args.numero_orden ?? ""));
-      if (!filtroNumero) {
-        return { ok: false, error: "Pidele al cliente el numero de su pedido (ej. #1234)." };
-      }
+      // Sin numero (el boton de la pagina de gracias puede no traerlo): el pendiente mas
+      // reciente del mismo telefono en 7 dias.
+      const filtro =
+        condicionNumeroOrden(String(args.numero_orden ?? "")) ??
+        and(
+          eq(pedidosOrdenes.estado, "por_confirmar_cod"),
+          sql`${pedidosOrdenes.createdAt} > now() - interval '7 days'`
+        );
       const propios = await contactosDelCliente(ctx.contactId);
       const [pedido] = await db
         .select()
         .from(pedidosOrdenes)
-        .where(and(inArray(pedidosOrdenes.contactId, propios), filtroNumero))
+        .where(and(inArray(pedidosOrdenes.contactId, propios), filtro))
         .orderBy(desc(pedidosOrdenes.createdAt))
         .limit(1);
 
