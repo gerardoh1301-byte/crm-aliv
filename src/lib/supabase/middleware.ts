@@ -13,6 +13,9 @@ const PUBLIC_API_PREFIXES = [
   "/api/simulador",
   "/api/seed",
   "/api/drive-sync",
+  // Sistema integrado: cada ruta exige su propio Bearer (METRICAS_TOKEN / worker).
+  "/api/metricas",
+  "/api/alertas",
 ];
 
 export async function updateSession(request: NextRequest) {

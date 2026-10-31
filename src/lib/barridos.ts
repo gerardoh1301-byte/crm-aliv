@@ -14,6 +14,8 @@ const ENDPOINTS = [
   "/api/agent/process",
   "/api/webhooks/zernio",
   "/api/automations/process",
+  // Avisa a los admins de chats sin respuesta (sistema integrado).
+  "/api/alertas",
 ];
 
 declare global {

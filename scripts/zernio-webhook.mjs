@@ -39,6 +39,8 @@ const EVENTS = [
   "message.deleted",
   "account.connected",
   "account.disconnected",
+  "comment.received",
+  "referral.received",
 ];
 
 if (!API_KEY) {

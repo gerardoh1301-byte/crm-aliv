@@ -74,4 +74,8 @@ export const SUBSCRIBED_EVENTS = [
   "message.deleted",
   "account.connected",
   "account.disconnected",
+  // Sistema integrado: se guardan en webhook_events (aun sin respuesta automatica) para
+  // contar comentarios con intencion de compra y la atribucion de referidos.
+  "comment.received",
+  "referral.received",
 ] as const;

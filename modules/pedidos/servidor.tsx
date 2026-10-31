@@ -1,6 +1,6 @@
 import "server-only";
 import { NextResponse } from "next/server";
-import { and, desc, eq, ilike, or, sql, type SQL } from "drizzle-orm";
+import { and, desc, eq, ilike, inArray, or, sql, type SQL } from "drizzle-orm";
 import { db } from "@/db";
 import {
   activities,
@@ -389,6 +389,51 @@ async function buscarPrecioEnCatalogo(nombreOSku: string): Promise<{
   return null;
 }
 
+/**
+ * Precio por cantidad de las ofertas de la tienda (fuente: reglas-comerciales.md del
+ * sistema integrado). Antes el chat cobraba precio unitario x cantidad: 2 frascos de
+ * NAC600 salian S/238 en el chat y S/189 en la web.
+ * Mas de 3 unidades se arma con paquetes de 3 + el resto.
+ */
+const PRECIOS_POR_CANTIDAD: Record<string, Record<number, number>> = {
+  "ALIV-NAC600": { 1: 119, 2: 189, 3: 199 },
+};
+
+function subtotalConOfertas(sku: string, cantidad: number, precioUnitario: number): number {
+  const tabla = PRECIOS_POR_CANTIDAD[sku];
+  if (!tabla) return cantidad * precioUnitario;
+  const paquetes = Math.floor(cantidad / 3);
+  const resto = cantidad % 3;
+  return paquetes * tabla[3] + (resto ? tabla[resto] : 0);
+}
+
+/** Ids de contacto del mismo cliente: el del chat y los que comparten su telefono
+ * (un pedido web crea su propio contacto con el telefono del formulario). */
+async function contactosDelCliente(contactId: string): Promise<string[]> {
+  const [actual] = await db
+    .select({ phone: contacts.phone })
+    .from(contacts)
+    .where(eq(contacts.id, contactId))
+    .limit(1);
+  const digitos = actual?.phone?.replace(/\D/g, "").slice(-9);
+  if (!digitos || digitos.length < 9) return [contactId];
+  const mismos = await db
+    .select({ id: contacts.id })
+    .from(contacts)
+    .where(sql`right(regexp_replace(coalesce(${contacts.phone}, ''), '\\D', '', 'g'), 9) = ${digitos}`);
+  return Array.from(new Set([contactId, ...mismos.map((c) => c.id)]));
+}
+
+/** "#1234", "1234" o "#ALIV-1234" -> numeros de orden que terminan exactamente en 1234. */
+function condicionNumeroOrden(texto: string): SQL | null {
+  const digitos = texto.match(/\d{3,}/)?.[0];
+  if (!digitos) return null;
+  return or(
+    eq(pedidosOrdenes.numeroOrden, `#ALIV-${digitos}`),
+    ilike(pedidosOrdenes.numeroOrden, `%-${digitos}`)
+  ) ?? null;
+}
+
 const tools: ToolModulo[] = [
   {
     definicion: {
@@ -462,6 +507,7 @@ const tools: ToolModulo[] = [
       }
 
       const itemsFinales: ItemPedido[] = [];
+      const subtotales: number[] = [];
       for (const item of listaRaw as Array<{ producto?: string; cantidad?: number }>) {
         const nombreProd = String(item.producto ?? "").trim();
         if (!nombreProd) continue;
@@ -473,11 +519,13 @@ const tools: ToolModulo[] = [
             error: `El producto "${nombreProd}" no coincide con el catalogo de Aliv Store. Usa buscar_productos primero.`,
           };
         }
+        const subtotal = subtotalConOfertas(match.sku, cant, match.precio);
+        subtotales.push(subtotal);
         itemsFinales.push({
           sku: match.sku,
           titulo: match.titulo,
           cantidad: cant,
-          precioUnitario: match.precio,
+          precioUnitario: Math.round((subtotal / cant) * 100) / 100,
         });
       }
 
@@ -485,10 +533,7 @@ const tools: ToolModulo[] = [
         return { ok: false, error: "No se encontraron productos validos" };
       }
 
-      const totalSoles = itemsFinales.reduce(
-        (acc, it) => acc + it.cantidad * it.precioUnitario,
-        0
-      );
+      const totalSoles = subtotales.reduce((acc, s) => acc + s, 0);
       const ciudad = String(args.ciudad ?? "Lima").trim();
       const distrito = args.distrito ? String(args.distrito).trim() : null;
       const direccionEnvio = String(args.direccion_envio ?? "").trim();
@@ -603,28 +648,19 @@ const tools: ToolModulo[] = [
     descripcionUI: "Permite al agente consultar en tiempo real el estado de envío y número de guía de un pedido.",
     async ejecutar(args, ctx) {
       const q = typeof args.numero_orden === "string" ? args.numero_orden.trim() : "";
-      let rows;
-      if (q) {
-        const limpio = q.replace(/^#/, "");
-        rows = await db
-          .select()
-          .from(pedidosOrdenes)
-          .where(
-            or(
-              ilike(pedidosOrdenes.numeroOrden, `%${limpio}%`),
-              eq(pedidosOrdenes.contactId, ctx.contactId)
-            )
-          )
-          .orderBy(desc(pedidosOrdenes.createdAt))
-          .limit(5);
-      } else {
-        rows = await db
-          .select()
-          .from(pedidosOrdenes)
-          .where(eq(pedidosOrdenes.contactId, ctx.contactId))
-          .orderBy(desc(pedidosOrdenes.createdAt))
-          .limit(5);
-      }
+      // Solo pedidos del propio cliente. Antes, con un numero, el filtro era
+      // `numero ilike %q% OR contacto = este`: pedir el "1" devolvia pedidos (con
+      // direccion) de otros clientes.
+      const propios = await contactosDelCliente(ctx.contactId);
+      const condiciones: SQL[] = [inArray(pedidosOrdenes.contactId, propios)];
+      const filtroNumero = condicionNumeroOrden(q);
+      if (filtroNumero) condiciones.push(filtroNumero);
+      const rows = await db
+        .select()
+        .from(pedidosOrdenes)
+        .where(and(...condiciones))
+        .orderBy(desc(pedidosOrdenes.createdAt))
+        .limit(5);
 
       if (rows.length === 0) {
         return {
@@ -700,6 +736,89 @@ const tools: ToolModulo[] = [
           mensaje: "Incidencia registrada para atención prioritaria del equipo humano.",
         },
       };
+    },
+  },
+  {
+    definicion: {
+      type: "function",
+      function: {
+        name: "confirmar_pedido",
+        description:
+          "Confirma un pedido web (alivstore.shop) que esta 'Por confirmar' cuando el propio cliente escribe para confirmarlo, por ejemplo con el boton 'Confirmar por WhatsApp' de la pagina de gracias ('Hola Aliv, quiero confirmar mi pedido #1234'). Solo encuentra pedidos de este mismo cliente (mismo telefono). Devuelve productos, total y direccion para repetirselos.",
+        parameters: {
+          type: "object",
+          properties: {
+            numero_orden: {
+              type: "string",
+              description: "Numero del pedido que menciona el cliente (ej. '#1234', '1234' o '#ALIV-1234').",
+            },
+          },
+          required: ["numero_orden"],
+          additionalProperties: false,
+        },
+      },
+    },
+    descripcionUI: "Permite al agente confirmar pedidos web pendientes cuando el cliente escribe para confirmarlos (ventana gratuita de 24 h).",
+    async ejecutar(args, ctx) {
+      const filtroNumero = condicionNumeroOrden(String(args.numero_orden ?? ""));
+      if (!filtroNumero) {
+        return { ok: false, error: "Pidele al cliente el numero de su pedido (ej. #1234)." };
+      }
+      const propios = await contactosDelCliente(ctx.contactId);
+      const [pedido] = await db
+        .select()
+        .from(pedidosOrdenes)
+        .where(and(inArray(pedidosOrdenes.contactId, propios), filtroNumero))
+        .orderBy(desc(pedidosOrdenes.createdAt))
+        .limit(1);
+
+      if (!pedido) {
+        return {
+          ok: true,
+          data: {
+            encontrado: false,
+            mensaje:
+              "No hay un pedido con ese numero asociado a este telefono. Pidele que revise el numero o el telefono con el que compro, o deriva a un asesor.",
+          },
+        };
+      }
+
+      const detalle = {
+        numero_orden: pedido.numeroOrden,
+        productos: pedido.items,
+        total_soles: `S/ ${Number(pedido.total).toFixed(2)}`,
+        destino: [pedido.direccionEnvio, pedido.distrito, pedido.ciudad].filter(Boolean).join(", "),
+      };
+
+      if (pedido.estado !== "por_confirmar_cod") {
+        return {
+          ok: true,
+          data: {
+            encontrado: true,
+            ya_estaba: ETIQUETA_ESTADO_PEDIDO[pedido.estado as EstadoPedido] ?? pedido.estado,
+            ...detalle,
+          },
+        };
+      }
+
+      await db
+        .update(pedidosOrdenes)
+        .set({ estado: "confirmado", updatedAt: new Date() })
+        .where(eq(pedidosOrdenes.id, pedido.id));
+      await sincronizarEtapaPipeline(
+        pedido.contactId,
+        "confirmado",
+        `${pedido.numeroOrden} · ${pedido.items[0]?.titulo ?? "Pedido web"}`,
+        Number(pedido.total)
+      );
+      await db.insert(activities).values({
+        type: "note",
+        description: `[IA] Pedido web ${pedido.numeroOrden} confirmado por el cliente desde el chat`,
+        contactId: pedido.contactId,
+      });
+      await sincronizarConGoogleDrive().catch(() => {});
+
+      return { ok: true, data: { encontrado: true, confirmado: true, ...detalle } };
     },
   },
 ];

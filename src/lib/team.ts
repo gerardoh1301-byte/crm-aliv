@@ -5,6 +5,7 @@ import { asc, eq, and, isNull, or, type SQL } from "drizzle-orm";
 import { createClient } from "@/lib/supabase/server";
 import { cookies } from "next/headers";
 import { COOKIE_SESION_LOCAL, ID_MIEMBRO_LOCAL, modoLocal } from "@/lib/modo-local";
+import { verificarSesion } from "@/lib/sesion-local";
 
 export type TeamRole = "admin" | "asesor";
 
@@ -37,10 +38,10 @@ export function displayName(member: TeamMember | null | undefined): string {
 export async function getCurrentMember(): Promise<TeamMember | null> {
   // Autenticacion por perfil/PIN (local o en la nube sin Supabase Auth)
   if (modoLocal() || !process.env.NEXT_PUBLIC_SUPABASE_URL || !process.env.NEXT_PUBLIC_SUPABASE_URL.includes("supabase.co")) {
-    let memberId: string | undefined;
+    let memberId: string | null = null;
     try {
       const cookieStore = await cookies();
-      memberId = cookieStore.get(COOKIE_SESION_LOCAL)?.value;
+      memberId = verificarSesion(cookieStore.get(COOKIE_SESION_LOCAL)?.value);
     } catch {
       // Fuera de contexto HTTP
     }
