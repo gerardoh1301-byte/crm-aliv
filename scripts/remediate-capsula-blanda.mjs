@@ -38,7 +38,11 @@ if (fs.existsSync(seedPath)) {
 }
 
 // 4. Base de Datos Neon Cloud
-const DATABASE_URL = 'postgresql://neondb_owner:npg_Ku2l9HPgDayj@ep-shy-paper-b4iem0r9-pooler.c-6.us-east-2.aws.neon.tech/neondb?sslmode=require';
+const DATABASE_URL = process.env.DATABASE_URL;
+if (!DATABASE_URL) {
+  console.error("Falta DATABASE_URL (no la escribas en el codigo: el repo es publico)");
+  process.exit(1);
+}
 async function updateDb() {
   const sql = postgres(DATABASE_URL);
   

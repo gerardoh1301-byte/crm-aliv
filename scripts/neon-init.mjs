@@ -1,6 +1,10 @@
 import postgres from "postgres";
 
-const connStr = "postgresql://neondb_owner:npg_Ku2l9HPgDayj@ep-shy-paper-b4iem0r9-pooler.c-6.us-east-2.aws.neon.tech/neondb?sslmode=require";
+const connStr = process.env.DATABASE_URL;
+if (!connStr) {
+  console.error("Falta DATABASE_URL (no la escribas en el codigo: el repo es publico)");
+  process.exit(1);
+}
 const sql = postgres(connStr);
 
 async function init() {
