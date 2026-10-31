@@ -38,6 +38,8 @@ Es del **día**. Las decisiones usan 3–7 días (`optimizador-presupuesto`).
 
 ## Cuidado al escribir
 
+- La hoja usa la región **es_MX** (coma entre argumentos, punto decimal). Con `es_ES` las fórmulas escritas con coma dan `#ERROR!`; Google no acepta `es_PE`.
+
 - Los IDs de Meta (18 dígitos) van con apóstrofo delante (`'1202…`). `consolidar.py` ya lo hace; si escribes uno a mano, agrégalo, o Sheets lo redondea.
 - Escribe solo en el rango exacto de columnas de datos (`Diario!A:O`, `Anuncios!A:L`…). Un `append_values` sobre la pestaña entera puede pisar las fórmulas.
 - Las fechas van como `YYYY-MM-DD`: Sheets las convierte en fecha y las fórmulas del Resumen las comparan como fechas.

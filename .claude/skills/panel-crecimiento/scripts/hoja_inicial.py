@@ -19,6 +19,7 @@ import sys
 TITULO = "Sistema integrado Aliv Perú"
 IDS = {"Resumen": 0, "Diario": 101, "Anuncios": 102, "Pedidos": 103, "Salud_CRM": 104,
        "Decisiones_pago": 105, "Aprobaciones": 106, "Competencia": 107, "Registro": 108, "Config": 109}
+FILAS = 1000  # filas de cada pestana; los rangos no pueden pasarse del tamano
 AZUL = {"red": 0.0, "green": 0.0, "blue": 1.0}
 GRIS = {"red": 0.93, "green": 0.93, "blue": 0.93}
 
@@ -139,14 +140,14 @@ def rango(hoja, fila0, fila1, col0, col1):
 
 
 def formato_numero(hoja, col0, col1, patron, tipo="NUMBER"):
-    return {"repeatCell": {"range": rango(hoja, 1, 5000, col0, col1),
+    return {"repeatCell": {"range": rango(hoja, 1, FILAS, col0, col1),
                            "cell": {"userEnteredFormat": {"numberFormat": {"type": tipo, "pattern": patron}}},
                            "fields": "userEnteredFormat.numberFormat"}}
 
 
 def pasos():
     req = [
-        {"updateSpreadsheetProperties": {"properties": {"title": TITULO, "locale": "es_PE", "timeZone": "America/Lima"},
+        {"updateSpreadsheetProperties": {"properties": {"title": TITULO, "locale": "es_MX", "timeZone": "America/Lima"},
                                          "fields": "title,locale,timeZone"}},
         {"updateSheetProperties": {"properties": {"sheetId": 0, "title": "Resumen"}, "fields": "title"}},
     ]
@@ -155,10 +156,11 @@ def pasos():
             continue
         columnas = len(ENCABEZADOS.get(hoja, CONFIG[0])) + (0 if hoja != "Config" else 1)
         req.append({"addSheet": {"properties": {"sheetId": sid, "title": hoja,
-                                                "gridProperties": {"rowCount": 1000, "columnCount": max(columnas, 4),
+                                                "gridProperties": {"rowCount": FILAS, "columnCount": max(columnas, 4),
                                                                    "frozenRowCount": 1}}}})
     for hoja in list(ENCABEZADOS) + ["Config"]:
-        req.append({"repeatCell": {"range": rango(hoja, 0, 1, 0, 30),
+        ancho = len(ENCABEZADOS[hoja]) if hoja in ENCABEZADOS else 4
+        req.append({"repeatCell": {"range": rango(hoja, 0, 1, 0, ancho),
                                    "cell": {"userEnteredFormat": {"textFormat": {"bold": True},
                                                                   "backgroundColorStyle": {"rgbColor": GRIS}}},
                                    "fields": "userEnteredFormat.textFormat.bold,userEnteredFormat.backgroundColorStyle"}})
@@ -182,6 +184,13 @@ def pasos():
         {"repeatCell": {"range": {"sheetId": 0, "startRowIndex": 6, "endRowIndex": 15, "startColumnIndex": 1, "endColumnIndex": 3},
                         "cell": {"userEnteredFormat": {"numberFormat": {"type": "NUMBER", "pattern": "#,##0.00"}}},
                         "fields": "userEnteredFormat.numberFormat"}},
+        # Conteos sin decimales: pedidos web/chat (filas 8-9), pedidos totales (12) y Diario!R.
+        *[{"repeatCell": {"range": {"sheetId": 0, "startRowIndex": f0, "endRowIndex": f1, "startColumnIndex": 1, "endColumnIndex": 3},
+                          "cell": {"userEnteredFormat": {"numberFormat": {"type": "NUMBER", "pattern": "0"}}},
+                          "fields": "userEnteredFormat.numberFormat"}} for f0, f1 in ((7, 9), (11, 12))],
+        formato_numero("Diario", 17, 18, "0"),
+        {"repeatCell": {"range": {"sheetId": 0, "startRowIndex": 19, "endRowIndex": 20, "startColumnIndex": 1, "endColumnIndex": 2},
+                        "cell": {"userEnteredFormat": {"wrapStrategy": "WRAP"}}, "fields": "userEnteredFormat.wrapStrategy"}},
         {"repeatCell": {"range": {"sheetId": 0, "startRowIndex": 0, "endRowIndex": 1, "startColumnIndex": 0, "endColumnIndex": 1},
                         "cell": {"userEnteredFormat": {"textFormat": {"bold": True, "fontSize": 14}}},
                         "fields": "userEnteredFormat.textFormat.bold,userEnteredFormat.textFormat.fontSize"}},
