@@ -394,7 +394,7 @@ async function buscarPrecioEnCatalogo(nombreOSku: string): Promise<{
  * landing de NAC600). Mas de 3 unidades se arma con paquetes de 3 + el resto.
  */
 const PRECIOS_POR_CANTIDAD: Record<string, Record<number, number>> = {
-  "ALIV-NAC600": { 1: 119, 2: 189, 3: 269 },
+  "ALIV-NAC600": { 1: 119, 2: 189, 3: 199 },
 };
 
 function subtotalConOfertas(sku: string, cantidad: number, precioUnitario: number): number {
