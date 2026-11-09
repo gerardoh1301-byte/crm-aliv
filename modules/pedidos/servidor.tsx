@@ -389,6 +389,22 @@ async function buscarPrecioEnCatalogo(nombreOSku: string): Promise<{
   return null;
 }
 
+/**
+ * Precio por cantidad de las ofertas de la tienda (fuente: reglas-comerciales.md y la
+ * landing de NAC600). Mas de 3 unidades se arma con paquetes de 3 + el resto.
+ */
+const PRECIOS_POR_CANTIDAD: Record<string, Record<number, number>> = {
+  "ALIV-NAC600": { 1: 119, 2: 189, 3: 269 },
+};
+
+function subtotalConOfertas(sku: string, cantidad: number, precioUnitario: number): number {
+  const tabla = PRECIOS_POR_CANTIDAD[sku];
+  if (!tabla) return cantidad * precioUnitario;
+  const paquetes = Math.floor(cantidad / 3);
+  const resto = cantidad % 3;
+  return paquetes * tabla[3] + (resto ? tabla[resto] : 0);
+}
+
 const tools: ToolModulo[] = [
   {
     definicion: {
@@ -462,6 +478,7 @@ const tools: ToolModulo[] = [
       }
 
       const itemsFinales: ItemPedido[] = [];
+      const subtotales: number[] = [];
       for (const item of listaRaw as Array<{ producto?: string; cantidad?: number }>) {
         const nombreProd = String(item.producto ?? "").trim();
         if (!nombreProd) continue;
@@ -473,11 +490,13 @@ const tools: ToolModulo[] = [
             error: `El producto "${nombreProd}" no coincide con el catalogo de Aliv Store. Usa buscar_productos primero.`,
           };
         }
+        const subtotal = subtotalConOfertas(match.sku, cant, match.precio);
+        subtotales.push(subtotal);
         itemsFinales.push({
           sku: match.sku,
           titulo: match.titulo,
           cantidad: cant,
-          precioUnitario: match.precio,
+          precioUnitario: Math.round((subtotal / cant) * 100) / 100,
         });
       }
 
@@ -485,10 +504,7 @@ const tools: ToolModulo[] = [
         return { ok: false, error: "No se encontraron productos validos" };
       }
 
-      const totalSoles = itemsFinales.reduce(
-        (acc, it) => acc + it.cantidad * it.precioUnitario,
-        0
-      );
+      const totalSoles = subtotales.reduce((acc, s) => acc + s, 0);
       const ciudad = String(args.ciudad ?? "Lima").trim();
       const distrito = args.distrito ? String(args.distrito).trim() : null;
       const direccionEnvio = String(args.direccion_envio ?? "").trim();
