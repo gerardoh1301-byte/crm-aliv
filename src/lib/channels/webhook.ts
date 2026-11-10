@@ -107,7 +107,22 @@ export async function barrerWebhook(conector: Conector, request: NextRequest): P
     reprocessed++;
   }
 
-  return NextResponse.json({ ok: true, found: stale.length, reprocessed });
+  let rescued = 0;
+  if (conector.id === "zernio") {
+    try {
+      const { rescatarMensajesRecientesZernio } = await import("@/lib/channels/zernio-events");
+      const rescate = await rescatarMensajesRecientesZernio();
+      rescued = rescate.rescatados;
+      if (rescate.jobIds.length > 0) {
+        const { triggerAgentWorker, getWorkerBaseUrl } = await import("@/lib/agent/trigger");
+        await triggerAgentWorker(rescate.jobIds, getWorkerBaseUrl(request.headers), "zernio-rescue");
+      }
+    } catch (err) {
+      console.warn("[webhook zernio] error en rescate de mensajes:", err);
+    }
+  }
+
+  return NextResponse.json({ ok: true, found: stale.length, reprocessed, rescued });
 }
 
 /**

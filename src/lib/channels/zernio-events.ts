@@ -324,3 +324,99 @@ function parseDate(value: string | undefined | null): Date | null {
   const parsed = new Date(value);
   return Number.isNaN(parsed.getTime()) ? null : parsed;
 }
+
+/**
+ * Rescata mensajes entrantes recientes de Zernio que no hayan entrado por webhook
+ * (por ejemplo, cuando Render Free estuvo despertando de un cold start de ~15s o
+ * redesplegando y el webhook de Zernio corto a los 5s).
+ * Es 100% idempotente porque `ingestMessage` deduplica por `(conversationId, externalId)`.
+ */
+export async function rescatarMensajesRecientesZernio(): Promise<{
+  revisadas: number;
+  rescatados: number;
+  jobIds: string[];
+}> {
+  const { hasZernioKey } = await import("@/lib/zernio/client");
+  if (!hasZernioKey()) return { revisadas: 0, rescatados: 0, jobIds: [] };
+
+  const { listConversations, listMessages } = await import("@/lib/zernio/inbox");
+  const convRes = await listConversations({ limit: 5 });
+  if (!convRes.success) return { revisadas: 0, rescatados: 0, jobIds: [] };
+
+  const ahora = Date.now();
+  const VENTANA_MS = 30 * 60 * 1000; // 30 minutos
+  let revisadas = 0;
+  let rescatados = 0;
+  const jobIds: string[] = [];
+
+  for (const conv of convRes.data.data ?? []) {
+    const updatedMs = conv.updatedTime ? new Date(conv.updatedTime).getTime() : 0;
+    if (updatedMs && ahora - updatedMs > VENTANA_MS) continue;
+    revisadas++;
+
+    const msgRes = await listMessages(conv.id, {
+      accountId: conv.accountId,
+      limit: 100,
+    });
+    if (!msgRes.success) continue;
+
+    const lista = [...(msgRes.data.messages ?? msgRes.data.data ?? [])];
+    if (lista.length === 0) continue;
+
+    lista.sort(
+      (a, b) =>
+        new Date(b.createdAt ?? b.sentAt ?? 0).getTime() -
+        new Date(a.createdAt ?? a.sentAt ?? 0).getTime()
+    );
+
+    const ultimo = lista[0];
+    if (!ultimo || ultimo.direction !== "incoming") continue;
+
+    const msgMs = new Date(ultimo.createdAt ?? ultimo.sentAt ?? 0).getTime();
+    if (!msgMs || ahora - msgMs > VENTANA_MS) continue;
+
+    const senderId = ultimo.senderId ?? conv.participantId;
+    if (!senderId) continue;
+
+    const syntheticPayload: ZernioWebhookPayload = {
+      id: `rescue-${ultimo.id}`,
+      event: "message.received",
+      timestamp: ultimo.sentAt ?? ultimo.createdAt ?? new Date().toISOString(),
+      account: {
+        id: conv.accountId,
+        accountId: conv.accountId,
+        platform: conv.platform,
+        username: conv.accountUsername ?? undefined,
+      },
+      conversation: {
+        id: conv.id,
+        status: conv.status,
+        participantId: conv.participantId ?? undefined,
+        participantName: conv.participantName ?? undefined,
+        participantPicture: conv.participantPicture ?? undefined,
+      },
+      message: {
+        id: ultimo.id,
+        platformMessageId: ultimo.id,
+        conversationId: conv.id,
+        platform: conv.platform,
+        direction: "incoming",
+        text: ultimo.message ?? undefined,
+        attachments: ultimo.attachments,
+        sender: {
+          id: senderId,
+          name: ultimo.senderName ?? conv.participantName ?? undefined,
+        },
+        sentAt: ultimo.sentAt ?? ultimo.createdAt ?? undefined,
+      },
+    };
+
+    const proc = await processZernioEvent(syntheticPayload);
+    if (proc.jobIds.length > 0) {
+      rescatados++;
+      jobIds.push(...proc.jobIds);
+    }
+  }
+
+  return { revisadas, rescatados, jobIds };
+}

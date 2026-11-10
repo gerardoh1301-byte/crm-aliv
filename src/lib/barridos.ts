@@ -31,7 +31,7 @@ export function iniciarBarridos() {
     return;
   }
 
-  const minutos = Number(process.env.SWEEP_INTERVAL_MIN) || 30;
+  const minutos = Number(process.env.SWEEP_INTERVAL_MIN) || 2;
   const base = `http://127.0.0.1:${process.env.PORT || 3000}`;
 
   const correr = async () => {
@@ -48,10 +48,12 @@ export function iniciarBarridos() {
     }
   };
 
-  // Primer barrido al minuto de arrancar (deja que el servidor termine de levantar).
-  const primero = setTimeout(correr, 60_000);
+  // Primer barrido a los 5 segundos de arrancar: si un webhook de Zernio desperto a
+  // Render de un cold start y dio timeout a los 5s, este barrido rescata el mensaje
+  // entrante de inmediato y dispara la respuesta del agente.
+  const primero = setTimeout(correr, 5_000);
   primero.unref?.();
   globalThis.__builderBarridos = setInterval(correr, minutos * 60_000);
   globalThis.__builderBarridos.unref?.();
-  console.log(`[barridos] activos cada ${minutos} min`);
+  console.log(`[barridos] activos cada ${minutos} min (primer rescate a los 5s)`);
 }
