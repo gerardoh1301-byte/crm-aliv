@@ -149,6 +149,19 @@ async function etiquetarInteresContacto(contactId: string, etiqueta: string) {
   }
 }
 
+const OFERTAS_PACKS_POR_SKU: Record<string, string[]> = {
+  "ALIV-NAC600": [
+    "1 frasco (60 cápsulas · 30 días): S/ 119",
+    "2 frascos (120 cápsulas · 60 días): S/ 189 (S/ 94.50 c/u · Ahorras S/ 49)",
+    "3 frascos (180 cápsulas · 90 días · MÁS ELEGIDO ⭐): S/ 199 (S/ 66.33 c/u · Ahorras S/ 158 — por solo S/ 10 más que el pack de 2 te llevas el 3er frasco)",
+  ],
+  "ALIV-TERMIX-TOB": [
+    "1 tobillera (para un tobillo): S/ 99",
+    "2 tobilleras (MÁS ELEGIDO ⭐ · ambos tobillos o para regalar a mamá y papá): S/ 169 (S/ 84.50 c/u · Antes S/ 198 · Ahorras S/ 29)",
+    "3 tobilleras (Pack familiar): S/ 219 (S/ 73.00 c/u · Antes S/ 297 · Ahorras S/ 78)",
+  ],
+};
+
 const tools: ToolModulo[] = [
   {
     definicion: {
@@ -156,14 +169,14 @@ const tools: ToolModulo[] = [
       function: {
         name: "buscar_productos",
         description:
-          "Busca productos en el catalogo oficial de Aliv Store (alivstore.shop) por nombre, sintoma/molestia a aliviar (ej. cuello, cervical, hombro, tobillo, migrana, higado, antioxidante, menopausia, perfume), categoria o precio maximo en Soles (PEN). Devuelve stock, precio real en S/ y link.",
+          "Busca los productos oficiales de Aliv Store (alivstore.shop): NAC600 + NAD+ (hígado, glutatión, energía celular) y Termix Tobillera (calor de grafeno y masaje vibratorio para tobillos cansados o después de entrenar). Devuelve precios unitarios, ofertas por cantidad (packs de 1, 2 y 3), ficha técnica, beneficios, modo de uso, precauciones y link oficial.",
         parameters: {
           type: "object",
           properties: {
             consulta: {
               type: "string",
               description:
-                "Palabra clave, nombre del producto o molestia del cliente (ej. 'NAC600', 'tobillera', 'hombro', 'cuello', 'migrana', 'menopausia', 'perfume'). Vacio para listar todo el catalogo.",
+                "Palabra clave, nombre del producto o necesidad del cliente (ej. 'NAC600', 'tobillera', 'termix', 'tobillo', 'higado', 'energia', 'glutation'). Vacio para listar los productos disponibles.",
             },
             precio_max: {
               type: "number",
@@ -178,7 +191,7 @@ const tools: ToolModulo[] = [
         },
       },
     },
-    descripcionUI: "Permite al agente consultar el catálogo oficial de Aliv Store con precios en Soles y stock real.",
+    descripcionUI: "Permite al agente consultar el catálogo oficial de Aliv Store con precios en Soles, ofertas por packs y stock real.",
     async ejecutar(args, ctx) {
       let total = await db.select().from(catalogoProductos);
       if (total.length === 0) {
@@ -231,14 +244,15 @@ const tools: ToolModulo[] = [
         ok: true,
         data: {
           moneda: "PEN (Soles Peruanos S/)",
-          modalidad_pago: "Pago Contraentrega (COD) en Lima y Provincias, Yape, Plin o Tarjeta",
+          envio_y_garantia:
+            "Envío GRATIS a todo el Perú (Lima: 1 día hábil y pagas todo al recibir en efectivo, Yape, Plin o tarjeta | Provincias: 2 a 5 días hábiles por Shalom u Olva con adelanto de S/ 20 y el saldo al recibir). Garantía de satisfacción de 30 días.",
           cantidad: rows.length,
           productos: rows.map((r) => ({
             sku: r.sku,
             nombre: r.titulo,
             categoria: r.categoria,
-            precio_soles: `S/ ${Number(r.precio).toFixed(2)}`,
-            precio_regular_soles: r.precioRegular ? `S/ ${Number(r.precioRegular).toFixed(2)}` : null,
+            precio_unidad_soles: `S/ ${Number(r.precio).toFixed(2)}`,
+            ofertas_packs: (r.sku && OFERTAS_PACKS_POR_SKU[r.sku]) || [`1 unidad: S/ ${Number(r.precio).toFixed(2)}`],
             en_stock: r.disponible && r.stock > 0,
             unidades_disponibles: r.stock,
             descripcion: r.descripcion,
@@ -256,13 +270,13 @@ const tools: ToolModulo[] = [
       function: {
         name: "detalle_producto",
         description:
-          "Obtiene toda la ficha tecnica, modo de uso, beneficios, contraindicaciones y stock exacto de un producto especifico de Aliv Store por su nombre, SKU o handle.",
+          "Obtiene toda la ficha tecnica completa, promociones por cantidad (packs 1x, 2x y 3x), modo de uso, preguntas frecuentes, beneficios, precauciones y stock exacto de NAC600 o Termix Tobillera.",
         parameters: {
           type: "object",
           properties: {
             producto: {
               type: "string",
-              description: "Nombre, SKU o handle del producto (ej. 'NAC600', 'Termix Tobillera', 'Nuvara', 'Herbia', 'Meno Mag', 'GODA').",
+              description: "Nombre, SKU o handle del producto (ej. 'NAC600', 'Termix Tobillera', 'tobillera', 'nac600').",
             },
           },
           required: ["producto"],
@@ -270,7 +284,7 @@ const tools: ToolModulo[] = [
         },
       },
     },
-    descripcionUI: "Obtiene la ficha detallada, modo de uso y precauciones de un producto de Aliv Store.",
+    descripcionUI: "Obtiene la ficha detallada, promociones por cantidad, modo de uso y precauciones de un producto de Aliv Store.",
     async ejecutar(args, ctx) {
       const q = String(args.producto ?? "").trim();
       if (!q) return { ok: false, error: "Debes indicar el nombre o SKU del producto" };
@@ -291,7 +305,7 @@ const tools: ToolModulo[] = [
       if (!prod) {
         return {
           ok: false,
-          error: `No se encontro "${q}". Usa buscar_productos sin filtro para ver todos los productos de Aliv Store.`,
+          error: `No se encontro "${q}". Usa buscar_productos sin filtro para ver los productos disponibles de Aliv Store.`,
         };
       }
 
@@ -303,8 +317,10 @@ const tools: ToolModulo[] = [
           sku: prod.sku,
           nombre: prod.titulo,
           categoria: prod.categoria,
-          precio_soles: `S/ ${Number(prod.precio).toFixed(2)}`,
-          precio_antes: prod.precioRegular ? `S/ ${Number(prod.precioRegular).toFixed(2)}` : null,
+          precio_unidad_soles: `S/ ${Number(prod.precio).toFixed(2)}`,
+          ofertas_packs: (prod.sku && OFERTAS_PACKS_POR_SKU[prod.sku]) || [`1 unidad: S/ ${Number(prod.precio).toFixed(2)}`],
+          envio_y_garantia:
+            "Envío GRATIS a todo el Perú (Lima: 1 día hábil y pagas todo al recibir | Provincias: 2 a 5 días hábiles con adelanto de S/ 20 y el saldo al recibir). Garantía de 30 días.",
           disponible: prod.disponible && prod.stock > 0,
           stock: prod.stock,
           descripcion: prod.descripcion,

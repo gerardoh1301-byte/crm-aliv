@@ -39,10 +39,11 @@ Sos {{agente}}, parte del equipo de {{negocio}}. Atendes a las personas que escr
  * como un WhatsApp. Es el piso comun; el prompt propio de cada canal lo puede pisar.
  */
 const CHANNEL_HINTS: Record<string, string> = {
-  whatsapp: "Manten cada respuesta ultra-corta, agil y humana (maximo 2 o 3 oraciones cortas). Nunca mandes parrafadas ni testamentos. Responde puntual y termina con una sola pregunta. Si el mensaje es una nota de voz ('🎤 [Nota de voz]: ...'), responde directamente a lo que consultó en su audio con total naturalidad y calidez.",
+  whatsapp:
+    "Habla como una asesora peruana real por WhatsApp: calida, cercana y agil (2 a 4 oraciones cortas). NUNCA uses doble asterisco (**texto**); si quieres resaltar un producto o precio usa un solo asterisco (*texto*). Siempre menciona las promociones por cantidad al cotizar (NAC600: 1x S/119, 2x S/189, 3x S/199 ⭐ | Termix Tobillera: 1x S/99, 2x S/169 ⭐, 3x S/219), envio gratis y pago al recibir en Lima, y cierra con una pregunta de alternativa orientada a tomar su pedido.",
   instagram:
-    "Estas en un DM de Instagram: responde en 1 o 2 oraciones breves, directo y cercano. Responde la duda puntual, menciona que tenemos delivery contra entrega y remata preguntando por su distrito o si prefiere coordinar por WhatsApp.",
-  facebook: "Estas en Messenger: respuestas breves (1 o 2 frases) y tono cercano. Podes incluir un link si aporta.",
+    "Estas en un DM de Instagram: responde en 2 a 3 oraciones breves, directo, humano y sin asteriscos. Responde la duda puntual, menciona los packs promocionales y que tenemos envio gratis con pago al recibir en Lima, y remata preguntando que pack prefiere y de que distrito o ciudad nos escribe.",
+  facebook: "Estas en Messenger: respuestas breves (2 a 3 frases), tono cercano y humano.",
 };
 
 const CHANNEL_NAMES: Record<string, string> = {

@@ -10,7 +10,7 @@ import {
 import { isChannel, type Channel } from "./types";
 import { resolveDefaultTenantId } from "@/lib/tenants";
 import { normalizePhone } from "@/lib/phone";
-import { transcribeAudioAttachment } from "@/lib/audio/transcribe";
+import { inspectImageAttachment, transcribeAudioAttachment } from "@/lib/audio/transcribe";
 import type {
   ZernioMessage,
   ZernioWebhookConversation,
@@ -264,14 +264,34 @@ function resolveParticipant(
   };
 }
 
-/** Espeja `extractMessageBody` del webhook de Meta para que el chat se lea igual. */
-function extractBody(msg: ZernioMessage): string {
+/** Espeja `extractMessageBody` del webhook de Meta e integra transcripcion de audio e inspeccion visual. */
+async function extractBody(msg: ZernioMessage): Promise<string> {
   const text = msg.text?.trim();
-  if (text) return text;
-
   const attachment = msg.attachments?.[0];
+
   if (attachment) {
     const kind = (attachment.type ?? "adjunto").toLowerCase();
+
+    if (kind === "audio" || kind === "voice") {
+      const transcript = await transcribeAudioAttachment(attachment);
+      if (transcript) {
+        return text
+          ? `${text}\n🎤 [Nota de voz]: "${transcript}"`
+          : `🎤 [Nota de voz]: "${transcript}"`;
+      }
+    }
+
+    if (kind === "image") {
+      const visionDesc = await inspectImageAttachment(attachment);
+      if (visionDesc) {
+        return text
+          ? `${text}\n📷 [Imagen enviada por el cliente — ${visionDesc}]`
+          : `📷 [Imagen enviada por el cliente — ${visionDesc}]`;
+      }
+    }
+
+    if (text) return text;
+
     const label =
       kind === "image"
         ? "imagen"
@@ -289,6 +309,7 @@ function extractBody(msg: ZernioMessage): string {
     return `[${label}]${extra}`;
   }
 
+  if (text) return text;
   return "[mensaje]";
 }
 

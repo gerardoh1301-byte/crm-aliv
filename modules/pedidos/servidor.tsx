@@ -84,7 +84,7 @@ async function sincronizarEtapaPipeline(
       await db
         .update(deals)
         .set({
-          value: Math.round(montoSoles),
+          value: Math.round(montoSoles * 100),
           title: tituloOrden,
           updatedAt: new Date(),
         })
@@ -99,7 +99,7 @@ async function sincronizarEtapaPipeline(
       .insert(deals)
       .values({
         title: tituloOrden,
-        value: Math.round(montoSoles),
+        value: Math.round(montoSoles * 100),
         stageId: stage.id,
         contactId,
       })
@@ -218,7 +218,7 @@ const crear: HandlerModulo = async (req, { member }) => {
   }
 
   const totalCalculado = items.reduce(
-    (acc, it) => acc + it.cantidad * it.precioUnitario,
+    (acc, it) => acc + subtotalConOfertas(it.sku, it.cantidad, it.precioUnitario),
     0
   );
   const estado = (
@@ -397,6 +397,7 @@ async function buscarPrecioEnCatalogo(nombreOSku: string): Promise<{
  */
 const PRECIOS_POR_CANTIDAD: Record<string, Record<number, number>> = {
   "ALIV-NAC600": { 1: 119, 2: 189, 3: 199 },
+  "ALIV-TERMIX-TOB": { 1: 99, 2: 169, 3: 219 },
 };
 
 function subtotalConOfertas(sku: string, cantidad: number, precioUnitario: number): number {

@@ -126,3 +126,81 @@ export async function transcribeAudioAttachment(
     return null;
   }
 }
+
+/**
+ * Inspecciona imágenes entrantes desde Zernio usando Gemini Vision ($0 Costo adicional)
+ * para que el agente sepa qué foto envió realmente el cliente (producto, consulta o posible
+ * captura de pago) y jamás valide un comprobante falso a ciegas.
+ */
+export async function inspectImageAttachment(
+  attachment: { url?: string; mimeType?: string; payload?: unknown },
+  options: TranscribeOptions = {}
+): Promise<string | null> {
+  const url = attachment.url;
+  if (!url) return null;
+
+  const geminiKey = options.apiKey || process.env.GEMINI_API_KEY;
+  const zernioKey = options.zernioKey || process.env.ZERNIO_API_KEY;
+  if (!geminiKey) return null;
+
+  const timeoutMs = options.timeoutMs ?? 25000;
+
+  try {
+    const headers: Record<string, string> = {};
+    if (zernioKey) {
+      headers["Authorization"] = `Bearer ${zernioKey}`;
+    }
+
+    const imgRes = await fetch(url, {
+      headers,
+      signal: AbortSignal.timeout(timeoutMs),
+    });
+    if (!imgRes.ok) return null;
+
+    const arrayBuf = await imgRes.arrayBuffer();
+    if (arrayBuf.byteLength === 0) return null;
+
+    const base64Image = Buffer.from(arrayBuf).toString("base64");
+    const rawMime =
+      (attachment.payload as { mimeType?: string })?.mimeType ||
+      attachment.mimeType ||
+      "image/jpeg";
+    const cleanMime = rawMime.split(";")[0].trim().toLowerCase();
+
+    const geminiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${geminiKey}`;
+    const gRes = await fetch(geminiUrl, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        contents: [
+          {
+            parts: [
+              {
+                text:
+                  "Analiza esta imagen enviada por un cliente al chat de Aliv Perú (tienda de NAC600 y Termix Tobillera). " +
+                  "Indica en 1 o 2 oraciones breves qué es exactamente la imagen:\n" +
+                  "- Si parece una constancia/voucher de pago (Yape, Plin, transferencia bancaria), inicia con 'POSIBLE COMPROBANTE DE PAGO (PENDIENTE DE VALIDACIÓN HUMANA):' y detalla banco/app, monto visible, fecha y destinatario si se leen.\n" +
+                  "- Si NO es un comprobante de pago (ej. carnet, DNI, selfie, foto de un producto como NAC600 o Termix Tobillera, anuncio, receta médica u otro objeto), inicia con 'NO ES COMPROBANTE DE PAGO:' y describe qué muestra realmente la imagen.",
+              },
+              {
+                inlineData: {
+                  mimeType: cleanMime,
+                  data: base64Image,
+                },
+              },
+            ],
+          },
+        ],
+      }),
+      signal: AbortSignal.timeout(timeoutMs),
+    });
+
+    if (!gRes.ok) return null;
+    const data = await gRes.json();
+    const desc = data?.candidates?.[0]?.content?.parts?.[0]?.text?.trim();
+    return desc || null;
+  } catch (err) {
+    console.error("[inspectImage] Error inspeccionando imagen:", err);
+    return null;
+  }
+}
