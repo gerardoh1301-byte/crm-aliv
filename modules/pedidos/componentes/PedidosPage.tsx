@@ -523,9 +523,13 @@ export function PedidosPage() {
                         {p.dniCliente && <span>· DNI {p.dniCliente}</span>}
                       </p>
                       {(p.distrito || p.ciudad || p.direccionEnvio) && (
-                        <p className="text-xs text-muted-foreground flex items-center gap-1 mt-0.5 max-w-xs truncate">
-                          <MapPin className="h-3 w-3 shrink-0" />
-                          {[p.distrito, p.ciudad, p.direccionEnvio]
+                        <p className="text-xs text-muted-foreground flex items-center gap-1 mt-0.5 max-w-xs truncate" title={[p.ciudad, p.distrito && p.distrito.toLowerCase() !== p.ciudad?.toLowerCase() ? p.distrito : null, p.direccionEnvio].filter(Boolean).join(" — ")}>
+                          <MapPin className="h-3 w-3 shrink-0 text-emerald-600 dark:text-emerald-400" />
+                          {[
+                            p.ciudad,
+                            p.distrito && p.distrito.toLowerCase() !== p.ciudad?.toLowerCase() ? p.distrito : null,
+                            p.direccionEnvio,
+                          ]
                             .filter(Boolean)
                             .join(" — ")}
                         </p>

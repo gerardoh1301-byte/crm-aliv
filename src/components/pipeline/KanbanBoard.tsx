@@ -182,6 +182,10 @@ export function KanbanBoard({ initialColumns, filters, sort }: KanbanBoardProps)
             }
             probability={activeDeal.probability}
             docCount={activeDeal.docCount}
+            ciudad={activeDeal.ciudad}
+            distrito={activeDeal.distrito}
+            direccion={activeDeal.direccion}
+            numeroOrden={activeDeal.numeroOrden}
           />
         ) : null}
       </DragOverlay>

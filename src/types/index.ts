@@ -93,6 +93,11 @@ export interface DealWithContact extends Deal {
   contactEmail?: string | null;
   /** Documentos listos en la ficha del contacto (contador del kanban). */
   docCount?: number;
+  /** Datos de destino para pedidos COD y comercio electrónico */
+  ciudad?: string | null;
+  distrito?: string | null;
+  direccion?: string | null;
+  numeroOrden?: string | null;
 }
 
 export interface ContactWithDeals extends Contact {

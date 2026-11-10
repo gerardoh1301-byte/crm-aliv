@@ -1,5 +1,6 @@
 import { db } from "@/db";
 import { pipelines, pipelineStages, deals, contacts } from "@/db/schema";
+import { pedidosOrdenes } from "../../../modules/pedidos/tabla";
 import { eq, asc } from "drizzle-orm";
 import { redirect } from "next/navigation";
 import { getCurrentMember, ownerFilter } from "@/lib/team";
@@ -38,9 +39,15 @@ export default async function PipelinePage() {
       contactName: contacts.name,
       contactPhone: contacts.phone,
       contactEmail: contacts.email,
+      contactCustomFields: contacts.customFields,
+      ordenNumero: pedidosOrdenes.numeroOrden,
+      ordenCiudad: pedidosOrdenes.ciudad,
+      ordenDistrito: pedidosOrdenes.distrito,
+      ordenDireccion: pedidosOrdenes.direccionEnvio,
     })
     .from(deals)
     .leftJoin(contacts, eq(deals.contactId, contacts.id))
+    .leftJoin(pedidosOrdenes, eq(deals.id, pedidosOrdenes.dealId))
     // Un asesor ve solo las operaciones de sus contactos.
     .where(ownerFilter(member));
 
@@ -54,22 +61,33 @@ export default async function PipelinePage() {
     stages: allStages.filter((s) => s.pipelineId === p.id),
   }));
 
-  const dealsForClient: DealWithContact[] = dealRows.map((d) => ({
-    id: d.id,
-    title: d.title,
-    value: d.value,
-    stageId: d.stageId,
-    contactId: d.contactId,
-    expectedClose: d.expectedClose,
-    probability: d.probability,
-    notes: d.notes,
-    createdAt: d.createdAt,
-    updatedAt: d.updatedAt,
-    contactName: d.contactName,
-    contactPhone: d.contactPhone,
-    contactEmail: d.contactEmail,
-    docCount: docCounts[d.contactId] ?? 0,
-  }));
+  const dealsForClient: DealWithContact[] = dealRows.map((d) => {
+    const cf = (d.contactCustomFields || {}) as Record<string, any>;
+    const ciudad = d.ordenCiudad || cf.departamento_ciudad || cf.ciudad || null;
+    const distrito = d.ordenDistrito || cf.distrito || null;
+    const direccion = d.ordenDireccion || cf.direccion_envio || cf.direccion || null;
+
+    return {
+      id: d.id,
+      title: d.title,
+      value: d.value,
+      stageId: d.stageId,
+      contactId: d.contactId,
+      expectedClose: d.expectedClose,
+      probability: d.probability,
+      notes: d.notes,
+      createdAt: d.createdAt,
+      updatedAt: d.updatedAt,
+      contactName: d.contactName,
+      contactPhone: d.contactPhone,
+      contactEmail: d.contactEmail,
+      docCount: docCounts[d.contactId] ?? 0,
+      ciudad,
+      distrito,
+      direccion,
+      numeroOrden: d.ordenNumero,
+    };
+  });
 
   return (
     <PipelineWorkspace

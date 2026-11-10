@@ -8,6 +8,7 @@ import { eq, or, desc } from "drizzle-orm";
 import { requireAdmin } from "@/lib/api-auth";
 import { resolveDefaultTenantId } from "@/lib/tenants";
 import { sincronizarConGoogleDrive } from "@/lib/drive-sync";
+import { extraerDatosFormularioShopify } from "@/lib/shopify/form-extractor";
 
 export const dynamic = "force-dynamic";
 
@@ -316,23 +317,15 @@ export async function POST(req: NextRequest) {
         .limit(1);
 
       if (!ya) {
-        // Enviar por el pipeline estándar de webhook
-        const customer = (po.customer ?? {}) as Record<string, unknown>;
-        const shipping = ((po.shipping_address || po.billing_address) ?? {}) as Record<
-          string,
-          unknown
-        >;
-        const nombre =
-          [shipping.first_name ?? customer.first_name, shipping.last_name ?? customer.last_name]
-            .filter(Boolean)
-            .join(" ") || "Cliente Shopify";
-        const telefono = normalizarTelefonoPeru(
-          String(shipping.phone || customer.phone || "")
-        );
-        const email = String(customer.email || "").trim().toLowerCase() || null;
-        const ciudad = String(shipping.province || shipping.city || "Lima");
-        const distrito = shipping.city ? String(shipping.city) : null;
-        const direccion = [shipping.address1, shipping.address2].filter(Boolean).join(" — ");
+        // Extraer campos del formulario EasySell y Shopify
+        const datosForm = extraerDatosFormularioShopify(po);
+        const nombre = datosForm.nombreCliente;
+        const telefono = datosForm.telefono;
+        const email = datosForm.email;
+        const ciudad = datosForm.ciudad;
+        const distrito = datosForm.distrito;
+        const direccion = datosForm.direccionEnvio;
+        const dni = datosForm.dni;
 
         let contactId: string | null = null;
         if (telefono || email) {
@@ -340,11 +333,29 @@ export async function POST(req: NextRequest) {
           if (telefono) conds.push(eq(contacts.phone, telefono));
           if (email) conds.push(eq(contacts.email, email));
           const [existente] = await db
-            .select({ id: contacts.id })
+            .select({ id: contacts.id, customFields: contacts.customFields })
             .from(contacts)
             .where(conds.length === 1 ? conds[0] : or(...conds))
             .limit(1);
-          if (existente) contactId = existente.id;
+          if (existente) {
+            contactId = existente.id;
+            const cf = (existente.customFields || {}) as Record<string, any>;
+            await db
+              .update(contacts)
+              .set({
+                customFields: {
+                  ...cf,
+                  departamento_ciudad: ciudad || cf.departamento_ciudad,
+                  distrito: distrito || cf.distrito,
+                  direccion_envio: direccion || cf.direccion_envio,
+                  dni_ruc: dni || cf.dni_ruc,
+                  modalidad_entrega: datosForm.esProvincia
+                    ? "Agencia Shalom / Olva (Provincia)"
+                    : "Contraentrega Domicilio (Lima)",
+                },
+              })
+              .where(eq(contacts.id, existente.id));
+          }
         }
 
         if (!contactId) {
@@ -362,6 +373,10 @@ export async function POST(req: NextRequest) {
                 departamento_ciudad: ciudad,
                 ...(distrito ? { distrito } : {}),
                 ...(direccion ? { direccion_envio: direccion } : {}),
+                ...(dni ? { dni_ruc: dni } : {}),
+                modalidad_entrega: datosForm.esProvincia
+                  ? "Agencia Shalom / Olva (Provincia)"
+                  : "Contraentrega Domicilio (Lima)",
               },
               tenantId,
             })
@@ -404,7 +419,7 @@ export async function POST(req: NextRequest) {
           ),
         });
 
-        const esProv = !ciudad.toLowerCase().includes("lima") && !ciudad.toLowerCase().includes("callao");
+        const esProv = datosForm.esProvincia;
         const totalNum = Number(po.total_price) || 0;
         const saldoNum = Math.max(0, totalNum - 20);
 

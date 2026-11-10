@@ -12,6 +12,7 @@ import {
   FileText,
   CheckSquare,
   Calendar,
+  MapPin,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { avatarBg, getInitials } from "@/lib/avatar";
@@ -30,6 +31,10 @@ export interface DealCardProps {
   expectedClose?: Date | string | null;
   notes?: string | null;
   docCount?: number;
+  ciudad?: string | null;
+  distrito?: string | null;
+  direccion?: string | null;
+  numeroOrden?: string | null;
 }
 
 export function DealCard({
@@ -42,6 +47,9 @@ export function DealCard({
   probability,
   expectedClose,
   docCount = 0,
+  ciudad,
+  distrito,
+  direccion,
 }: DealCardProps) {
   const router = useRouter();
   const {
@@ -123,6 +131,31 @@ export function DealCard({
             {contactName || "Sin contacto"}
           </span>
         </div>
+
+        {/* Destino y dirección de entrega recopilada */}
+        {(direccion || ciudad || distrito) && (
+          <div
+            onClick={handleContactNavigate}
+            title={[ciudad, distrito && distrito.toLowerCase() !== ciudad?.toLowerCase() ? distrito : null, direccion]
+              .filter(Boolean)
+              .join(" — ")}
+            className="flex items-start gap-1.5 text-[11px] text-muted-foreground bg-muted/40 hover:bg-muted/70 rounded px-2 py-1.5 border border-border/40 transition-colors cursor-pointer"
+          >
+            <MapPin className="h-3.5 w-3.5 shrink-0 text-emerald-600 dark:text-emerald-400 mt-0.5" />
+            <div className="leading-tight min-w-0 flex-1">
+              {ciudad && (
+                <span className="font-semibold text-foreground mr-1">
+                  {ciudad}
+                  {distrito && distrito.toLowerCase() !== ciudad.toLowerCase() ? ` (${distrito})` : ""}
+                  :
+                </span>
+              )}
+              <span className="line-clamp-2 text-foreground/80">
+                {direccion || "Dirección pendiente"}
+              </span>
+            </div>
+          </div>
+        )}
 
         <div className="flex items-center gap-2 pt-1">
           <div className="h-1 flex-1 bg-muted rounded-full overflow-hidden">

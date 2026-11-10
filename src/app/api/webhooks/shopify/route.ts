@@ -8,6 +8,7 @@ import { sincronizarConGoogleDrive } from "@/lib/drive-sync";
 import { pedidosOrdenes, type ItemPedido } from "../../../../../modules/pedidos/tabla";
 import { sincronizarEtapaPipeline } from "../../../../../modules/pedidos/servidor";
 import { emitAutomationEvent } from "@/lib/automations";
+import { extraerDatosFormularioShopify } from "@/lib/shopify/form-extractor";
 
 export const dynamic = "force-dynamic";
 
@@ -150,22 +151,14 @@ export async function POST(req: NextRequest) {
   }
 
   const tenantId = await resolveDefaultTenantId();
-  const shipping = payload.shipping_address || payload.billing_address;
-  const customer = payload.customer;
-
-  const nombre =
-    [shipping?.first_name ?? customer?.first_name, shipping?.last_name ?? customer?.last_name]
-      .filter(Boolean)
-      .join(" ")
-      .trim() ||
-    customer?.first_name ||
-    shipping?.first_name ||
-    "Cliente Shopify Aliv";
-
-  const telefono = normalizarTelefonoPeru(
-    shipping?.phone || customer?.phone || payload.billing_address?.phone
-  );
-  const email = customer?.email?.trim().toLowerCase() || null;
+  const datosForm = extraerDatosFormularioShopify(payload as Record<string, any>);
+  const nombre = datosForm.nombreCliente;
+  const telefono = datosForm.telefono;
+  const email = datosForm.email;
+  const ciudad = datosForm.ciudad;
+  const distrito = datosForm.distrito;
+  const direccion = datosForm.direccionEnvio;
+  const dni = datosForm.dni;
 
   // Buscar o crear contacto
   let contactId: string | null = null;
@@ -174,16 +167,31 @@ export async function POST(req: NextRequest) {
     if (telefono) conds.push(eq(contacts.phone, telefono));
     if (email) conds.push(eq(contacts.email, email));
     const [existente] = await db
-      .select({ id: contacts.id })
+      .select({ id: contacts.id, customFields: contacts.customFields })
       .from(contacts)
       .where(conds.length === 1 ? conds[0] : or(...conds))
       .limit(1);
-    if (existente) contactId = existente.id;
+    if (existente) {
+      contactId = existente.id;
+      // Actualizar customFields del contacto con la dirección más reciente si no la tenía
+      const cf = (existente.customFields || {}) as Record<string, any>;
+      await db
+        .update(contacts)
+        .set({
+          customFields: {
+            ...cf,
+            departamento_ciudad: ciudad || cf.departamento_ciudad,
+            distrito: distrito || cf.distrito,
+            direccion_envio: direccion || cf.direccion_envio,
+            dni_ruc: dni || cf.dni_ruc,
+            modalidad_entrega: datosForm.esProvincia
+              ? "Agencia Shalom / Olva (Provincia)"
+              : "Contraentrega Domicilio (Lima)",
+          },
+        })
+        .where(eq(contacts.id, existente.id));
+    }
   }
-
-  const direccion = [shipping?.address1, shipping?.address2].filter(Boolean).join(" — ");
-  const ciudad = shipping?.province || shipping?.city || "Lima";
-  const distrito = shipping?.city || null;
 
   const tags = ["shopify", "alivstore"];
   if (payload.tags?.includes("easysell")) {
@@ -204,9 +212,10 @@ export async function POST(req: NextRequest) {
           departamento_ciudad: ciudad,
           ...(distrito ? { distrito } : {}),
           ...(direccion ? { direccion_envio: direccion } : {}),
-          modalidad_entrega: ciudad.toLowerCase().includes("lima")
-            ? "Contraentrega Domicilio (Lima)"
-            : "Agencia / Courier Provincia",
+          ...(dni ? { dni_ruc: dni } : {}),
+          modalidad_entrega: datosForm.esProvincia
+            ? "Agencia Shalom / Olva (Provincia)"
+            : "Contraentrega Domicilio (Lima)",
         },
         tenantId,
       })
@@ -260,7 +269,7 @@ export async function POST(req: NextRequest) {
       items,
       total: String(payload.total_price ?? "0.00"),
       moneda: payload.currency || "PEN",
-      dniCliente: payload.shipping_address?.company || null,
+      dniCliente: dni || payload.shipping_address?.company || null,
       ciudad,
       distrito,
       direccionEnvio: direccion || null,
@@ -269,7 +278,7 @@ export async function POST(req: NextRequest) {
         `Pedido web ${numeroOrden} desde ${shopDomain} (Canal: ${payload.gateway || "EasySell COD Form"})`,
     });
 
-    const esProv = !ciudad.toLowerCase().includes("lima") && !ciudad.toLowerCase().includes("callao");
+    const esProv = datosForm.esProvincia;
     const totalNum = Number(payload.total_price) || 0;
     const saldoNum = Math.max(0, totalNum - 20);
 
