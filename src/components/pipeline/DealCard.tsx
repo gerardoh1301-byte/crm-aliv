@@ -16,12 +16,17 @@ import {
   Calendar,
   MapPin,
   Printer,
+  Truck,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { avatarBg, getInitials } from "@/lib/avatar";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { RotuloMotorizadoModal, type RotuloData } from "./RotuloMotorizadoModal";
+import {
+  SeguimientoShalomModal,
+  type SeguimientoShalomData,
+} from "./SeguimientoShalomModal";
 
 export interface DealCardProps {
   id: string;
@@ -43,6 +48,11 @@ export interface DealCardProps {
   dniCliente?: string | null;
   stageKey?: string | null;
   stageName?: string | null;
+  pedidoId?: string | null;
+  transportadora?: string | null;
+  numeroGuia?: string | null;
+  claveRecojo?: string | null;
+  estadoPedido?: string | null;
 }
 
 export function DealCard({
@@ -63,9 +73,15 @@ export function DealCard({
   dniCliente,
   stageKey,
   stageName,
+  pedidoId,
+  transportadora,
+  numeroGuia,
+  claveRecojo,
+  estadoPedido,
 }: DealCardProps) {
   const router = useRouter();
   const [rotuloOpen, setRotuloOpen] = useState(false);
+  const [shalomOpen, setShalomOpen] = useState(false);
   const {
     attributes,
     listeners,
@@ -95,12 +111,25 @@ export function DealCard({
       })
     : null;
 
-  // Detección de orden de Lima para despacho con motorizado
+  // Detección de orden de Lima para despacho con motorizado vs Shalom / Provincia
   const ciudadLower = (ciudad || "").toLowerCase();
+  const distritoLower = (distrito || "").toLowerCase();
+  const transportadoraLower = (transportadora || "").toLowerCase();
+
+  // Es Lima solo si la ciudad o distrito explícitamente es Lima o Callao
   const esLima =
     ciudadLower.includes("lima") ||
     ciudadLower.includes("callao") ||
-    (!ciudadLower && Boolean(direccion));
+    distritoLower.includes("lima") ||
+    distritoLower.includes("callao");
+
+  // Es Provincia / Shalom si la ciudad no es Lima o la transportadora indica Shalom
+  const esProvincia = Boolean(ciudadLower) && !esLima;
+  const esShalom =
+    transportadoraLower.includes("shalom") ||
+    esProvincia ||
+    Boolean(numeroGuia) ||
+    Boolean(claveRecojo);
 
   // Aplica cuando la orden está confirmada, preparando o en reparto
   const stageKeyLower = (stageKey || "").toLowerCase();
@@ -116,10 +145,11 @@ export function DealCard({
     stageNameLower.includes("despachad");
 
   const mostrarBotonRotulo = esLima && esConfirmadoODespacho;
+  const mostrarBotonShalom = esShalom && esConfirmadoODespacho;
 
   const numeroOrdenLimpio =
     numeroOrden ||
-    (title.startsWith("#") ? title.split("·")[0].trim() : "PEDIDO-LIMA");
+    (title.startsWith("#") ? title.split("·")[0].trim() : "PEDIDO-ALIV");
 
   const rotuloData: RotuloData = {
     numeroOrden: numeroOrdenLimpio,
@@ -131,6 +161,24 @@ export function DealCard({
     direccion: direccion || "",
     referencia: referencia || null,
     total: value || 0,
+  };
+
+  const shalomData: SeguimientoShalomData = {
+    pedidoId: pedidoId || null,
+    dealId: id,
+    numeroOrden: numeroOrdenLimpio,
+    clienteNombre: contactName || "Cliente Aliv",
+    telefono: contactPhone || "",
+    dni: dniCliente || null,
+    ciudad: ciudad || "Provincia",
+    distrito: distrito || null,
+    direccion: direccion || "",
+    referencia: referencia || null,
+    total: value || 0,
+    numeroGuia: numeroGuia || null,
+    claveRecojo: claveRecojo || null,
+    transportadora: transportadora || "Shalom",
+    estadoPedido: estadoPedido || null,
   };
 
   const handleContactNavigate = (e: React.MouseEvent) => {
@@ -224,6 +272,37 @@ export function DealCard({
           >
             <Printer className="h-3.5 w-3.5" />
             <span>Rótulo Motorizado (10.5×9 cm)</span>
+          </Button>
+        )}
+
+        {/* Botón de Seguimiento Shalom (Para órdenes de Provincia / Shalom confirmadas o en despacho) */}
+        {mostrarBotonShalom && (
+          <Button
+            type="button"
+            size="sm"
+            variant="outline"
+            onClick={(e) => {
+              e.stopPropagation();
+              setShalomOpen(true);
+            }}
+            title={
+              numeroGuia
+                ? `Guía Shalom: ${numeroGuia}${claveRecojo ? ` (Clave: ${claveRecojo})` : ""}`
+                : "Registrar seguimiento y guía de Shalom"
+            }
+            className={cn(
+              "w-full h-7 text-[11px] font-bold flex items-center justify-center gap-1.5 shadow-none transition-all cursor-pointer",
+              numeroGuia
+                ? "bg-red-500/10 hover:bg-red-500/20 text-red-700 dark:text-red-400 border border-red-500/30"
+                : "bg-amber-500/10 hover:bg-amber-500/20 text-amber-700 dark:text-amber-400 border border-amber-500/30"
+            )}
+          >
+            <Truck className="h-3.5 w-3.5 shrink-0 text-red-600" />
+            <span className="truncate">
+              {numeroGuia
+                ? `Shalom: #${numeroGuia}${claveRecojo ? ` · ${claveRecojo}` : ""}`
+                : "Registrar Guía Shalom"}
+            </span>
           </Button>
         )}
 
@@ -391,6 +470,14 @@ export function DealCard({
           open={rotuloOpen}
           onOpenChange={setRotuloOpen}
           data={rotuloData}
+        />
+      )}
+
+      {mostrarBotonShalom && (
+        <SeguimientoShalomModal
+          open={shalomOpen}
+          onOpenChange={setShalomOpen}
+          data={shalomData}
         />
       )}
     </Card>

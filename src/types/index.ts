@@ -102,6 +102,11 @@ export interface DealWithContact extends Deal {
   dniCliente?: string | null;
   stageKey?: string | null;
   stageName?: string | null;
+  pedidoId?: string | null;
+  transportadora?: string | null;
+  numeroGuia?: string | null;
+  claveRecojo?: string | null;
+  estadoPedido?: string | null;
 }
 
 export interface ContactWithDeals extends Contact {

@@ -40,11 +40,16 @@ export default async function PipelinePage() {
       contactPhone: contacts.phone,
       contactEmail: contacts.email,
       contactCustomFields: contacts.customFields,
+      ordenId: pedidosOrdenes.id,
       ordenNumero: pedidosOrdenes.numeroOrden,
       ordenCiudad: pedidosOrdenes.ciudad,
       ordenDistrito: pedidosOrdenes.distrito,
       ordenDireccion: pedidosOrdenes.direccionEnvio,
       ordenDni: pedidosOrdenes.dniCliente,
+      ordenTransportadora: pedidosOrdenes.transportadora,
+      ordenNumeroGuia: pedidosOrdenes.numeroGuia,
+      ordenClaveRecojo: pedidosOrdenes.claveRecojo,
+      ordenEstado: pedidosOrdenes.estado,
     })
     .from(deals)
     .leftJoin(contacts, eq(deals.contactId, contacts.id))
@@ -93,6 +98,11 @@ export default async function PipelinePage() {
       dniCliente: dni,
       stageKey: stage?.key || null,
       stageName: stage?.name || null,
+      pedidoId: d.ordenId || null,
+      transportadora: d.ordenTransportadora || null,
+      numeroGuia: d.ordenNumeroGuia || null,
+      claveRecojo: d.ordenClaveRecojo || null,
+      estadoPedido: d.ordenEstado || null,
     };
   });
 
