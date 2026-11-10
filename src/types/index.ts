@@ -97,7 +97,11 @@ export interface DealWithContact extends Deal {
   ciudad?: string | null;
   distrito?: string | null;
   direccion?: string | null;
+  referencia?: string | null;
   numeroOrden?: string | null;
+  dniCliente?: string | null;
+  stageKey?: string | null;
+  stageName?: string | null;
 }
 
 export interface ContactWithDeals extends Contact {

@@ -96,7 +96,10 @@ export function KanbanBoard({ initialColumns, filters, sort }: KanbanBoardProps)
           if (col.id === overColumn.id) {
             return {
               ...col,
-              deals: [...col.deals, { ...activeDeal, stageId: col.id }],
+              deals: [
+                ...col.deals,
+                { ...activeDeal, stageId: col.id, stageName: col.name },
+              ],
             };
           }
           return col;

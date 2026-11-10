@@ -1,6 +1,8 @@
 "use client";
 
+import { useState } from "react";
 import { Card } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
 import { formatCurrency } from "@/lib/constants";
 import { useSortable } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
@@ -13,11 +15,13 @@ import {
   CheckSquare,
   Calendar,
   MapPin,
+  Printer,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { avatarBg, getInitials } from "@/lib/avatar";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
+import { RotuloMotorizadoModal, type RotuloData } from "./RotuloMotorizadoModal";
 
 export interface DealCardProps {
   id: string;
@@ -34,7 +38,11 @@ export interface DealCardProps {
   ciudad?: string | null;
   distrito?: string | null;
   direccion?: string | null;
+  referencia?: string | null;
   numeroOrden?: string | null;
+  dniCliente?: string | null;
+  stageKey?: string | null;
+  stageName?: string | null;
 }
 
 export function DealCard({
@@ -50,8 +58,14 @@ export function DealCard({
   ciudad,
   distrito,
   direccion,
+  referencia,
+  numeroOrden,
+  dniCliente,
+  stageKey,
+  stageName,
 }: DealCardProps) {
   const router = useRouter();
+  const [rotuloOpen, setRotuloOpen] = useState(false);
   const {
     attributes,
     listeners,
@@ -80,6 +94,44 @@ export function DealCard({
         month: "short",
       })
     : null;
+
+  // Detección de orden de Lima para despacho con motorizado
+  const ciudadLower = (ciudad || "").toLowerCase();
+  const esLima =
+    ciudadLower.includes("lima") ||
+    ciudadLower.includes("callao") ||
+    (!ciudadLower && Boolean(direccion));
+
+  // Aplica cuando la orden está confirmada, preparando o en reparto
+  const stageKeyLower = (stageKey || "").toLowerCase();
+  const stageNameLower = (stageName || "").toLowerCase();
+  const esConfirmadoODespacho =
+    stageKeyLower.includes("confirmad") ||
+    stageKeyLower.includes("reparto") ||
+    stageKeyLower.includes("enviad") ||
+    stageKeyLower.includes("preparand") ||
+    stageNameLower.includes("confirmad") ||
+    stageNameLower.includes("reparto") ||
+    stageNameLower.includes("camino") ||
+    stageNameLower.includes("despachad");
+
+  const mostrarBotonRotulo = esLima && esConfirmadoODespacho;
+
+  const numeroOrdenLimpio =
+    numeroOrden ||
+    (title.startsWith("#") ? title.split("·")[0].trim() : "PEDIDO-LIMA");
+
+  const rotuloData: RotuloData = {
+    numeroOrden: numeroOrdenLimpio,
+    clienteNombre: contactName || "Cliente Aliv",
+    telefono: contactPhone || "",
+    dni: dniCliente || null,
+    ciudad: ciudad || "Lima",
+    distrito: distrito || null,
+    direccion: direccion || "",
+    referencia: referencia || null,
+    total: value || 0,
+  };
 
   const handleContactNavigate = (e: React.MouseEvent) => {
     e.stopPropagation();
@@ -155,6 +207,24 @@ export function DealCard({
               </span>
             </div>
           </div>
+        )}
+
+        {/* Botón de Rótulo Motorizado (Solo para órdenes de Lima/Callao confirmadas o en despacho) */}
+        {mostrarBotonRotulo && (
+          <Button
+            type="button"
+            size="sm"
+            variant="outline"
+            onClick={(e) => {
+              e.stopPropagation();
+              setRotuloOpen(true);
+            }}
+            title="Generar e imprimir rótulo 10.5 × 9.0 cm para motorizado"
+            className="w-full h-7 text-[11px] font-bold bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-700 dark:text-emerald-400 border border-emerald-500/30 flex items-center justify-center gap-1.5 shadow-none transition-all cursor-pointer"
+          >
+            <Printer className="h-3.5 w-3.5" />
+            <span>Rótulo Motorizado (10.5×9 cm)</span>
+          </Button>
         )}
 
         <div className="flex items-center gap-2 pt-1">
@@ -315,6 +385,14 @@ export function DealCard({
           </button>
         </div>
       </div>
+
+      {mostrarBotonRotulo && (
+        <RotuloMotorizadoModal
+          open={rotuloOpen}
+          onOpenChange={setRotuloOpen}
+          data={rotuloData}
+        />
+      )}
     </Card>
   );
 }

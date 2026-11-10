@@ -1,7 +1,7 @@
 import { db } from "@/db";
 import { pipelines, pipelineStages, deals, contacts } from "@/db/schema";
 import { pedidosOrdenes } from "../../../modules/pedidos/tabla";
-import { eq, asc } from "drizzle-orm";
+import { eq, asc, or } from "drizzle-orm";
 import { redirect } from "next/navigation";
 import { getCurrentMember, ownerFilter } from "@/lib/team";
 import { countDocumentsByContact } from "@/lib/documents";
@@ -44,10 +44,11 @@ export default async function PipelinePage() {
       ordenCiudad: pedidosOrdenes.ciudad,
       ordenDistrito: pedidosOrdenes.distrito,
       ordenDireccion: pedidosOrdenes.direccionEnvio,
+      ordenDni: pedidosOrdenes.dniCliente,
     })
     .from(deals)
     .leftJoin(contacts, eq(deals.contactId, contacts.id))
-    .leftJoin(pedidosOrdenes, eq(deals.id, pedidosOrdenes.dealId))
+    .leftJoin(pedidosOrdenes, or(eq(deals.id, pedidosOrdenes.dealId), eq(deals.contactId, pedidosOrdenes.contactId)))
     // Un asesor ve solo las operaciones de sus contactos.
     .where(ownerFilter(member));
 
@@ -66,6 +67,8 @@ export default async function PipelinePage() {
     const ciudad = d.ordenCiudad || cf.departamento_ciudad || cf.ciudad || null;
     const distrito = d.ordenDistrito || cf.distrito || null;
     const direccion = d.ordenDireccion || cf.direccion_envio || cf.direccion || null;
+    const dni = d.ordenDni || cf.dni_ruc || cf.dni || null;
+    const stage = allStages.find((s) => s.id === d.stageId);
 
     return {
       id: d.id,
@@ -85,7 +88,11 @@ export default async function PipelinePage() {
       ciudad,
       distrito,
       direccion,
+      referencia: cf.referencia || null,
       numeroOrden: d.ordenNumero,
+      dniCliente: dni,
+      stageKey: stage?.key || null,
+      stageName: stage?.name || null,
     };
   });
 
