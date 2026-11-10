@@ -395,6 +395,7 @@ async function buscarPrecioEnCatalogo(nombreOSku: string): Promise<{
  */
 const PRECIOS_POR_CANTIDAD: Record<string, Record<number, number>> = {
   "ALIV-NAC600": { 1: 119, 2: 189, 3: 199 },
+  "ALIV-TERMIX-TOB": { 1: 99, 2: 169, 3: 219 },
 };
 
 function subtotalConOfertas(sku: string, cantidad: number, precioUnitario: number): number {
