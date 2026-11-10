@@ -1,7 +1,7 @@
 import "server-only";
 import { db } from "@/db";
 import { activities, channelAccounts, contacts, conversations, pipelineStages, pipelines } from "@/db/schema";
-import { and, eq, sql } from "drizzle-orm";
+import { and, desc, eq, or, sql } from "drizzle-orm";
 import { notifyMember } from "@/lib/notifications";
 import { resolveConversationId } from "@/lib/conversations";
 import { deliverMessage } from "@/lib/channels/deliver";
@@ -277,32 +277,52 @@ const sendMessage: ActionDef = {
         .limit(1);
 
       if (contact?.phone) {
-        // Buscar cuenta activa de WhatsApp (Zernio o directa)
-        const [account] = await db
-          .select()
-          .from(channelAccounts)
-          .where(and(eq(channelAccounts.platform, "whatsapp"), eq(channelAccounts.status, "active")))
+        // Verificar primero si ya existia una conversacion previa por contacto o por telefono
+        const [existente] = await db
+          .select({ id: conversations.id })
+          .from(conversations)
+          .where(
+            and(
+              eq(conversations.channel, "whatsapp"),
+              or(
+                eq(conversations.contactId, contact.id),
+                eq(conversations.participantId, contact.phone)
+              )
+            )
+          )
+          .orderBy(desc(conversations.createdAt))
           .limit(1);
 
-        const accountId = account?.id ?? null;
-        const provider = account?.provider ?? "zernio";
+        if (existente) {
+          conversationId = existente.id;
+        } else {
+          // Buscar cuenta activa de WhatsApp (Zernio o directa)
+          const [account] = await db
+            .select()
+            .from(channelAccounts)
+            .where(and(eq(channelAccounts.platform, "whatsapp"), eq(channelAccounts.status, "active")))
+            .limit(1);
 
-        const [createdConv] = await db
-          .insert(conversations)
-          .values({
-            tenantId: contact.tenantId,
-            accountId,
-            contactId: contact.id,
-            channel: "whatsapp",
-            provider,
-            externalId: `zernio:${contact.phone}`,
-            participantId: contact.phone,
-            participantName: contact.name,
-            status: "active",
-          })
-          .returning({ id: conversations.id });
+          const accountId = account?.id ?? null;
+          const provider = account?.provider ?? "zernio";
 
-        conversationId = createdConv?.id ?? null;
+          const [createdConv] = await db
+            .insert(conversations)
+            .values({
+              tenantId: contact.tenantId,
+              accountId,
+              contactId: contact.id,
+              channel: "whatsapp",
+              provider,
+              externalId: `zernio:${contact.phone}`,
+              participantId: contact.phone,
+              participantName: contact.name,
+              status: "active",
+            })
+            .returning({ id: conversations.id });
+
+          conversationId = createdConv?.id ?? null;
+        }
       }
     }
 

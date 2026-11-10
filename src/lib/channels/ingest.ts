@@ -216,6 +216,37 @@ export async function upsertConversation(
 ): Promise<typeof conversations.$inferSelect> {
   const now = new Date();
 
+  // Si ya existia una conversacion para este contacto con un externalId provisorio (ej. 'zernio:+51...'),
+  // actualizar el externalId real del proveedor para evitar duplicar el hilo de chat.
+  const [provisoria] = await db
+    .select({ id: conversations.id })
+    .from(conversations)
+    .where(
+      and(
+        eq(conversations.contactId, input.contactId),
+        eq(conversations.channel, input.channel),
+        sql`${conversations.externalId} LIKE 'zernio:%'`
+      )
+    )
+    .limit(1);
+
+  if (provisoria) {
+    const [actualizada] = await db
+      .update(conversations)
+      .set({
+        externalId: input.externalId,
+        accountId: input.accountId,
+        participantName: input.participantName ?? undefined,
+        participantHandle: input.participantHandle ?? undefined,
+        participantPicture: input.participantPicture ?? undefined,
+        ...(input.metadata ? { metadata: input.metadata } : {}),
+        updatedAt: now,
+      })
+      .where(eq(conversations.id, provisoria.id))
+      .returning();
+    if (actualizada) return actualizada;
+  }
+
   const [row] = await db
     .insert(conversations)
     .values({

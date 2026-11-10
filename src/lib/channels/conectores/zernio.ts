@@ -31,7 +31,7 @@ export const zernio: Conector = {
       };
     }
 
-    const { sendMessage, extractMessageId } = await import("@/lib/zernio/inbox");
+    const { sendMessage, createConversation, extractMessageId } = await import("@/lib/zernio/inbox");
 
     // La etiqueta la decide el servidor, no el cliente: es politica de Meta y el front
     // no es confiable para cumplirla. Fuera de las 24h, IG y Messenger solo aceptan
@@ -41,27 +41,81 @@ export const zernio: Conector = {
       caps.humanAgentTag &&
       isOutsideFreeFormWindow(ctx.channel, ctx.conversation.lastInboundAt);
 
-    const result = await sendMessage(ctx.conversation.externalId, {
-      accountId,
-      ...(msg.template
-        ? {
-            template: {
-              name: msg.template.name,
-              language: msg.template.language ?? "es",
-              components: msg.template.components ?? [],
-            },
-          }
-        : { message: text }),
-      ...(needsTag
-        ? { messageTag: "HUMAN_AGENT" as const, messagingType: "MESSAGE_TAG" as const }
-        : {}),
-    });
+    const isPlaceholderId =
+      !ctx.conversation.externalId ||
+      ctx.conversation.externalId.startsWith("zernio:") ||
+      ctx.conversation.externalId.includes(":");
 
-    if (!result.success) {
+    let result: Awaited<ReturnType<typeof sendMessage>> | null = null;
+
+    if (!isPlaceholderId) {
+      result = await sendMessage(ctx.conversation.externalId, {
+        accountId,
+        ...(msg.template
+          ? {
+              template: {
+                name: msg.template.name,
+                language: msg.template.language ?? "es",
+                components: msg.template.components ?? [],
+              },
+            }
+          : { message: text }),
+        ...(needsTag
+          ? { messageTag: "HUMAN_AGENT" as const, messagingType: "MESSAGE_TAG" as const }
+          : {}),
+      });
+    }
+
+    // Si la conversación no existía en Zernio (placeholder) o Zernio respondió CONVERSATION_NOT_FOUND:
+    if (
+      isPlaceholderId ||
+      (!result?.success && (result?.error?.code === "CONVERSATION_NOT_FOUND" || result?.error?.status === 404))
+    ) {
+      const participant =
+        ctx.conversation.participantId?.replace(/^\+/, "") ||
+        ctx.conversation.externalId?.replace(/^zernio:\+?/, "");
+
+      if (participant) {
+        console.log(`[zernio] Creando conversación para iniciar contacto con participante ${participant}...`);
+        const createResult = await createConversation({
+          accountId,
+          participantId: participant,
+          message: text,
+          ...(msg.template
+            ? {
+                templateName: msg.template.name,
+                templateLanguage: msg.template.language ?? "es",
+              }
+            : {}),
+        });
+
+        if (createResult.success) {
+          const newExternalId = createResult.data.conversationId || createResult.data.id;
+          if (newExternalId) {
+            const { db } = await import("@/db");
+            const { conversations } = await import("@/db/schema");
+            const { eq } = await import("drizzle-orm");
+            await db
+              .update(conversations)
+              .set({ externalId: newExternalId, updatedAt: new Date() })
+              .where(eq(conversations.id, ctx.conversation.id))
+              .catch((err) => console.error("[zernio] Error actualizando externalId de conversación:", err));
+          }
+          return {
+            success: true,
+            externalId: createResult.data.messageId ?? extractMessageId(createResult.data),
+          };
+        } else {
+          result = createResult as unknown as typeof result;
+        }
+      }
+    }
+
+    if (!result || !result.success) {
       return {
         success: false,
-        error: { message: result.error.message, code: result.error.code },
-        hint: hintForZernioError(result.error.status, ctx.channel, result.error.code),
+        error: { message: result?.error?.message ?? "Error enviando por Zernio", code: result?.error?.code },
+        hint: hintForZernioError(result?.error?.status, ctx.channel, result?.error?.code),
       };
     }
 
@@ -116,7 +170,7 @@ export const zernio: Conector = {
   },
 };
 
-function hintForZernioError(status: number, channel: Channel, code?: string): string | undefined {
+function hintForZernioError(status: number | undefined, channel: Channel, code?: string): string | undefined {
   if (code === "TEMPLATE_REQUIRED") {
     return "WhatsApp no permite texto libre fuera de la ventana de 24h: hay que mandar una plantilla aprobada.";
   }
