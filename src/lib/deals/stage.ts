@@ -1,6 +1,7 @@
 import "server-only";
 import { db } from "@/db";
 import { contacts, deals, pipelineStages, pipelines } from "@/db/schema";
+import { pedidosOrdenes } from "../../../modules/pedidos/tabla";
 import { eq } from "drizzle-orm";
 import { emitAutomationEvent } from "@/lib/automations";
 import type { DealStageChangedPayload } from "@/lib/automations/triggers";
@@ -48,6 +49,23 @@ export async function setDealStage(input: {
       .update(deals)
       .set({ stageId: input.stageId, updatedAt: new Date() })
       .where(eq(deals.id, deal.id));
+
+    // Si este deal está vinculado a una orden COD, mantener sincronizado el estado del pedido
+    const MAPA_ETAPA_A_ESTADO: Record<string, string> = {
+      por_confirmar_cod: "por_confirmar_cod",
+      pedido_confirmado: "confirmado",
+      en_reparto: "enviado",
+      entregado: "entregado",
+      cancelado_rechazado: "cancelado",
+    };
+    const stageKey = stage.key || "";
+    const nuevoEstado = stageKey ? MAPA_ETAPA_A_ESTADO[stageKey] : undefined;
+    if (nuevoEstado) {
+      await db
+        .update(pedidosOrdenes)
+        .set({ estado: nuevoEstado, updatedAt: new Date() })
+        .where(eq(pedidosOrdenes.dealId, deal.id));
+    }
   }
 
   const [pipeline] = await db

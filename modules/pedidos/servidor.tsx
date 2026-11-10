@@ -48,11 +48,13 @@ async function generarNumeroOrden(): Promise<string> {
   return `#ALIV-${siguiente}-${Math.floor(100 + Math.random() * 900)}`;
 }
 
-async function sincronizarEtapaPipeline(
+export async function sincronizarEtapaPipeline(
   contactId: string,
   estado: EstadoPedido,
   tituloOrden: string,
-  montoSoles: number
+  montoSoles: number,
+  pedidoId?: string,
+  dealId?: string | null
 ): Promise<string | null> {
   try {
     const claveEtapa = MAPA_ESTADO_A_ETAPA[estado];
@@ -73,12 +75,52 @@ async function sincronizarEtapaPipeline(
     const stage = stages.find((s) => s.key === claveEtapa) ?? stages[0];
     if (!stage) return null;
 
-    const [abierta] = await db
-      .select({ id: deals.id, stageId: deals.stageId })
-      .from(deals)
-      .where(eq(deals.contactId, contactId))
-      .orderBy(desc(deals.updatedAt))
-      .limit(1);
+    let abierta: { id: string; stageId: string } | null = null;
+
+    // 1. Si tenemos dealId explícito
+    if (dealId) {
+      const [porId] = await db
+        .select({ id: deals.id, stageId: deals.stageId })
+        .from(deals)
+        .where(eq(deals.id, dealId))
+        .limit(1);
+      if (porId) abierta = porId;
+    }
+
+    // 2. Si no, buscar deal del contacto cuyo título empiece con el número de orden
+    if (!abierta) {
+      const prefijo = tituloOrden.split(" · ")[0]?.trim();
+      if (prefijo) {
+        const [porPrefijo] = await db
+          .select({ id: deals.id, stageId: deals.stageId })
+          .from(deals)
+          .where(and(eq(deals.contactId, contactId), ilike(deals.title, `${prefijo}%`)))
+          .limit(1);
+        if (porPrefijo) abierta = porPrefijo;
+      }
+    }
+
+    // 3. Fallback: última deal del contacto no asignada a otra orden
+    if (!abierta) {
+      const [porContacto] = await db
+        .select({ id: deals.id, stageId: deals.stageId })
+        .from(deals)
+        .where(eq(deals.contactId, contactId))
+        .orderBy(desc(deals.updatedAt))
+        .limit(1);
+      if (porContacto) {
+        const [otra] = await db
+          .select({ id: pedidosOrdenes.id })
+          .from(pedidosOrdenes)
+          .where(eq(pedidosOrdenes.dealId, porContacto.id))
+          .limit(1);
+        if (!otra || (pedidoId && otra.id === pedidoId)) {
+          abierta = porContacto;
+        }
+      }
+    }
+
+    let finalDealId: string;
 
     if (abierta) {
       await db
@@ -92,21 +134,31 @@ async function sincronizarEtapaPipeline(
       if (abierta.stageId !== stage.id) {
         await setDealStage({ dealId: abierta.id, stageId: stage.id });
       }
-      return abierta.id;
+      finalDealId = abierta.id;
+    } else {
+      const [nueva] = await db
+        .insert(deals)
+        .values({
+          title: tituloOrden,
+          value: Math.round(montoSoles * 100),
+          stageId: stage.id,
+          contactId,
+        })
+        .returning({ id: deals.id });
+      await setDealStage({ dealId: nueva.id, stageId: stage.id, justCreated: true });
+      finalDealId = nueva.id;
     }
 
-    const [nueva] = await db
-      .insert(deals)
-      .values({
-        title: tituloOrden,
-        value: Math.round(montoSoles * 100),
-        stageId: stage.id,
-        contactId,
-      })
-      .returning({ id: deals.id });
-    await setDealStage({ dealId: nueva.id, stageId: stage.id, justCreated: true });
-    return nueva.id;
-  } catch {
+    if (pedidoId && finalDealId) {
+      await db
+        .update(pedidosOrdenes)
+        .set({ dealId: finalDealId })
+        .where(eq(pedidosOrdenes.id, pedidoId));
+    }
+
+    return finalDealId;
+  } catch (err) {
+    console.error("[sincronizarEtapaPipeline] error:", err);
     return null;
   }
 }
@@ -265,6 +317,8 @@ async function pedidoAccesible(
 ) {
   const [p] = await db
     .select({
+      id: pedidosOrdenes.id,
+      dealId: pedidosOrdenes.dealId,
       contactId: pedidosOrdenes.contactId,
       numeroOrden: pedidosOrdenes.numeroOrden,
       total: pedidosOrdenes.total,
@@ -323,7 +377,9 @@ const actualizar: HandlerModulo = async (req, { member, params }) => {
       actual.contactId,
       nuevoEstado,
       `${actual.numeroOrden} · ${primerProducto}`,
-      Number(actual.total) || 0
+      Number(actual.total) || 0,
+      actual.id,
+      actual.dealId
     );
 
     await db.insert(activities).values({

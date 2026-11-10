@@ -6,6 +6,7 @@ import { eq, or } from "drizzle-orm";
 import { resolveDefaultTenantId } from "@/lib/tenants";
 import { sincronizarConGoogleDrive } from "@/lib/drive-sync";
 import { pedidosOrdenes, type ItemPedido } from "../../../../../modules/pedidos/tabla";
+import { sincronizarEtapaPipeline } from "../../../../../modules/pedidos/servidor";
 
 export const dynamic = "force-dynamic";
 
@@ -239,10 +240,20 @@ export async function POST(req: NextRequest) {
     .limit(1);
 
   if (!yaRegistrado) {
+    const primerProducto = items[0]?.titulo ?? "Pedido Aliv";
+    const totalSoles = Number(payload.total_price) || 0;
+    const dealId = await sincronizarEtapaPipeline(
+      contactId,
+      "por_confirmar_cod",
+      `${numeroOrden} · ${primerProducto}`,
+      totalSoles
+    );
+
     await db.insert(pedidosOrdenes).values({
       numeroOrden,
       shopifyOrderId,
       contactId,
+      dealId,
       estado: "por_confirmar_cod",
       modalidadPago: "contraentrega",
       items,

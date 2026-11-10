@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/db";
 import { contacts, crmSettings } from "@/db/schema";
 import { pedidosOrdenes, type ItemPedido } from "../../../../../modules/pedidos/tabla";
+import { sincronizarEtapaPipeline } from "../../../../../modules/pedidos/servidor";
 import { eq, or, desc } from "drizzle-orm";
 import { requireAdmin } from "@/lib/api-auth";
 import { resolveDefaultTenantId } from "@/lib/tenants";
@@ -170,16 +171,28 @@ export async function POST(req: NextRequest) {
             ];
 
       const [yaExiste] = await db
-        .select({ id: pedidosOrdenes.id })
+        .select({ id: pedidosOrdenes.id, dealId: pedidosOrdenes.dealId, estado: pedidosOrdenes.estado })
         .from(pedidosOrdenes)
         .where(eq(pedidosOrdenes.numeroOrden, numeroOrden))
         .limit(1);
 
+      const primerProducto = items[0]?.titulo ?? "Pedido Aliv";
+      const cant = items[0]?.cantidad ? `${items[0].cantidad}x ` : "";
+      const tituloDeal = `${numeroOrden} · ${cant}${primerProducto}`;
+
       if (!yaExiste) {
+        const dealId = await sincronizarEtapaPipeline(
+          contactId,
+          "por_confirmar_cod",
+          tituloDeal,
+          total
+        );
+
         await db.insert(pedidosOrdenes).values({
           numeroOrden,
           shopifyOrderId: `manual-${numeroOrden.replace(/\D/g, "")}`,
           contactId,
+          dealId,
           estado: "por_confirmar_cod",
           modalidadPago: "contraentrega",
           items,
@@ -192,6 +205,21 @@ export async function POST(req: NextRequest) {
         });
         importados++;
       } else {
+        if (!yaExiste.dealId) {
+          const dealId = await sincronizarEtapaPipeline(
+            contactId,
+            (yaExiste.estado as any) || "por_confirmar_cod",
+            tituloDeal,
+            total,
+            yaExiste.id
+          );
+          if (dealId) {
+            await db
+              .update(pedidosOrdenes)
+              .set({ dealId })
+              .where(eq(pedidosOrdenes.id, yaExiste.id));
+          }
+        }
         actualizados++;
       }
     }
@@ -250,7 +278,7 @@ export async function POST(req: NextRequest) {
       const shopifyId = String(po.id);
       const name = String(po.name || `#${po.order_number}`);
       const [ya] = await db
-        .select({ id: pedidosOrdenes.id })
+        .select({ id: pedidosOrdenes.id, dealId: pedidosOrdenes.dealId, estado: pedidosOrdenes.estado })
         .from(pedidosOrdenes)
         .where(
           or(
@@ -322,10 +350,20 @@ export async function POST(req: NextRequest) {
           precioUnitario: Math.max(0, Number(li.price) || 0),
         }));
 
+        const primerProducto = items[0]?.titulo ?? "Pedido Aliv";
+        const cant = items[0]?.cantidad ? `${items[0].cantidad}x ` : "";
+        const dealId = await sincronizarEtapaPipeline(
+          contactId,
+          "por_confirmar_cod",
+          `${name} · ${cant}${primerProducto}`,
+          Number(po.total_price) || 0
+        );
+
         await db.insert(pedidosOrdenes).values({
           numeroOrden: name,
           shopifyOrderId: shopifyId,
           contactId,
+          dealId,
           estado: "por_confirmar_cod",
           modalidadPago: "contraentrega",
           items,
@@ -339,6 +377,26 @@ export async function POST(req: NextRequest) {
           ),
         });
         importados++;
+      } else if (!ya.dealId) {
+        const rawLineItems = Array.isArray(po.line_items) ? po.line_items : [];
+        const primer = String(rawLineItems[0]?.title || "Pedido Aliv");
+        const cant = rawLineItems[0]?.quantity ? `${rawLineItems[0].quantity}x ` : "";
+        const contactId = (await db.select({ contactId: pedidosOrdenes.contactId }).from(pedidosOrdenes).where(eq(pedidosOrdenes.id, ya.id)).limit(1))[0]?.contactId;
+        if (contactId) {
+          const dealId = await sincronizarEtapaPipeline(
+            contactId,
+            (ya.estado as any) || "por_confirmar_cod",
+            `${name} · ${cant}${primer}`,
+            Number(po.total_price) || 0,
+            ya.id
+          );
+          if (dealId) {
+            await db
+              .update(pedidosOrdenes)
+              .set({ dealId })
+              .where(eq(pedidosOrdenes.id, ya.id));
+          }
+        }
       }
     }
 
