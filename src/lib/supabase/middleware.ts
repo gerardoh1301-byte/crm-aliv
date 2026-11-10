@@ -2,7 +2,6 @@ import { createServerClient } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
 import { COOKIE_SESION_LOCAL, modoLocal } from "@/lib/modo-local";
 import { opcionesDeCookie } from "@/lib/supabase/cookies";
-import { verificarSesion } from "@/lib/sesion-local";
 
 const PUBLIC_PATHS = ["/login", "/signup", "/auth", "/sin-acceso", "/correo"];
 
@@ -23,7 +22,7 @@ export async function updateSession(request: NextRequest) {
   // Modo PIN / Google Local (local o autoalojado sin Supabase Auth)
   if (modoLocal() || !process.env.NEXT_PUBLIC_SUPABASE_URL || !process.env.NEXT_PUBLIC_SUPABASE_URL.includes("supabase.co")) {
     const rawCookie = request.cookies.get(COOKIE_SESION_LOCAL)?.value;
-    const validMemberId = verificarSesion(rawCookie);
+    const hasSession = Boolean(rawCookie && rawCookie.trim());
     const { pathname, searchParams } = request.nextUrl;
     const isPublicPath = PUBLIC_PATHS.some(
       (path) => pathname === path || pathname.startsWith(`${path}/`),
@@ -33,22 +32,18 @@ export async function updateSession(request: NextRequest) {
     );
     const isAuthLocal = pathname.startsWith("/api/auth/local");
 
-    if (!validMemberId && !isPublicPath && !isPublicApi && !isAuthLocal) {
+    if (!hasSession && !isPublicPath && !isPublicApi && !isAuthLocal) {
       const url = request.nextUrl.clone();
       url.pathname = "/login";
       if (pathname !== "/") {
         url.searchParams.set("redirect", pathname);
       }
-      const res = NextResponse.redirect(url);
-      if (rawCookie) {
-        res.cookies.delete(COOKIE_SESION_LOCAL);
-      }
-      return res;
+      return NextResponse.redirect(url);
     }
 
     // Permitir abrir /login si se pasa ?cambiar=1 o si no hay sesion valida
     const forzarCambio = searchParams.get("cambiar") === "1";
-    if (validMemberId && !forzarCambio && (pathname === "/login" || pathname === "/signup")) {
+    if (hasSession && !forzarCambio && (pathname === "/login" || pathname === "/signup")) {
       const url = request.nextUrl.clone();
       url.pathname = "/";
       url.searchParams.delete("redirect");
