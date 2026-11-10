@@ -101,6 +101,8 @@ export function PedidosPage() {
     urlPublica: string | null;
   } | null>(null);
   const [syncingDrive, setSyncingDrive] = useState(false);
+  const [shopifyDialogOpen, setShopifyDialogOpen] = useState(false);
+  const [syncingShopify, setSyncingShopify] = useState(false);
 
   const sincronizarDriveManual = useCallback(async (silencioso = false) => {
     setSyncingDrive(true);
@@ -331,6 +333,15 @@ export function PedidosPage() {
         subtitle="Gestión de órdenes Contraentrega, despachos por Motorizado Lima / Shalom / Olva Courier y guardado automático en Google Drive."
         actions={
           <div className="flex flex-wrap items-center gap-2">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setShopifyDialogOpen(true)}
+              className="border-emerald-500/40 text-emerald-700 dark:text-emerald-300 hover:bg-emerald-50 dark:hover:bg-emerald-950/30"
+            >
+              <ShoppingBag className="mr-1.5 h-4 w-4 text-emerald-600" />
+              Sincronizar Shopify
+            </Button>
             <Button
               variant="outline"
               size="sm"
@@ -842,6 +853,90 @@ export function PedidosPage() {
               Cancelar
             </Button>
             <Button onClick={crearPedidoManual}>Guardar Pedido COD</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Dialogo de Sincronizacion con Shopify & EasySell */}
+      <Dialog open={shopifyDialogOpen} onOpenChange={setShopifyDialogOpen}>
+        <DialogContent className="sm:max-w-xl">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <ShoppingBag className="h-5 w-5 text-emerald-600" />
+              Sincronización con Shopify & EasySell COD
+            </DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4 py-2 text-sm">
+            <p className="text-muted-foreground">
+              Configura el Webhook en tu tienda <strong>alivstore.shop</strong> para que cada pedido realizado en la web o en el formulario <strong>EasySell COD Form</strong> entre de forma inmediata a esta tabla.
+            </p>
+
+            <div className="rounded-lg border bg-muted/40 p-3 space-y-2">
+              <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                URL del Webhook de Pedidos (Shopify & EasySell)
+              </p>
+              <div className="flex items-center gap-2">
+                <code className="flex-1 bg-background p-2 rounded text-xs font-mono border select-all">
+                  https://crm-aliv.onrender.com/api/webhooks/shopify
+                </code>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="h-8 shrink-0"
+                  onClick={() => {
+                    navigator.clipboard.writeText(
+                      "https://crm-aliv.onrender.com/api/webhooks/shopify"
+                    );
+                    toast.success("URL del webhook copiada");
+                  }}
+                >
+                  <Copy className="h-3.5 w-3.5 mr-1" /> Copiar
+                </Button>
+              </div>
+            </div>
+
+            <div className="space-y-2 text-xs">
+              <p className="font-semibold text-foreground">
+                Instrucciones para activar la sincronización automática en Shopify:
+              </p>
+              <ol className="list-decimal pl-4 space-y-1.5 text-muted-foreground leading-relaxed">
+                <li>
+                  En tu <strong>Shopify Admin</strong>, ve a <strong>Configuración</strong> (icono de engranaje abajo a la izquierda).
+                </li>
+                <li>
+                  Haz clic en <strong>Notificaciones</strong> y selecciona la pestaña <strong>Notificaciones para desarrolladores (Webhooks)</strong>.
+                </li>
+                <li>
+                  Haz clic en <strong>Crear webhook</strong>:
+                  <ul className="list-disc pl-4 mt-0.5 space-y-0.5">
+                    <li>Evento: <strong>Creación de pedidos</strong> (<code>orders/create</code>)</li>
+                    <li>Formato: <strong>JSON</strong></li>
+                    <li>Dirección URL: <strong>pega la URL de arriba</strong></li>
+                    <li>Versión de API: la versión recomendada (más reciente)</li>
+                  </ul>
+                </li>
+                <li>
+                  Haz clic en <strong>Guardar</strong>. ¡Listo! A partir de ese momento, cada orden nueva de EasySell o Shopify aparecerá al instante aquí.
+                </li>
+              </ol>
+            </div>
+          </div>
+          <DialogFooter className="flex flex-col sm:flex-row gap-2">
+            <Button
+              variant="outline"
+              onClick={() => {
+                cargarPedidos();
+                setShopifyDialogOpen(false);
+                toast.success("Tabla de pedidos actualizada");
+              }}
+            >
+              Actualizar Pedidos
+            </Button>
+            <Button
+              onClick={() => setShopifyDialogOpen(false)}
+            >
+              Entendido
+            </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

@@ -9,27 +9,42 @@ import { pedidosOrdenes } from "../../modules/pedidos/tabla";
 
 const RUTAS_CANDIDATAS_DRIVE = [
   process.env.GOOGLE_DRIVE_SYNC_DIR,
-  "G:\\Mi unidad\\Aliv Store CRM",
-  "G:\\My Drive\\Aliv Store CRM",
-  join(process.env.USERPROFILE || "C:\\Users\\USER", "Google Drive", "Aliv Store CRM"),
-  join(process.env.USERPROFILE || "C:\\Users\\USER", "OneDrive", "Aliv Store CRM"),
+  ...(process.platform === "win32"
+    ? [
+        "G:\\Mi unidad\\Aliv Store CRM",
+        "G:\\My Drive\\Aliv Store CRM",
+        join(process.env.USERPROFILE || "C:\\Users\\USER", "Google Drive", "Aliv Store CRM"),
+        join(process.env.USERPROFILE || "C:\\Users\\USER", "OneDrive", "Aliv Store CRM"),
+      ]
+    : []),
 ].filter(Boolean) as string[];
 
 export function resolverCarpetaDrive(): { ruta: string; esGoogleDrive: boolean } {
   for (const candidata of RUTAS_CANDIDATAS_DRIVE) {
-    const padre = join(candidata, "..");
-    if (existsSync(candidata) || existsSync(padre)) {
-      mkdirSync(candidata, { recursive: true });
-      return {
-        ruta: candidata,
-        esGoogleDrive:
-          candidata.toLowerCase().includes("mi unidad") ||
-          candidata.toLowerCase().includes("drive"),
-      };
+    try {
+      const padre = join(candidata, "..");
+      if (existsSync(candidata) || existsSync(padre)) {
+        mkdirSync(candidata, { recursive: true });
+        return {
+          ruta: candidata,
+          esGoogleDrive:
+            candidata.toLowerCase().includes("mi unidad") ||
+            candidata.toLowerCase().includes("drive"),
+        };
+      }
+    } catch {
+      // Intentar siguiente candidata si falla por permisos
     }
   }
   const fallback = join(process.cwd(), ".local", "drive-sync");
-  mkdirSync(fallback, { recursive: true });
+  try {
+    mkdirSync(fallback, { recursive: true });
+  } catch {
+    // Si cwd es de solo lectura (ej. serverless), usar /tmp
+    const tmpFallback = "/tmp/drive-sync";
+    mkdirSync(tmpFallback, { recursive: true });
+    return { ruta: tmpFallback, esGoogleDrive: false };
+  }
   return { ruta: fallback, esGoogleDrive: false };
 }
 
