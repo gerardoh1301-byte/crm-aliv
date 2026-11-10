@@ -60,9 +60,16 @@ export function SeguimientoShalomModal({
   const [estado, setEstado] = useState(data.estadoPedido || "enviado");
   const [saving, setSaving] = useState(false);
   const [copied, setCopied] = useState(false);
+  const [copiedClave, setCopiedClave] = useState(false);
 
-  const adelanto = 20;
-  const saldo = Math.max(0, data.total - adelanto);
+  // Normalización de centavos vs soles para valor del pedido
+  const totalSoles =
+    data.total > 1000
+      ? Math.round(data.total) / 100
+      : Number(data.total || 0);
+  const adelantoSoles = 20;
+  const saldoSoles = Math.max(0, totalSoles - adelantoSoles);
+
   const destinoLimpio = [
     data.ciudad,
     data.distrito && data.distrito.toLowerCase() !== data.ciudad?.toLowerCase()
@@ -72,24 +79,53 @@ export function SeguimientoShalomModal({
     .filter(Boolean)
     .join(" - ");
 
+  // Mensaje inicial de envío (NUNCA incluye la clave de recojo para asegurar el cobro del saldo)
   const handleCopiarMensaje = () => {
     const texto = `¡Hola, ${data.clienteNombre.split(" ")[0]}! 👋 Te saluda Aliv Perú.
-Te compartimos los datos de seguimiento de tu paquete enviado por *Shalom Empresarial* 🚚📦:
+Te compartimos los datos de tu envío por *Shalom Empresarial* 🚚📦:
 
 • *N° de Orden:* ${data.numeroOrden}
 • *N° de Guía:* ${numeroGuia.trim() || "(En proceso de emisión)"}
-${claveRecojo.trim() ? `• *Clave / Código de recojo:* ${claveRecojo.trim()}\n` : ""}• *Destino / Agencia:* ${destinoLimpio || "Provincia"}
-• *Saldo a pagar al retirar:* ${formatCurrency(saldo)} (Adelanto registrado: S/ 20.00)
+• *Destino / Agencia:* ${destinoLimpio || "Provincia"}
+
+💰 *Detalle de Pago:*
+• Monto total del pedido: S/ ${totalSoles.toFixed(2)}
+• Adelanto de envío recibido: - S/ ${adelantoSoles.toFixed(2)}
+━━━━━━━━━━━━━━━━━━━━
+👉 *Saldo restante por pagar:* *S/ ${saldoSoles.toFixed(2)}*
+
+🔒 *Código de Recojo en Agencia:*
+Tu clave secreta de recojo se te enviará por aquí apenas canceles el saldo restante de *S/ ${saldoSoles.toFixed(2)}* a nuestro Yape / Plin (*951365418* - Gerardo Huaynalaya).
 
 🔍 Puedes rastrear tu envío en tiempo real ingresando tu guía aquí:
 👉 https://rastreo.shalom.pe/
 
-Recuerda llevar tu DNI físico para el retiro. ¡Muchas gracias por tu compra en Aliv Perú! 🌿`;
+¡Muchas gracias por tu compra en Aliv Perú! 🌿`;
 
     navigator.clipboard.writeText(texto);
     setCopied(true);
-    toast.success("Mensaje para el cliente copiado al portapapeles");
+    toast.success("Mensaje copiado (código de recojo reservado)");
     setTimeout(() => setCopied(false), 2500);
+  };
+
+  // Mensaje posterior cuando el cliente ya transfirió el saldo restante
+  const handleCopiarMensajeClave = () => {
+    if (!claveRecojo.trim()) {
+      toast.error("Registra primero la clave de recojo de Shalom");
+      return;
+    }
+    const texto = `¡Pago del saldo de S/ ${saldoSoles.toFixed(2)} confirmado con éxito! 🙌🎉
+
+🔑 Tu *Clave / Código de Recojo en Agencia Shalom* es: *${claveRecojo.trim()}*
+📦 N° de Guía: ${numeroGuia.trim() || data.numeroOrden}
+📍 Destino: ${destinoLimpio || "Agencia Shalom"}
+
+Recuerda acudir con tu DNI físico original para el retiro. ¡Que disfrutes tus productos Aliv! 💚`;
+
+    navigator.clipboard.writeText(texto);
+    setCopiedClave(true);
+    toast.success("Mensaje con Clave de Recojo copiado para WhatsApp");
+    setTimeout(() => setCopiedClave(false), 2500);
   };
 
   const handleGuardar = async () => {
@@ -164,7 +200,7 @@ Recuerda llevar tu DNI físico para el retiro. ¡Muchas gracias por tu compra en
             </a>
           </div>
 
-          <div className="grid grid-cols-2 gap-2 pt-1 border-t border-red-200/50 dark:border-red-900/30">
+          <div className="grid grid-cols-2 gap-2 pt-1.5 border-t border-red-200/50 dark:border-red-900/30">
             <div>
               <p className="text-[10px] text-muted-foreground">Destino / Agencia</p>
               <p className="font-semibold text-foreground flex items-center gap-1">
@@ -172,14 +208,19 @@ Recuerda llevar tu DNI físico para el retiro. ¡Muchas gracias por tu compra en
                 <span className="truncate">{destinoLimpio || "En agencia"}</span>
               </p>
             </div>
-            <div>
-              <p className="text-[10px] text-muted-foreground">Saldo a cobrar en Agencia</p>
-              <p className="font-bold text-foreground">
-                {formatCurrency(saldo)}{" "}
-                <span className="text-[10px] font-normal text-muted-foreground">
-                  (Adelanto: S/ 20)
-                </span>
-              </p>
+            <div className="bg-white/80 dark:bg-card/80 p-1.5 rounded border border-red-100 dark:border-red-900/30">
+              <div className="flex justify-between text-[10px] text-muted-foreground">
+                <span>Total orden:</span>
+                <span className="tabular-nums">S/ {totalSoles.toFixed(2)}</span>
+              </div>
+              <div className="flex justify-between text-[10px] text-emerald-700 dark:text-emerald-400">
+                <span>Adelanto pago:</span>
+                <span className="tabular-nums">- S/ {adelantoSoles.toFixed(2)}</span>
+              </div>
+              <div className="flex justify-between text-[11px] font-bold text-red-700 dark:text-red-400 pt-0.5 border-t border-dashed border-red-200 mt-0.5">
+                <span>Saldo a cancelar:</span>
+                <span className="tabular-nums text-foreground">S/ {saldoSoles.toFixed(2)}</span>
+              </div>
             </div>
           </div>
         </div>
@@ -200,9 +241,14 @@ Recuerda llevar tu DNI físico para el retiro. ¡Muchas gracias por tu compra en
           </div>
 
           <div className="space-y-1.5">
-            <Label htmlFor="shalom-clave" className="text-xs font-semibold">
-              Código / Clave de Recojo en Agencia:
-            </Label>
+            <div className="flex justify-between items-center">
+              <Label htmlFor="shalom-clave" className="text-xs font-semibold">
+                Código / Clave de Recojo en Agencia:
+              </Label>
+              <span className="text-[10px] text-amber-700 dark:text-amber-400 font-medium">
+                🔒 No se comparte hasta pagar saldo
+              </span>
+            </div>
             <Input
               id="shalom-clave"
               placeholder="Ej. 9JJ3"
@@ -230,34 +276,60 @@ Recuerda llevar tu DNI físico para el retiro. ¡Muchas gracias por tu compra en
         </div>
 
         {/* Acciones */}
-        <div className="flex items-center justify-between gap-2 pt-2 border-t border-border/50">
-          <Button
-            type="button"
-            variant="outline"
-            size="sm"
-            onClick={handleCopiarMensaje}
-            className="text-xs h-9"
-          >
-            {copied ? (
-              <>
-                <Check className="h-3.5 w-3.5 mr-1 text-emerald-600" />
-                Copiado
-              </>
-            ) : (
-              <>
-                <Copy className="h-3.5 w-3.5 mr-1" />
-                Copiar WhatsApp
-              </>
-            )}
-          </Button>
+        <div className="flex flex-col gap-2 pt-2 border-t border-border/50">
+          <div className="flex items-center justify-between gap-2">
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={handleCopiarMensaje}
+              className="text-xs h-8.5 flex-1"
+              title="Copiar mensaje con guía y saldo (sin clave de recojo)"
+            >
+              {copied ? (
+                <>
+                  <Check className="h-3.5 w-3.5 mr-1 text-emerald-600" />
+                  Copiado (Sin clave)
+                </>
+              ) : (
+                <>
+                  <Copy className="h-3.5 w-3.5 mr-1" />
+                  Copiar WhatsApp (Sin clave)
+                </>
+              )}
+            </Button>
 
-          <div className="flex items-center gap-2">
+            {claveRecojo.trim() && (
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={handleCopiarMensajeClave}
+                className="text-xs h-8.5 bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-700 dark:text-emerald-400 border-emerald-500/30"
+                title="Copiar mensaje con la clave de recojo una vez cancelado el saldo"
+              >
+                {copiedClave ? (
+                  <>
+                    <Check className="h-3.5 w-3.5 mr-1" />
+                    Clave copiada
+                  </>
+                ) : (
+                  <>
+                    <Check className="h-3.5 w-3.5 mr-1" />
+                    Enviar Clave (Post-Pago)
+                  </>
+                )}
+              </Button>
+            )}
+          </div>
+
+          <div className="flex items-center justify-end gap-2 pt-1 border-t border-border/30">
             <Button
               type="button"
               variant="outline"
               size="sm"
               onClick={() => onOpenChange(false)}
-              className="text-xs h-9"
+              className="text-xs h-8.5"
             >
               Cancelar
             </Button>
@@ -267,7 +339,7 @@ Recuerda llevar tu DNI físico para el retiro. ¡Muchas gracias por tu compra en
               size="sm"
               disabled={saving}
               onClick={handleGuardar}
-              className="text-xs h-9 bg-red-600 hover:bg-red-700 text-white font-semibold"
+              className="text-xs h-8.5 bg-red-600 hover:bg-red-700 text-white font-semibold"
             >
               <Save className="h-3.5 w-3.5 mr-1.5" />
               {saving ? "Guardando..." : "Guardar Seguimiento"}
