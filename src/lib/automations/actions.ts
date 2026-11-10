@@ -1,7 +1,7 @@
 import "server-only";
 import { db } from "@/db";
-import { activities, contacts, pipelineStages, pipelines } from "@/db/schema";
-import { eq, sql } from "drizzle-orm";
+import { activities, channelAccounts, contacts, conversations, pipelineStages, pipelines } from "@/db/schema";
+import { and, eq, sql } from "drizzle-orm";
 import { notifyMember } from "@/lib/notifications";
 import { resolveConversationId } from "@/lib/conversations";
 import { deliverMessage } from "@/lib/channels/deliver";
@@ -120,6 +120,28 @@ export function buildRenderer(event: AutomationEvent, contactId: string) {
         return typeof p.pipelineName === "string" ? p.pipelineName : "";
       case "operacion":
         return typeof p.dealTitle === "string" ? p.dealTitle : "";
+      case "orden":
+        return typeof p.numeroOrden === "string"
+          ? p.numeroOrden
+          : typeof p.orderId === "string"
+          ? p.orderId
+          : "";
+      case "productos":
+        return typeof p.productos === "string" ? p.productos : "";
+      case "total":
+        return typeof p.total === "string" || typeof p.total === "number" ? String(p.total) : "";
+      case "ciudad":
+        return typeof p.ciudad === "string" ? p.ciudad : "";
+      case "distrito":
+        return typeof p.distrito === "string" ? p.distrito : "";
+      case "direccion":
+        return typeof p.direccion === "string" ? p.direccion : "";
+      case "adelanto":
+        return typeof p.adelanto === "string" || typeof p.adelanto === "number" ? String(p.adelanto) : "20";
+      case "saldo":
+        return typeof p.saldo === "string" || typeof p.saldo === "number" ? String(p.saldo) : "";
+      case "telefono":
+        return typeof p.phone === "string" ? p.phone : "";
       case "fuente": {
         const src = typeof p.source === "string" ? p.source : "";
         return SOURCE_LABELS[src as LeadSource] ?? src;
@@ -245,14 +267,53 @@ const sendMessage: ActionDef = {
   async run(ctx, params) {
     const text = (await ctx.render(params.message ?? "")).trim();
     if (!text) return { status: "skipped", detail: "Mensaje vacio" };
-    const conversationId = await resolveConversationId(ctx.contactId);
+
+    let conversationId = await resolveConversationId(ctx.contactId);
     if (!conversationId) {
-      return { status: "skipped", detail: "El contacto no tiene conversacion activa" };
+      const [contact] = await db
+        .select({ id: contacts.id, name: contacts.name, phone: contacts.phone, tenantId: contacts.tenantId })
+        .from(contacts)
+        .where(eq(contacts.id, ctx.contactId))
+        .limit(1);
+
+      if (contact?.phone) {
+        // Buscar cuenta activa de WhatsApp (Zernio o directa)
+        const [account] = await db
+          .select()
+          .from(channelAccounts)
+          .where(and(eq(channelAccounts.platform, "whatsapp"), eq(channelAccounts.status, "active")))
+          .limit(1);
+
+        const accountId = account?.id ?? null;
+        const provider = account?.provider ?? "zernio";
+
+        const [createdConv] = await db
+          .insert(conversations)
+          .values({
+            tenantId: contact.tenantId,
+            accountId,
+            contactId: contact.id,
+            channel: "whatsapp",
+            provider,
+            externalId: `zernio:${contact.phone}`,
+            participantId: contact.phone,
+            participantName: contact.name,
+            status: "active",
+          })
+          .returning({ id: conversations.id });
+
+        conversationId = createdConv?.id ?? null;
+      }
     }
+
+    if (!conversationId) {
+      return { status: "skipped", detail: "El contacto no tiene conversacion activa ni numero de WhatsApp" };
+    }
+
     const res = await deliverMessage(
       conversationId,
       { text },
-      "human"
+      "agent"
     );
     if (!res.ok) {
       return {
@@ -260,7 +321,7 @@ const sendMessage: ActionDef = {
         detail: res.error ?? "No se pudo entregar el mensaje",
       };
     }
-    return { status: "done", detail: `Mensaje enviado: "${text.slice(0, 50)}"` };
+    return { status: "done", detail: `Mensaje enviado al cliente: "${text.slice(0, 50)}..."` };
   },
 };
 

@@ -17,7 +17,11 @@ import { displayName, listMembers } from "@/lib/team";
  * donde pasa la cosa (ver `src/lib/deals/stage.ts` y `src/lib/contacts/events.ts`).
  */
 
-export type TriggerKey = "contact.created" | "contact.assigned" | "deal.stage_changed";
+export type TriggerKey =
+  | "contact.created"
+  | "contact.assigned"
+  | "deal.stage_changed"
+  | "order.created";
 
 export interface SelectOption {
   value: string;
@@ -153,6 +157,34 @@ export const TRIGGERS: TriggerDef[] = [
       "Se activa cuando se asigna (o cambia) el asesor a cargo de un contacto, desde la ficha o por el agente de IA.",
     filterFields: [{ key: "ownerId", label: "Asesor asignado", options: memberOptions }],
     placeholders: ["contacto", "asesor", "quien"],
+  },
+  {
+    key: "order.created",
+    label: "Pedido registrado (COD)",
+    description:
+      "Se activa cada vez que se registra un nuevo pedido COD en el CRM (Shopify, formulario web o manual). Ideal para que el bot contacte al cliente al instante.",
+    filterFields: [
+      {
+        key: "esProvincia",
+        label: "Destino de envío",
+        options: async () => [
+          { value: "false", label: "Lima / Callao (Contraentrega motorizado)" },
+          { value: "true", label: "Provincia (Agencia Shalom / Olva)" },
+        ],
+      },
+    ],
+    placeholders: [
+      "contacto",
+      "orden",
+      "productos",
+      "total",
+      "ciudad",
+      "distrito",
+      "direccion",
+      "adelanto",
+      "saldo",
+      "telefono",
+    ],
   },
   {
     key: "contact.created",

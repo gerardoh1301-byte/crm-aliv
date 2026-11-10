@@ -12,6 +12,7 @@ import {
 } from "@/db/schema";
 import { canAccessContactId, ownerFilter } from "@/lib/team";
 import { setDealStage } from "@/lib/deals/stage";
+import { emitAutomationEvent } from "@/lib/automations";
 import { deliverMessage } from "@/lib/channels/deliver";
 import { sincronizarConGoogleDrive } from "@/lib/drive-sync";
 import type { ModuloServidor, HandlerModulo, ToolModulo } from "@/lib/modules/types";
@@ -306,6 +307,37 @@ const crear: HandlerModulo = async (req, { member }) => {
       notas: typeof body.notas === "string" ? body.notas : null,
     })
     .returning();
+
+  const [contacto] = await db
+    .select({ name: contacts.name, phone: contacts.phone })
+    .from(contacts)
+    .where(eq(contacts.id, contactId))
+    .limit(1);
+
+  const ciudadStr = typeof body.ciudad === "string" ? body.ciudad : "";
+  const esProv = !ciudadStr.toLowerCase().includes("lima") && !ciudadStr.toLowerCase().includes("callao");
+  const saldoNum = Math.max(0, totalCalculado - 20);
+
+  await emitAutomationEvent({
+    trigger: "order.created",
+    contactId,
+    payload: {
+      orderId: numeroOrden,
+      numeroOrden,
+      contactName: contacto?.name || "Cliente Aliv",
+      phone: contacto?.phone || "",
+      total: totalCalculado.toFixed(2),
+      totalSoles: totalCalculado,
+      ciudad: ciudadStr,
+      distrito: typeof body.distrito === "string" ? body.distrito : "",
+      direccion: typeof body.direccionEnvio === "string" ? body.direccionEnvio : "",
+      productos: items.map((i) => `${i.cantidad}x ${i.titulo}`).join(", "),
+      esProvincia: String(esProv),
+      adelanto: "20.00",
+      saldo: saldoNum.toFixed(2),
+      modalidadPago: typeof body.modalidadPago === "string" ? body.modalidadPago : "contraentrega",
+    },
+  }).catch(() => {});
 
   await sincronizarConGoogleDrive().catch(() => {});
   return NextResponse.json(creado, { status: 201 });

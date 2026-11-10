@@ -7,6 +7,7 @@ import { resolveDefaultTenantId } from "@/lib/tenants";
 import { sincronizarConGoogleDrive } from "@/lib/drive-sync";
 import { pedidosOrdenes, type ItemPedido } from "../../../../../modules/pedidos/tabla";
 import { sincronizarEtapaPipeline } from "../../../../../modules/pedidos/servidor";
+import { emitAutomationEvent } from "@/lib/automations";
 
 export const dynamic = "force-dynamic";
 
@@ -267,6 +268,31 @@ export async function POST(req: NextRequest) {
         payload.note ||
         `Pedido web ${numeroOrden} desde ${shopDomain} (Canal: ${payload.gateway || "EasySell COD Form"})`,
     });
+
+    const esProv = !ciudad.toLowerCase().includes("lima") && !ciudad.toLowerCase().includes("callao");
+    const totalNum = Number(payload.total_price) || 0;
+    const saldoNum = Math.max(0, totalNum - 20);
+
+    await emitAutomationEvent({
+      trigger: "order.created",
+      contactId,
+      payload: {
+        orderId: numeroOrden,
+        numeroOrden,
+        contactName: nombre,
+        phone: telefono,
+        total: totalNum.toFixed(2),
+        totalSoles: totalNum,
+        ciudad,
+        distrito: distrito || "",
+        direccion: direccion || "",
+        productos: items.map((i) => `${i.cantidad}x ${i.titulo}`).join(", "),
+        esProvincia: String(esProv),
+        adelanto: "20.00",
+        saldo: saldoNum.toFixed(2),
+        modalidadPago: "contraentrega",
+      },
+    }).catch((err) => console.error("[shopify-webhook] error disparando automatizaciones:", err));
 
     await db.insert(activities).values({
       type: "note",

@@ -3,6 +3,7 @@ import { db } from "@/db";
 import { contacts, crmSettings } from "@/db/schema";
 import { pedidosOrdenes, type ItemPedido } from "../../../../../modules/pedidos/tabla";
 import { sincronizarEtapaPipeline } from "../../../../../modules/pedidos/servidor";
+import { emitAutomationEvent } from "@/lib/automations";
 import { eq, or, desc } from "drizzle-orm";
 import { requireAdmin } from "@/lib/api-auth";
 import { resolveDefaultTenantId } from "@/lib/tenants";
@@ -203,6 +204,32 @@ export async function POST(req: NextRequest) {
           direccionEnvio: direccion,
           notas: o.notas || "Importado desde Shopify (Canal: EasySell COD Form)",
         });
+
+        const esProv = !ciudad.toLowerCase().includes("lima") && !ciudad.toLowerCase().includes("callao");
+        const totalNum = Number(total) || 199;
+        const saldoNum = Math.max(0, totalNum - 20);
+
+        await emitAutomationEvent({
+          trigger: "order.created",
+          contactId,
+          payload: {
+            orderId: numeroOrden,
+            numeroOrden,
+            contactName: nombre,
+            phone: telefono || "",
+            total: totalNum.toFixed(2),
+            totalSoles: totalNum,
+            ciudad,
+            distrito: distrito || "",
+            direccion: direccion || "",
+            productos: items.map((i) => `${i.cantidad}x ${i.titulo}`).join(", "),
+            esProvincia: String(esProv),
+            adelanto: "20.00",
+            saldo: saldoNum.toFixed(2),
+            modalidadPago: "contraentrega",
+          },
+        }).catch(() => {});
+
         importados++;
       } else {
         if (!yaExiste.dealId) {
@@ -376,6 +403,32 @@ export async function POST(req: NextRequest) {
             po.note || `Pedido importado desde Shopify (Canal: ${po.gateway || "web"})`
           ),
         });
+
+        const esProv = !ciudad.toLowerCase().includes("lima") && !ciudad.toLowerCase().includes("callao");
+        const totalNum = Number(po.total_price) || 0;
+        const saldoNum = Math.max(0, totalNum - 20);
+
+        await emitAutomationEvent({
+          trigger: "order.created",
+          contactId,
+          payload: {
+            orderId: name,
+            numeroOrden: name,
+            contactName: nombre,
+            phone: telefono || "",
+            total: totalNum.toFixed(2),
+            totalSoles: totalNum,
+            ciudad,
+            distrito: distrito || "",
+            direccion: direccion || "",
+            productos: items.map((i) => `${i.cantidad}x ${i.titulo}`).join(", "),
+            esProvincia: String(esProv),
+            adelanto: "20.00",
+            saldo: saldoNum.toFixed(2),
+            modalidadPago: "contraentrega",
+          },
+        }).catch(() => {});
+
         importados++;
       } else if (!ya.dealId) {
         const rawLineItems = Array.isArray(po.line_items) ? po.line_items : [];
