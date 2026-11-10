@@ -76,7 +76,19 @@ export async function signUp(formData: FormData) {
 }
 
 export async function signOut() {
-  const supabase = await createClient();
-  await supabase.auth.signOut();
-  redirect("/login");
+  try {
+    const { cookies } = await import("next/headers");
+    const { COOKIE_SESION_LOCAL } = await import("@/lib/modo-local");
+    const cookieStore = await cookies();
+    cookieStore.delete(COOKIE_SESION_LOCAL);
+  } catch {
+    // ignorar si no hay contexto de cookies
+  }
+  try {
+    const supabase = await createClient();
+    await supabase.auth.signOut();
+  } catch {
+    // ignorar si Supabase no esta configurado
+  }
+  redirect("/login?cambiar=1");
 }

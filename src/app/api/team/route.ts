@@ -1,13 +1,34 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/db";
-import { teamMembers } from "@/db/schema";
-import { sql } from "drizzle-orm";
+import { crmSettings, teamMembers } from "@/db/schema";
+import { eq, sql } from "drizzle-orm";
 import { requireAdmin, requireMember } from "@/lib/api-auth";
 import { listMembers } from "@/lib/team";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { correoDeAccesoActivo, enviarEnlaceDeAcceso, invitarPorCorreo } from "@/lib/auth-correo";
+import { modoLocal } from "@/lib/modo-local";
+import { MASTER_GOOGLE_EMAIL } from "@/app/api/auth/local/perfiles/route";
+import crypto from "node:crypto";
 
 export const dynamic = "force-dynamic";
+
+function usaAuthLocal(): boolean {
+  return (
+    modoLocal() ||
+    !process.env.NEXT_PUBLIC_SUPABASE_URL ||
+    !process.env.NEXT_PUBLIC_SUPABASE_URL.includes("supabase.co")
+  );
+}
+
+async function guardarSetting(key: string, value: string) {
+  await db
+    .insert(crmSettings)
+    .values({ key, value })
+    .onConflictDoUpdate({
+      target: crmSettings.key,
+      set: { value },
+    });
+}
 
 /** Lista del equipo. La ve cualquier miembro (para el selector de propietario). */
 export async function GET() {
@@ -17,23 +38,22 @@ export async function GET() {
 }
 
 /**
- * Alta de un miembro (solo admin). Crea el usuario en Supabase Auth y lo agrega al
- * equipo. No pasa por el signup publico, que esta cerrado.
- *
- * Dos formas de darle acceso, segun `invitar`:
- *   - invitacion por correo: la persona recibe un enlace y elige su propia contrasena.
- *     Solo si la instancia declara que el servidor de autenticacion manda correos.
- *   - contrasena temporal (o ninguna, si entra con un proveedor externo): el admin se la
- *     pasa por donde quiera. Es el unico camino cuando no hay correo configurado.
- *
- * Si el email ya tiene usuario en Auth (se registro antes, o entro con Google), se
- * reutiliza ese usuario y la contrasena que venga se ignora.
+ * Alta de una cuenta Google o miembro del equipo (solo admin).
+ * En modo Neon / Local crea directamente el registro en `team_members` y permite
+ * asignar su rol (`asesor` = Perfil Vendedor, `admin` = Perfil Administrador) y clave/PIN.
  */
 export async function POST(request: NextRequest) {
   const auth = await requireAdmin();
   if ("response" in auth) return auth.response;
 
-  let body: { email?: string; name?: string; role?: string; password?: string; invitar?: boolean };
+  let body: {
+    email?: string;
+    name?: string;
+    role?: string;
+    password?: string;
+    pin?: string;
+    invitar?: boolean;
+  };
   try {
     body = await request.json();
   } catch {
@@ -43,16 +63,68 @@ export async function POST(request: NextRequest) {
   const email = (body.email ?? "").trim().toLowerCase();
   const name = (body.name ?? "").trim();
   const role = body.role === "admin" ? "admin" : "asesor";
-  const password = body.password ?? "";
-  // El interruptor manda sobre lo que pida el navegador: sin correo configurado, una
-  // "invitacion enviada" seria mentira (ver src/lib/auth-correo.ts).
-  const invitar = Boolean(body.invitar) && correoDeAccesoActivo();
+  const password = (body.password ?? body.pin ?? "").trim();
 
   if (!email || !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) {
-    return NextResponse.json({ error: "Email invalido" }, { status: 400 });
+    return NextResponse.json(
+      { error: "Ingresa un correo de Google válido (ej. vendedor@gmail.com)" },
+      { status: 400 }
+    );
   }
 
-  // Usuario de Auth existente?
+  // Modo Neon / Local sin Supabase Auth: insertar directo en team_members
+  if (usaAuthLocal()) {
+    const [existente] = await db
+      .select()
+      .from(teamMembers)
+      .where(sql`lower(${teamMembers.email}) = ${email}`)
+      .limit(1);
+
+    let row;
+    if (existente) {
+      const [actualizado] = await db
+        .update(teamMembers)
+        .set({
+          name: name || existente.name || email.split("@")[0],
+          role: email === MASTER_GOOGLE_EMAIL ? "admin" : role,
+          active: true,
+          updatedAt: new Date(),
+        })
+        .where(eq(teamMembers.id, existente.id))
+        .returning();
+      row = actualizado;
+    } else {
+      const [creado] = await db
+        .insert(teamMembers)
+        .values({
+          id: crypto.randomUUID(),
+          email,
+          name: name || email.split("@")[0],
+          role: email === MASTER_GOOGLE_EMAIL ? "admin" : role,
+          active: true,
+        })
+        .returning();
+      row = creado;
+    }
+
+    if (password) {
+      await guardarSetting(`auth.pin.${email}`, password);
+    }
+
+    return NextResponse.json(
+      {
+        ...row,
+        reusedAuthUser: Boolean(existente),
+        correoEnviado: false,
+        avisoCorreo: null,
+      },
+      { status: 201 }
+    );
+  }
+
+  // Flujo Supabase Auth (solo cuando Supabase esta activo)
+  const invitar = Boolean(body.invitar) && correoDeAccesoActivo();
+
   const [existing] = await db.execute<{ id: string }>(
     sql`select id from auth.users where lower(email) = ${email} limit 1`
   );
@@ -62,8 +134,6 @@ export async function POST(request: NextRequest) {
   let avisoCorreo: string | null = null;
 
   if (!userId && invitar) {
-    // GoTrue crea el usuario y manda el correo en la misma transaccion: si el envio
-    // falla, no queda ningun usuario a medias y el error se puede mostrar tal cual.
     const r = await invitarPorCorreo(email, name);
     if ("error" in r) {
       return NextResponse.json(
@@ -76,9 +146,6 @@ export async function POST(request: NextRequest) {
   }
 
   if (!userId) {
-    // La contrasena es opcional: si el equipo entra con un proveedor externo (Google y
-    // companeros), inventar una temporal solo agrega algo que nadie va a usar. Sin
-    // contrasena la cuenta existe y entra por el proveedor; con contrasena, por las dos.
     if (password && password.length < 8) {
       return NextResponse.json(
         { error: "La contrasena temporal debe tener al menos 8 caracteres" },
@@ -101,9 +168,6 @@ export async function POST(request: NextRequest) {
     userId = data.user.id;
   }
 
-  // Usuario que ya existia y el admin pidio avisarle: no se puede invitar dos veces, se
-  // le manda un enlace para definir la contrasena. Si el envio falla, el alta igual
-  // vale: se avisa y el admin le pasa el acceso por otro lado.
   if (existing && invitar) {
     const { error } = await enviarEnlaceDeAcceso(email);
     if (error) avisoCorreo = error;
@@ -123,4 +187,35 @@ export async function POST(request: NextRequest) {
     { ...row, reusedAuthUser: Boolean(existing), correoEnviado, avisoCorreo },
     { status: 201 }
   );
+}
+
+/** Actualizar ajustes de acceso del equipo (PIN Maestro, PIN Vendedor, Google Client ID). */
+export async function PUT(request: NextRequest) {
+  const auth = await requireAdmin();
+  if ("response" in auth) return auth.response;
+
+  try {
+    const body = (await request.json()) as {
+      adminPin?: string;
+      vendedorPin?: string;
+      googleClientId?: string;
+    };
+
+    if (typeof body.adminPin === "string" && body.adminPin.trim()) {
+      await guardarSetting("auth.admin_pin", body.adminPin.trim());
+    }
+    if (typeof body.vendedorPin === "string" && body.vendedorPin.trim()) {
+      await guardarSetting("auth.vendedor_pin", body.vendedorPin.trim());
+    }
+    if (typeof body.googleClientId === "string") {
+      await guardarSetting("auth.google_client_id", body.googleClientId.trim());
+    }
+
+    return NextResponse.json({ ok: true });
+  } catch (err) {
+    return NextResponse.json(
+      { error: err instanceof Error ? err.message : "Error guardando ajustes" },
+      { status: 500 }
+    );
+  }
 }

@@ -16,7 +16,7 @@ export const dynamic = "force-dynamic";
 
 export default async function DashboardPage() {
   const member = await getCurrentMember();
-  if (!member) redirect("/sin-acceso");
+  if (!member) redirect("/login?cambiar=1");
 
   // Un asesor ve solo sus contactos y lo que cuelga de ellos; el admin ve todo.
   const soloMios = ownerFilter(member);

@@ -1,7 +1,17 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { Mail, ShieldCheck, UserPlus, UserX, UserCheck } from "lucide-react";
+import {
+  Mail,
+  ShieldCheck,
+  UserPlus,
+  UserX,
+  UserCheck,
+  Trash2,
+  KeyRound,
+  Sparkles,
+  Check,
+} from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
@@ -21,7 +31,6 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { avatarBg, getInitials } from "@/lib/avatar";
-import { leerConfigPublica } from "@/lib/config-publica";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
 
@@ -33,31 +42,40 @@ interface Member {
   active: boolean;
 }
 
+const MASTER_EMAIL = "gerardoh1301@gmail.com";
+
 const ROLE_ITEMS = [
   { value: "admin", label: "Administrador" },
-  { value: "asesor", label: "Asesor" },
+  { value: "asesor", label: "Vendedor (Asesor)" },
 ];
-
-const ACCESO_ITEMS = [
-  { value: "invitacion", label: "Invitacion por correo" },
-  { value: "clave", label: "Contrasena temporal" },
-];
-
-type ModoAcceso = "invitacion" | "clave";
 
 function label(m: Member) {
   return m.name?.trim() || m.email.split("@")[0];
 }
 
 /**
- * Equipo: quien esta, con que rol, y el alta de asesores. El signup publico esta
- * cerrado: la unica puerta de entrada es esta pantalla.
+ * Gestión de Cuentas Google del Equipo:
+ * - Muestra el Login Maestro Google (gerardoh1301@gmail.com).
+ * - Permite al Administrador Maestro agregar cuentas de Google (@gmail.com) para el perfil de Vendedor (asesor) o Administrador.
+ * - Permite activar/pausar, cambiar rol, definir PIN individual o global, y eliminar cuentas de vendedores.
  */
 export function TeamSettings() {
   const [members, setMembers] = useState<Member[]>([]);
   const [me, setMe] = useState<Member | null>(null);
   const [loading, setLoading] = useState(true);
   const [open, setOpen] = useState(false);
+
+  // Formulario rápido inline para agregar cuenta Google de vendedor
+  const [quickEmail, setQuickEmail] = useState("");
+  const [quickName, setQuickName] = useState("");
+  const [quickPin, setQuickPin] = useState("");
+  const [addingQuick, setAddingQuick] = useState(false);
+
+  // Ajustes de claves / Google OAuth Client ID
+  const [adminPin, setAdminPin] = useState("");
+  const [vendedorPin, setVendedorPin] = useState("");
+  const [googleClientId, setGoogleClientId] = useState("");
+  const [savingConfig, setSavingConfig] = useState(false);
 
   const load = useCallback(async () => {
     const [list, current] = await Promise.all([
@@ -84,19 +102,6 @@ export function TeamSettings() {
   }, [load, apply]);
 
   const isAdmin = me?.role === "admin";
-  // Si el servidor de autenticacion manda correos, el alta puede invitar; si no, la
-  // unica via es una contrasena temporal que el admin pasa a mano.
-  const { authEnviaCorreos } = leerConfigPublica();
-
-  const reenviarAcceso = async (m: Member) => {
-    const res = await fetch(`/api/team/${m.id}/acceso`, { method: "POST" });
-    const body = await res.json().catch(() => ({}));
-    if (!res.ok) {
-      toast.error(body.error ?? "No se pudo reenviar");
-      return;
-    }
-    toast.success(`Enlace enviado a ${m.email}`);
-  };
 
   const update = async (id: string, patch: Partial<Member>) => {
     const res = await fetch(`/api/team/${id}`, {
@@ -109,147 +114,362 @@ export function TeamSettings() {
       toast.error(body.error ?? "No se pudo actualizar");
       return;
     }
-    toast.success("Equipo actualizado");
+    toast.success("Cuenta actualizada");
     apply(await load());
   };
 
+  const eliminarMiembro = async (m: Member) => {
+    if (m.email.toLowerCase() === MASTER_EMAIL) {
+      toast.error("La cuenta Google Maestra no se puede eliminar.");
+      return;
+    }
+    const res = await fetch(`/api/team/${m.id}`, {
+      method: "DELETE",
+    });
+    const body = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      toast.error(body.error ?? "No se pudo eliminar la cuenta");
+      return;
+    }
+    toast.success(`Cuenta ${m.email} eliminada del equipo`);
+    apply(await load());
+  };
+
+  const handleQuickAddVendedor = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const emailClean = quickEmail.trim().toLowerCase();
+    if (!emailClean) {
+      toast.error("Ingresa el correo de Google del vendedor");
+      return;
+    }
+    setAddingQuick(true);
+    try {
+      const res = await fetch("/api/team", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          email: emailClean,
+          name: quickName.trim() || emailClean.split("@")[0],
+          role: "asesor",
+          pin: quickPin.trim() || undefined,
+        }),
+      });
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        toast.error(body.error ?? "No se pudo agregar la cuenta Google");
+        return;
+      }
+      toast.success(
+        `Cuenta Google ${emailClean} autorizada como Vendedor (Asesor)`
+      );
+      setQuickEmail("");
+      setQuickName("");
+      setQuickPin("");
+      apply(await load());
+    } finally {
+      setAddingQuick(false);
+    }
+  };
+
+  const handleSaveSecurity = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setSavingConfig(true);
+    try {
+      const res = await fetch("/api/team", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          adminPin: adminPin.trim() || undefined,
+          vendedorPin: vendedorPin.trim() || undefined,
+          googleClientId: googleClientId.trim() || undefined,
+        }),
+      });
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        toast.error(body.error ?? "No se pudieron guardar los ajustes");
+        return;
+      }
+      toast.success("Ajustes de acceso Google y claves actualizados");
+      setAdminPin("");
+      setVendedorPin("");
+    } finally {
+      setSavingConfig(false);
+    }
+  };
+
   if (loading) {
-    return <p className="text-sm text-muted-foreground">Cargando equipo...</p>;
+    return <p className="text-sm text-muted-foreground">Cargando cuentas del equipo...</p>;
   }
 
   return (
-    <div className="space-y-4">
-      <div className="flex items-start justify-between gap-3">
-        <p className="text-sm text-muted-foreground">
-          Los <strong>administradores</strong> ven todo y asignan contactos. Los{" "}
-          <strong>asesores</strong> ven solo los contactos que tienen asignados.
-        </p>
+    <div id="equipo" className="space-y-5">
+      {/* Banner de Cuenta Maestra */}
+      <div className="rounded-xl border border-emerald-500/25 bg-emerald-500/5 p-3.5 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+        <div className="flex items-center gap-3">
+          <div className="h-10 w-10 rounded-xl bg-emerald-500/15 text-emerald-600 flex items-center justify-center shrink-0">
+            <Sparkles className="h-5 w-5" />
+          </div>
+          <div>
+            <div className="flex items-center gap-2">
+              <p className="text-sm font-semibold">
+                Login Maestro Google: {MASTER_EMAIL}
+              </p>
+              <Badge className="bg-emerald-600 text-white text-[10px] px-2 py-0">
+                Propietario / Admin Total
+              </Badge>
+            </div>
+            <p className="text-xs text-muted-foreground">
+              Esta cuenta tiene acceso total garantizado y puede autorizar o revocar las cuentas Google de los vendedores.
+            </p>
+          </div>
+        </div>
         {isAdmin && (
-          <Button size="sm" onClick={() => setOpen(true)} className="cursor-pointer shrink-0">
-            <UserPlus className="h-4 w-4 mr-1" />
-            Agregar
+          <Button
+            size="sm"
+            onClick={() => setOpen(true)}
+            className="cursor-pointer shrink-0"
+          >
+            <UserPlus className="h-4 w-4 mr-1.5" />
+            Agregar cuenta avanzada
           </Button>
         )}
       </div>
 
+      {/* Alta rápida de Cuenta Google para Perfil de Vendedor */}
+      {isAdmin && (
+        <form
+          onSubmit={handleQuickAddVendedor}
+          className="rounded-xl border bg-muted/30 p-4 space-y-3"
+        >
+          <div className="flex items-center justify-between">
+            <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground flex items-center gap-1.5">
+              <Mail className="h-3.5 w-3.5 text-primary" />
+              Agregar Cuenta de Google para Perfil de Vendedor
+            </p>
+            <span className="text-[11px] text-muted-foreground">
+              Solo verá ventas, contactos asignados y pedidos COD
+            </span>
+          </div>
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
+            <Input
+              type="email"
+              required
+              placeholder="Correo Google (ej. vendedor1@gmail.com)"
+              value={quickEmail}
+              onChange={(e) => setQuickEmail(e.target.value)}
+              className="bg-background"
+            />
+            <Input
+              type="text"
+              placeholder="Nombre del vendedor (ej. Ana Ventas)"
+              value={quickName}
+              onChange={(e) => setQuickName(e.target.value)}
+              className="bg-background"
+            />
+            <div className="flex gap-2">
+              <Input
+                type="text"
+                placeholder="PIN opcional (def: 1234)"
+                value={quickPin}
+                onChange={(e) => setQuickPin(e.target.value)}
+                className="bg-background"
+              />
+              <Button
+                type="submit"
+                disabled={addingQuick}
+                className="cursor-pointer shrink-0"
+              >
+                <UserPlus className="h-4 w-4 mr-1" />
+                {addingQuick ? "..." : "Autorizar"}
+              </Button>
+            </div>
+          </div>
+        </form>
+      )}
+
+      {/* Lista de cuentas autorizadas */}
       <div className="rounded-lg border divide-y">
-        {members.map((m) => (
-          <div
-            key={m.id}
-            className={cn(
-              "flex items-center gap-3 p-3",
-              !m.active && "opacity-50"
-            )}
-          >
+        {members.map((m) => {
+          const esMaestro = m.email.toLowerCase() === MASTER_EMAIL;
+          return (
             <div
+              key={m.id}
               className={cn(
-                "h-9 w-9 shrink-0 rounded-full flex items-center justify-center text-[11px] font-semibold",
-                avatarBg(label(m))
+                "flex flex-wrap sm:flex-nowrap items-center gap-3 p-3",
+                !m.active && "opacity-50"
               )}
             >
-              {getInitials(label(m))}
+              <div
+                className={cn(
+                  "h-9 w-9 shrink-0 rounded-full flex items-center justify-center text-[11px] font-semibold",
+                  avatarBg(label(m))
+                )}
+              >
+                {getInitials(label(m))}
+              </div>
+              <div className="min-w-0 flex-1">
+                <div className="flex items-center gap-2">
+                  <p className="text-sm font-medium truncate">
+                    {label(m)}
+                    {me?.id === m.id && (
+                      <span className="text-xs text-muted-foreground font-normal">
+                        {" "}
+                        (tú)
+                      </span>
+                    )}
+                  </p>
+                  {esMaestro && (
+                    <Badge
+                      variant="outline"
+                      className="text-[10px] border-emerald-500/40 text-emerald-600"
+                    >
+                      Maestro Google
+                    </Badge>
+                  )}
+                  {!m.active && (
+                    <Badge variant="destructive" className="text-[10px]">
+                      Desactivado
+                    </Badge>
+                  )}
+                </div>
+                <p className="text-xs text-muted-foreground truncate">
+                  {m.email}
+                </p>
+              </div>
+
+              {isAdmin && !esMaestro ? (
+                <Select
+                  value={m.role}
+                  items={ROLE_ITEMS}
+                  onValueChange={(v) =>
+                    v &&
+                    v !== m.role &&
+                    update(m.id, { role: v as Member["role"] })
+                  }
+                >
+                  <SelectTrigger className="h-8 w-[155px] text-xs cursor-pointer">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="admin">Administrador</SelectItem>
+                    <SelectItem value="asesor">Vendedor (Asesor)</SelectItem>
+                  </SelectContent>
+                </Select>
+              ) : (
+                <Badge
+                  variant={m.role === "admin" ? "default" : "outline"}
+                  className="text-xs"
+                >
+                  {m.role === "admin" ? (
+                    <>
+                      <ShieldCheck className="h-3 w-3 mr-1" />
+                      Admin Maestro
+                    </>
+                  ) : (
+                    "Vendedor (Asesor)"
+                  )}
+                </Badge>
+              )}
+
+              {isAdmin && !esMaestro && me?.id !== m.id && (
+                <div className="flex items-center gap-1">
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => update(m.id, { active: !m.active })}
+                    className="cursor-pointer h-8 px-2"
+                    title={
+                      m.active
+                        ? "Pausar acceso de esta cuenta Google"
+                        : "Reactivar acceso"
+                    }
+                  >
+                    {m.active ? (
+                      <UserX className="h-4 w-4 text-muted-foreground" />
+                    ) : (
+                      <UserCheck className="h-4 w-4 text-primary" />
+                    )}
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => eliminarMiembro(m)}
+                    className="cursor-pointer h-8 px-2 text-destructive hover:text-destructive"
+                    title="Eliminar cuenta Google del equipo"
+                  >
+                    <Trash2 className="h-4 w-4" />
+                  </Button>
+                </div>
+              )}
             </div>
-            <div className="min-w-0 flex-1">
-              <p className="text-sm font-medium truncate">
-                {label(m)}
-                {me?.id === m.id && (
-                  <span className="text-xs text-muted-foreground font-normal"> (tu)</span>
-                )}
-              </p>
-              <p className="text-xs text-muted-foreground truncate">{m.email}</p>
-            </div>
-
-            {isAdmin ? (
-              <Select
-                value={m.role}
-                items={ROLE_ITEMS}
-                onValueChange={(v) => v && v !== m.role && update(m.id, { role: v as Member["role"] })}
-              >
-                <SelectTrigger className="h-8 w-[120px] text-xs cursor-pointer">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="admin">Administrador</SelectItem>
-                  <SelectItem value="asesor">Asesor</SelectItem>
-                </SelectContent>
-              </Select>
-            ) : (
-              <Badge variant={m.role === "admin" ? "default" : "outline"} className="text-xs">
-                {m.role === "admin" ? (
-                  <>
-                    <ShieldCheck className="h-3 w-3 mr-1" />
-                    Admin
-                  </>
-                ) : (
-                  "Asesor"
-                )}
-              </Badge>
-            )}
-
-            {isAdmin && authEnviaCorreos && m.active && (
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={() => reenviarAcceso(m)}
-                className="cursor-pointer h-8 px-2"
-                title="Reenviar el acceso por correo"
-              >
-                <Mail className="h-4 w-4 text-muted-foreground" />
-              </Button>
-            )}
-
-            {isAdmin && me?.id !== m.id && (
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={() => update(m.id, { active: !m.active })}
-                className="cursor-pointer h-8 px-2"
-                title={m.active ? "Desactivar" : "Reactivar"}
-              >
-                {m.active ? (
-                  <UserX className="h-4 w-4 text-muted-foreground" />
-                ) : (
-                  <UserCheck className="h-4 w-4 text-primary" />
-                )}
-              </Button>
-            )}
-          </div>
-        ))}
+          );
+        })}
       </div>
+
+      {/* Configuración de Claves / Google OAuth Client ID */}
+      {isAdmin && (
+        <form
+          onSubmit={handleSaveSecurity}
+          className="rounded-xl border p-4 space-y-3 bg-card"
+        >
+          <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground flex items-center gap-1.5">
+            <KeyRound className="h-3.5 w-3.5" />
+            Claves de Acceso y Botón Google OAuth (Opcional)
+          </p>
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+            <div className="space-y-1">
+              <Label className="text-xs">Nueva Clave Maestra (Admin)</Label>
+              <Input
+                type="password"
+                placeholder="Actual: aliv2026"
+                value={adminPin}
+                onChange={(e) => setAdminPin(e.target.value)}
+                className="h-9 text-xs"
+              />
+            </div>
+            <div className="space-y-1">
+              <Label className="text-xs">Nueva Clave General Vendedores</Label>
+              <Input
+                type="password"
+                placeholder="Actual: 1234"
+                value={vendedorPin}
+                onChange={(e) => setVendedorPin(e.target.value)}
+                className="h-9 text-xs"
+              />
+            </div>
+            <div className="space-y-1">
+              <Label className="text-xs">Google OAuth Client ID (1-Click)</Label>
+              <div className="flex gap-2">
+                <Input
+                  type="text"
+                  placeholder="xxx.apps.googleusercontent.com"
+                  value={googleClientId}
+                  onChange={(e) => setGoogleClientId(e.target.value)}
+                  className="h-9 text-xs"
+                />
+                <Button
+                  type="submit"
+                  size="sm"
+                  variant="secondary"
+                  disabled={savingConfig}
+                  className="h-9 cursor-pointer shrink-0"
+                >
+                  <Check className="h-3.5 w-3.5 mr-1" />
+                  Guardar
+                </Button>
+              </div>
+            </div>
+          </div>
+        </form>
+      )}
 
       {isAdmin && (
         <AddMemberDialog
           open={open}
           onClose={() => setOpen(false)}
           onCreated={async () => apply(await load())}
-          puedeInvitar={authEnviaCorreos}
         />
       )}
-    </div>
-  );
-}
-
-function CampoClaveTemporal({
-  password,
-  onChange,
-}: {
-  password: string;
-  onChange: (v: string) => void;
-}) {
-  return (
-    <div className="space-y-2">
-      <Label htmlFor="tm-pass">Contrasena temporal</Label>
-      <Input
-        id="tm-pass"
-        type="text"
-        value={password}
-        onChange={(e) => onChange(e.target.value)}
-        placeholder="opcional, min. 8 caracteres"
-        autoComplete="off"
-      />
-      <p className="text-xs text-muted-foreground">
-        Dejala vacia si la persona va a entrar con Google u otro proveedor.
-      </p>
     </div>
   );
 }
@@ -258,21 +478,16 @@ function AddMemberDialog({
   open,
   onClose,
   onCreated,
-  puedeInvitar,
 }: {
   open: boolean;
   onClose: () => void;
   onCreated: () => Promise<void>;
-  puedeInvitar: boolean;
 }) {
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [role, setRole] = useState<Member["role"]>("asesor");
-  const [modo, setModo] = useState<ModoAcceso>("invitacion");
-  const [password, setPassword] = useState("");
+  const [pin, setPin] = useState("");
   const [saving, setSaving] = useState(false);
-
-  const invitar = puedeInvitar && modo === "invitacion";
 
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -281,29 +496,22 @@ function AddMemberDialog({
       const res = await fetch("/api/team", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name, email, role, password, invitar }),
+        body: JSON.stringify({ name, email, role, pin }),
       });
       const body = await res.json().catch(() => ({}));
       if (!res.ok) {
         toast.error(body.error ?? "No se pudo agregar");
         return;
       }
-      if (body.avisoCorreo) {
-        toast.warning(`Agregado, pero el correo no salio: ${body.avisoCorreo}`);
-      } else if (body.correoEnviado) {
-        toast.success(`Invitado. Le llego un correo a ${email} para elegir su contrasena.`);
-      } else {
-        toast.success(
-          body.reusedAuthUser
-            ? "Agregado. Ya tenia usuario: entra con su contrasena de siempre."
-            : "Agregado. Pasale el email y la contrasena temporal."
-        );
-      }
+      toast.success(
+        `Cuenta Google ${email} autorizada con perfil de ${
+          role === "admin" ? "Administrador" : "Vendedor"
+        }.`
+      );
       setName("");
       setEmail("");
-      setPassword("");
+      setPin("");
       setRole("asesor");
-      setModo("invitacion");
       onClose();
       await onCreated();
     } finally {
@@ -315,95 +523,77 @@ function AddMemberDialog({
     <Dialog open={open} onOpenChange={(v) => !v && onClose()}>
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
-          <DialogTitle>Agregar al equipo</DialogTitle>
+          <DialogTitle>Autorizar Cuenta de Google</DialogTitle>
           <DialogDescription>
-            {invitar
-              ? "Le llega un correo con un enlace para elegir su contrasena. Entra con eso, no hace falta que le pases nada."
-              : "La cuenta queda lista al instante y no se envia ningun correo: pasale vos la contrasena temporal, o dejala vacia si va a entrar con un proveedor externo."}
+            Agrega el correo de Google del vendedor o administrador. Quedará habilitado de inmediato para iniciar sesión en el CRM.
           </DialogDescription>
         </DialogHeader>
         <form onSubmit={submit} className="space-y-4">
           <div className="space-y-2">
-            <Label htmlFor="tm-name">Nombre</Label>
+            <Label htmlFor="tm-name">Nombre del integrante</Label>
             <Input
               id="tm-name"
               value={name}
               onChange={(e) => setName(e.target.value)}
-              placeholder="Como lo va a nombrar el agente"
+              placeholder="Ej. Carlos Ventas"
             />
           </div>
           <div className="space-y-2">
-            <Label htmlFor="tm-email">Email *</Label>
+            <Label htmlFor="tm-email">Correo de Google (@gmail.com) *</Label>
             <Input
               id="tm-email"
               type="email"
               required
               value={email}
               onChange={(e) => setEmail(e.target.value)}
-              placeholder="asesor@empresa.com"
+              placeholder="vendedor@gmail.com"
             />
           </div>
           <div className="grid grid-cols-2 gap-3">
             <div className="space-y-2">
-              <Label>Rol</Label>
-              <Select value={role} items={ROLE_ITEMS} onValueChange={(v) => v && setRole(v as Member["role"])}>
+              <Label>Perfil de Acceso</Label>
+              <Select
+                value={role}
+                items={ROLE_ITEMS}
+                onValueChange={(v) => v && setRole(v as Member["role"])}
+              >
                 <SelectTrigger className="cursor-pointer">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="asesor">Asesor</SelectItem>
+                  <SelectItem value="asesor">Vendedor (Asesor)</SelectItem>
                   <SelectItem value="admin">Administrador</SelectItem>
                 </SelectContent>
               </Select>
-              <p className="text-xs text-muted-foreground">
-                {role === "asesor"
-                  ? "Ve solo los contactos asignados a el, y sus conversaciones, operaciones y actividades."
-                  : "Ve todo y gestiona equipo, canales, agente y automatizaciones."}
-              </p>
             </div>
-            {puedeInvitar ? (
-              <div className="space-y-2">
-                <Label>Como entra</Label>
-                <Select
-                  value={modo}
-                  items={ACCESO_ITEMS}
-                  onValueChange={(v) => v && setModo(v as ModoAcceso)}
-                >
-                  <SelectTrigger className="cursor-pointer">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="invitacion">Invitacion por correo</SelectItem>
-                    <SelectItem value="clave">Contrasena temporal</SelectItem>
-                  </SelectContent>
-                </Select>
-                <p className="text-xs text-muted-foreground">
-                  {invitar
-                    ? "Le llega el enlace a ese email y elige su propia contrasena."
-                    : "Se la pasas vos por donde quieras."}
-                </p>
-              </div>
-            ) : (
-              <CampoClaveTemporal password={password} onChange={setPassword} />
-            )}
+            <div className="space-y-2">
+              <Label htmlFor="tm-pin">Clave / PIN individual</Label>
+              <Input
+                id="tm-pin"
+                type="text"
+                value={pin}
+                onChange={(e) => setPin(e.target.value)}
+                placeholder="Opcional (def: 1234)"
+                autoComplete="off"
+              />
+            </div>
           </div>
-
-          {puedeInvitar && !invitar && (
-            <CampoClaveTemporal password={password} onChange={setPassword} />
-          )}
-
-          {!invitar && (
-            <p className="text-xs text-muted-foreground">
-              Se crea el usuario con esa contrasena. Si el email ya tenia cuenta, se
-              reutiliza y la contrasena se ignora.
-            </p>
-          )}
+          <p className="text-xs text-muted-foreground">
+            {role === "asesor"
+              ? "El perfil Vendedor solo puede gestionar conversaciones, contactos asignados y pedidos COD."
+              : "El perfil Administrador tiene acceso completo a configuración, equipo y reportes."}
+          </p>
           <div className="flex justify-end gap-2 pt-1">
-            <Button type="button" variant="outline" onClick={onClose} className="cursor-pointer">
+            <Button
+              type="button"
+              variant="outline"
+              onClick={onClose}
+              className="cursor-pointer"
+            >
               Cancelar
             </Button>
             <Button type="submit" disabled={saving} className="cursor-pointer">
-              {saving ? "Guardando..." : invitar ? "Invitar" : "Agregar"}
+              {saving ? "Guardando..." : "Autorizar Cuenta Google"}
             </Button>
           </div>
         </form>
