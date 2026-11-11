@@ -42,6 +42,7 @@ export function ConversationsList({ conversations, selectedId }: Props) {
       if (c.handle?.toLowerCase().includes(q)) return true;
       if (digits && c.phone && c.phone.replace(/\D/g, "").includes(digits))
         return true;
+      if (c.tags?.some((t) => t.toLowerCase().includes(q))) return true;
       return false;
     });
   }, [conversations, search, channel]);
@@ -214,6 +215,26 @@ export function ConversationsList({ conversations, selectedId }: Props) {
                           </span>
                         )}
                       </div>
+                      {c.tags && c.tags.length > 0 && (
+                        <div className="flex flex-wrap gap-1 mt-1">
+                          {c.tags
+                            .filter((t) => !["shopify", "alivstore", "easysell_cod"].includes(t))
+                            .slice(0, 2)
+                            .map((t) => (
+                              <span
+                                key={t}
+                                className="inline-flex items-center px-1.5 py-0.2 rounded text-[9.5px] font-medium bg-muted/80 text-foreground/80 border border-border/50"
+                              >
+                                {t}
+                              </span>
+                            ))}
+                          {c.tags.filter((t) => !["shopify", "alivstore", "easysell_cod"].includes(t)).length > 2 && (
+                            <span className="text-[9px] text-muted-foreground self-center">
+                              +{c.tags.filter((t) => !["shopify", "alivstore", "easysell_cod"].includes(t)).length - 2}
+                            </span>
+                          )}
+                        </div>
+                      )}
                     </div>
                   </Link>
                 </li>

@@ -269,12 +269,16 @@ const sendMessage: ActionDef = {
     if (!text) return { status: "skipped", detail: "Mensaje vacio" };
 
     let conversationId = await resolveConversationId(ctx.contactId);
+    let contactInfo: { id: string; name: string; phone: string | null; tenantId: string | null } | null = null;
+
     if (!conversationId) {
       const [contact] = await db
         .select({ id: contacts.id, name: contacts.name, phone: contacts.phone, tenantId: contacts.tenantId })
         .from(contacts)
         .where(eq(contacts.id, ctx.contactId))
         .limit(1);
+
+      contactInfo = contact ?? null;
 
       if (contact?.phone) {
         // Verificar primero si ya existia una conversacion previa por contacto o por telefono
@@ -330,9 +334,37 @@ const sendMessage: ActionDef = {
       return { status: "skipped", detail: "El contacto no tiene conversacion activa ni numero de WhatsApp" };
     }
 
+    // Si viene de un evento de orden, preparar plantilla de WhatsApp por si la ventana de 24h está cerrada
+    let template: { name: string; language: string; params: string[]; previewText: string } | undefined = undefined;
+    const payload = (ctx.event?.payload ?? {}) as Record<string, any>;
+    if (payload.numeroOrden || payload.orderId) {
+      const clienteNombre = String(payload.contactName || contactInfo?.name || "Cliente").split(" ")[0];
+      const ordenNum = String(payload.numeroOrden || payload.orderId || "");
+      const prods = String(payload.productos || "NAC600");
+      const tot = String(payload.total || payload.totalSoles || "119");
+      const ciudadDestino = String(payload.ciudad || "Provincia");
+      const saldoRestante = String(payload.saldo || "99");
+
+      if (payload.esProvincia === "true" || payload.esProvincia === true) {
+        template = {
+          name: "aliv_pedido_provincia",
+          language: "es",
+          params: [clienteNombre, ordenNum, prods, ciudadDestino, `S/ ${tot}`, `S/ ${saldoRestante}`],
+          previewText: text,
+        };
+      } else {
+        template = {
+          name: "aliv_pedido_lima",
+          language: "es",
+          params: [clienteNombre, ordenNum, prods, `S/ ${tot}`],
+          previewText: text,
+        };
+      }
+    }
+
     const res = await deliverMessage(
       conversationId,
-      { text },
+      { text, template },
       "agent"
     );
     if (!res.ok) {

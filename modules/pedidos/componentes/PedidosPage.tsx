@@ -17,6 +17,7 @@ import {
   Copy,
   RefreshCw,
   Globe,
+  HelpCircle,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -150,22 +151,39 @@ export function PedidosPage() {
     notas: "",
   });
 
-  const cargarPedidos = useCallback(async () => {
-    setLoading(true);
+  const cargarPedidos = useCallback(async (silent = false) => {
+    if (!silent) setLoading(true);
     try {
-      const res = await fetch(API_PEDIDOS);
+      const res = await fetch(API_PEDIDOS, { cache: "no-store" });
       const data = await res.json();
       setPedidos(Array.isArray(data) ? data : []);
     } catch {
-      toast.error("No se pudieron cargar los pedidos");
+      if (!silent) toast.error("No se pudieron cargar los pedidos");
     } finally {
-      setLoading(false);
+      if (!silent) setLoading(false);
     }
   }, []);
 
   useEffect(() => {
     cargarPedidos();
     sincronizarDriveManual(true);
+
+    // Auto-actualización silenciosa periódica cada 15 segundos
+    const interval = setInterval(() => {
+      if (typeof document !== "undefined" && document.visibilityState === "visible") {
+        cargarPedidos(true);
+      }
+    }, 15000);
+
+    const onFocus = () => {
+      cargarPedidos(true);
+    };
+    window.addEventListener("focus", onFocus);
+
+    return () => {
+      clearInterval(interval);
+      window.removeEventListener("focus", onFocus);
+    };
   }, [cargarPedidos, sincronizarDriveManual]);
 
   const abrirNuevoPedido = async () => {
@@ -333,15 +351,32 @@ export function PedidosPage() {
         subtitle="Gestión de órdenes Contraentrega, despachos por Motorizado Lima / Shalom / Olva Courier y guardado automático en Google Drive."
         actions={
           <div className="flex flex-wrap items-center gap-2">
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => setShopifyDialogOpen(true)}
-              className="border-emerald-500/40 text-emerald-700 dark:text-emerald-300 hover:bg-emerald-50 dark:hover:bg-emerald-950/30"
-            >
-              <ShoppingBag className="mr-1.5 h-4 w-4 text-emerald-600" />
-              Sincronizar Shopify
-            </Button>
+            <div className="flex items-center gap-1">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={async () => {
+                  setSyncingShopify(true);
+                  await cargarPedidos(false);
+                  setSyncingShopify(false);
+                  toast.success("Pedidos de Shopify actualizados");
+                }}
+                disabled={syncingShopify}
+                className="border-emerald-500/40 text-emerald-700 dark:text-emerald-300 hover:bg-emerald-50 dark:hover:bg-emerald-950/30"
+              >
+                <ShoppingBag className={`mr-1.5 h-4 w-4 text-emerald-600 ${syncingShopify ? "animate-spin" : ""}`} />
+                {syncingShopify ? "Sincronizando..." : "Sincronizar Shopify"}
+              </Button>
+              <Button
+                variant="ghost"
+                size="icon"
+                onClick={() => setShopifyDialogOpen(true)}
+                title="Ver configuración del Webhook de Shopify"
+                className="h-8 w-8 text-muted-foreground hover:text-emerald-600"
+              >
+                <HelpCircle className="h-4 w-4" />
+              </Button>
+            </div>
             <Button
               variant="outline"
               size="sm"

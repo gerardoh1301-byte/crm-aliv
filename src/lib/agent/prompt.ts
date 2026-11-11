@@ -98,7 +98,17 @@ export function renderSystemPrompt(template: string, opts: { now?: Date; channel
     .replaceAll("{{negocio}}", marca.nombre);
 
   const hint = CHANNEL_HINTS[channel];
-  return hint ? `${rendered}\n\n# CANAL\n${hint}` : rendered;
+  const conCanal = hint ? `${rendered}\n\n# CANAL\n${hint}` : rendered;
+
+  const bloqueImagenes = `\n\n# IMAGENES DE APOYO Y REFERENCIA
+Tienes acceso a la herramienta \`enviar_imagen_referencia\` para compartir imágenes oficiales cuando sea útil para la venta o la atención:
+- Clave "nac600_frasco": Foto oficial del frasco de NAC600 + NAD+ (60 cápsulas). Úsala si el cliente pregunta cómo es el producto, cómo viene la presentación o pide foto del frasco.
+- Clave "nac600_beneficios": Ficha explicativa de soporte hepático, glutatión, energía celular y modo de uso. Úsala si el cliente pregunta por la composición o cómo se toma.
+- Clave "termix_tobillera": Foto de la Tobillera Térmica Termix con calor de grafeno y masaje. Úsala si el cliente consulta por la tobillera.
+- Clave "yape_adelanto": Datos y comprobante oficial de Yape / Plin (951365418 - Gerardo Huaynalaya). Úsala cuando un cliente de provincia solicite los datos de pago para su adelanto de S/ 20.
+Envíalas cuando el cliente pregunte por fotos/cómo es el producto, o cuando coordines el pago/adelanto de provincia.`;
+
+  return `${conCanal}${bloqueImagenes}`;
 }
 
 /**

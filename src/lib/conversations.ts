@@ -28,6 +28,7 @@ export interface ConversationListItem {
   lastDirection: "in" | "out" | null;
   lastAt: Date | null;
   unreadCount: number;
+  tags?: string[];
   /** Efectivo: el contacto es el kill-switch global, la conversacion apaga un canal. */
   aiEnabled: boolean;
   needsHuman: boolean;
@@ -103,6 +104,7 @@ export async function listConversations(filter?: {
       convNeedsHuman: conversations.needsHuman,
       convNeedsHumanReason: conversations.needsHumanReason,
       contactName: contacts.name,
+      contactTags: contacts.tags,
       phone: contacts.phone,
       contactAiEnabled: contacts.aiEnabled,
       contactNeedsHuman: contacts.needsHuman,
@@ -138,7 +140,10 @@ export async function listConversations(filter?: {
         filter?.ownerId ? or(eq(contacts.ownerId, filter.ownerId), isNull(contacts.ownerId)) : undefined
       )
     )
-    .orderBy(desc(conversations.lastMessageAt));
+    .orderBy(
+      sql`COALESCE(${conversations.lastMessageAt}, ${conversations.createdAt}) DESC`,
+      desc(conversations.id)
+    );
 
   return rows.map((r) => ({
     conversationId: r.conversationId,
@@ -148,6 +153,7 @@ export async function listConversations(filter?: {
     provider: r.provider,
     handle: handleOf(r),
     phone: r.phone,
+    tags: r.contactTags ?? [],
     participantPicture: r.participantPicture,
     lastBody: r.lastBody,
     lastDirection: (r.lastDirection as "in" | "out" | null) ?? null,

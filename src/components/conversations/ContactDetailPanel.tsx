@@ -51,6 +51,16 @@ interface Props {
 
 type SaveState = "idle" | "saving" | "saved" | "error";
 
+const ETIQUETAS_PREDEFINIDAS = [
+  { nombre: "pendiente de envío", color: "bg-amber-500/10 text-amber-700 dark:text-amber-300 border-amber-500/30" },
+  { nombre: "pendiente de cobro", color: "bg-purple-500/10 text-purple-700 dark:text-purple-300 border-purple-500/30" },
+  { nombre: "adelanto pagado", color: "bg-emerald-500/10 text-emerald-700 dark:text-emerald-300 border-emerald-500/30" },
+  { nombre: "pedido confirmado", color: "bg-blue-500/10 text-blue-700 dark:text-blue-300 border-blue-500/30" },
+  { nombre: "en agencia shalom", color: "bg-rose-500/10 text-rose-700 dark:text-rose-300 border-rose-500/30" },
+  { nombre: "motorizado lima", color: "bg-indigo-500/10 text-indigo-700 dark:text-indigo-300 border-indigo-500/30" },
+  { nombre: "esperando respuesta", color: "bg-slate-500/10 text-slate-700 dark:text-slate-300 border-slate-500/30" },
+];
+
 export function ContactDetailPanel({
   contact,
   agente,
@@ -415,7 +425,7 @@ export function ContactDetailPanel({
                   addTag();
                 }
               }}
-              placeholder="Nueva etiqueta..."
+              placeholder="Nueva etiqueta personalizada..."
               className="h-8 text-xs"
             />
             <Button
@@ -424,10 +434,45 @@ export function ContactDetailPanel({
               size="sm"
               onClick={addTag}
               disabled={!tagDraft.trim()}
-              className="cursor-pointer h-8 text-xs"
+              className="cursor-pointer h-8 text-xs shrink-0"
             >
               Agregar
             </Button>
+          </div>
+
+          {/* Selector de etiquetas rápidas con un clic */}
+          <div className="space-y-1.5 pt-1">
+            <span className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground/80">
+              Etiquetas rápidas:
+            </span>
+            <div className="flex flex-wrap gap-1">
+              {ETIQUETAS_PREDEFINIDAS.map((p) => {
+                const yaTiene = tags.some((t) => t.toLowerCase() === p.nombre.toLowerCase());
+                return (
+                  <button
+                    key={p.nombre}
+                    type="button"
+                    onClick={() => {
+                      if (yaTiene) {
+                        const original = tags.find((t) => t.toLowerCase() === p.nombre.toLowerCase());
+                        if (original) removeTag(original);
+                      } else {
+                        void persistTags([...tags, p.nombre]);
+                      }
+                    }}
+                    className={cn(
+                      "text-[10.5px] px-2 py-0.5 rounded-full border transition-all cursor-pointer",
+                      yaTiene
+                        ? `${p.color} font-semibold ring-1 ring-primary/40`
+                        : "bg-muted/40 text-muted-foreground border-border/60 hover:bg-muted hover:text-foreground hover:border-border"
+                    )}
+                  >
+                    {yaTiene ? "✓ " : "+ "}
+                    {p.nombre}
+                  </button>
+                );
+              })}
+            </div>
           </div>
         </div>
 

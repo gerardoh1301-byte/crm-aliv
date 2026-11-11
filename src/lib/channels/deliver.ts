@@ -69,8 +69,9 @@ export async function deliverMessage(
       provider: conversation.provider,
       direction: "out",
       origin,
-      type: msg.template ? "template" : "text",
+      type: msg.attachments?.length ? "image" : msg.template ? "template" : "text",
       body,
+      rawPayload: msg.attachments?.length ? { attachments: msg.attachments } : null,
       templateName: msg.template?.name ?? null,
       status: "pending",
       tenantId: conversation.tenantId,
@@ -168,6 +169,9 @@ function bodyOf(msg: OutboundMessage): string | null {
   if (msg.text?.trim()) return msg.text.trim();
   if (msg.template) {
     return msg.template.previewText?.trim() || `[plantilla] ${msg.template.name}`;
+  }
+  if (msg.attachments?.length) {
+    return msg.attachments[0].name || `[imagen] ${msg.attachments[0].url}`;
   }
   return null;
 }

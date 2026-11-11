@@ -18,7 +18,7 @@ export const zernio: Conector = {
 
   async enviar(ctx, msg) {
     const text = msg.text?.trim();
-    if (!text && !msg.template) {
+    if (!text && !msg.template && !msg.attachments?.length) {
       return { success: false, error: { message: "Mensaje vacio" } };
     }
 
@@ -41,6 +41,13 @@ export const zernio: Conector = {
       caps.humanAgentTag &&
       isOutsideFreeFormWindow(ctx.channel, ctx.conversation.lastInboundAt);
 
+    const attachments = msg.attachments?.map((a) => ({
+      type: a.type || "image",
+      url: a.url,
+      name: a.name,
+      mimeType: a.mimeType,
+    }));
+
     const isPlaceholderId =
       !ctx.conversation.externalId ||
       ctx.conversation.externalId.startsWith("zernio:") ||
@@ -51,6 +58,7 @@ export const zernio: Conector = {
     if (!isPlaceholderId) {
       result = await sendMessage(ctx.conversation.externalId, {
         accountId,
+        ...(attachments?.length ? { attachments } : {}),
         ...(msg.template
           ? {
               template: {
@@ -59,7 +67,7 @@ export const zernio: Conector = {
                 components: msg.template.components ?? [],
               },
             }
-          : { message: text }),
+          : text ? { message: text } : {}),
         ...(needsTag
           ? { messageTag: "HUMAN_AGENT" as const, messagingType: "MESSAGE_TAG" as const }
           : {}),
@@ -80,11 +88,12 @@ export const zernio: Conector = {
         const createResult = await createConversation({
           accountId,
           participantId: participant,
-          message: text,
+          ...(text ? { message: text } : {}),
           ...(msg.template
             ? {
                 templateName: msg.template.name,
                 templateLanguage: msg.template.language ?? "es",
+                templateParams: msg.template.params,
               }
             : {}),
         });

@@ -24,12 +24,21 @@ export interface OutboundTemplate {
   name: string;
   language?: string;
   components?: unknown[];
+  params?: string[];
   previewText?: string;
+}
+
+export interface OutboundAttachment {
+  type?: "image" | "document" | "video" | "audio";
+  url: string;
+  name?: string;
+  mimeType?: string;
 }
 
 export interface OutboundMessage {
   text?: string;
   template?: OutboundTemplate;
+  attachments?: OutboundAttachment[];
 }
 
 export interface SendOutcome {

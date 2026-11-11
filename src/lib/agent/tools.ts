@@ -302,6 +302,63 @@ async function asignarAsesor(args: { asesor?: string; motivo?: string }, ctx: To
   };
 }
 
+async function enviarImagenReferencia(
+  args: { clave?: string; motivo?: string },
+  ctx: ToolContext
+): Promise<ToolResult> {
+  const { buscarImagenReferencia } = await import("./imagenes-referencia");
+  const { deliverMessage } = await import("@/lib/channels/deliver");
+
+  if (!args.clave) {
+    return {
+      ok: false,
+      error:
+        "Debes especificar la clave de la imagen (ej: 'nac600_frasco', 'nac600_beneficios', 'termix_tobillera', 'yape_adelanto').",
+    };
+  }
+
+  const img = buscarImagenReferencia(args.clave);
+  if (!img) {
+    return {
+      ok: false,
+      error: `Imagen no encontrada para clave '${args.clave}'. Claves válidas: nac600_frasco, nac600_beneficios, termix_tobillera, yape_adelanto.`,
+    };
+  }
+
+  if (!ctx.conversationId) {
+    return { ok: false, error: "No hay una conversación activa asociada para enviar la imagen." };
+  }
+
+  const res = await deliverMessage(
+    ctx.conversationId,
+    {
+      text: args.motivo || img.titulo,
+      attachments: [
+        {
+          type: "image",
+          url: img.url,
+          name: img.titulo,
+        },
+      ],
+    },
+    "agent"
+  );
+
+  if (!res.ok) {
+    return { ok: false, error: res.error ?? "No se pudo enviar la imagen por el canal." };
+  }
+
+  return {
+    ok: true,
+    data: {
+      enviada: true,
+      imagen: img.id,
+      titulo: img.titulo,
+      url: img.url,
+    },
+  };
+}
+
 function toolsGenericas(): ToolAgente[] {
   const campos = camposContacto();
   const etiquetaAsesor = getConfig().roles.etiquetaAsesor.toLowerCase();
@@ -424,6 +481,30 @@ function toolsGenericas(): ToolAgente[] {
       ),
       descripcionUI: `Permite al agente asignar el contacto a un ${etiquetaAsesor} por nombre. Dispara la automatizacion de aviso.`,
       ejecutar: (a, ctx) => asignarAsesor(a as { asesor?: string; motivo?: string }, ctx),
+    },
+    {
+      definicion: definir(
+        "enviar_imagen_referencia",
+        "Envía una imagen o infografía de referencia oficial al cliente por WhatsApp (foto del frasco NAC600, ficha de beneficios/ingredientes, tobillera Termix o comprobante/QR de Yape). " +
+          "Claves válidas: 'nac600_frasco', 'nac600_beneficios', 'termix_tobillera', 'yape_adelanto'.",
+        {
+          type: "object",
+          properties: {
+            clave: {
+              type: "string",
+              description: "Identificador de la imagen: 'nac600_frasco', 'nac600_beneficios', 'termix_tobillera' o 'yape_adelanto'.",
+            },
+            motivo: {
+              type: "string",
+              description: "Breve texto explicativo para acompañar la imagen en el chat (opcional).",
+            },
+          },
+          required: ["clave"],
+          additionalProperties: false,
+        }
+      ),
+      descripcionUI: "Permite al agente enviar fotos oficiales de productos, infografías de beneficios y datos de pago directamente por WhatsApp.",
+      ejecutar: (a, ctx) => enviarImagenReferencia(a as { clave?: string; motivo?: string }, ctx),
     },
   ];
 }

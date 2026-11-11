@@ -224,11 +224,36 @@ export function ChatPanel({
                         : "bg-card text-foreground border-border shadow-xs rounded-bl-md",
                     )}
                   >
-                    {m.body || (
-                      <span className="italic text-current/60">
-                        ({m.type})
-                      </span>
-                    )}
+                    {(() => {
+                      const imgMatch = m.body?.match(/https?:\/\/[^\s)]+\.(?:jpg|jpeg|png|webp|gif)/i);
+                      const imgUrl = imgMatch ? imgMatch[0] : null;
+                      const textoLimpio = imgUrl ? m.body?.replace(imgUrl, "").replace(/\[imagen\]/i, "").trim() : m.body;
+
+                      return (
+                        <div className="space-y-1.5">
+                          {imgUrl && (
+                            <div className="overflow-hidden rounded-lg border border-border/50 max-w-[280px]">
+                              {/* eslint-disable-next-line @next/next/no-img-element */}
+                              <img
+                                src={imgUrl}
+                                alt="Imagen"
+                                className="w-full h-auto object-cover max-h-[220px] rounded"
+                                loading="lazy"
+                              />
+                            </div>
+                          )}
+                          {(textoLimpio || !imgUrl) && (
+                            <p>
+                              {textoLimpio || (
+                                <span className="italic text-current/60">
+                                  ({m.type})
+                                </span>
+                              )}
+                            </p>
+                          )}
+                        </div>
+                      );
+                    })()}
                     {m.templateName && (
                       <div className="mt-1 text-[10px] font-mono opacity-70">
                         plantilla: {m.templateName}
