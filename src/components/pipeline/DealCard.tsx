@@ -18,6 +18,8 @@ import {
   Printer,
   Truck,
   UserCheck,
+  Clock,
+  X,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { avatarBg, getInitials } from "@/lib/avatar";
@@ -58,6 +60,7 @@ export interface DealCardProps {
   estadoPedido?: string | null;
   ownerId?: string | null;
   ownerName?: string | null;
+  tags?: string[];
 }
 
 export function DealCard({
@@ -86,6 +89,7 @@ export function DealCard({
   estadoPedido,
   ownerId,
   ownerName,
+  tags = [],
 }: DealCardProps) {
   const router = useRouter();
   const [rotuloOpen, setRotuloOpen] = useState(false);
@@ -96,6 +100,7 @@ export function DealCard({
   const [currentNumeroGuia, setCurrentNumeroGuia] = useState<string | null>(numeroGuia ?? null);
   const [currentCodigoRastreo, setCurrentCodigoRastreo] = useState<string | null>(codigoRastreo ?? null);
   const [currentClaveRecojo, setCurrentClaveRecojo] = useState<string | null>(claveRecojo ?? null);
+  const [currentTags, setCurrentTags] = useState<string[]>(tags || []);
 
   useEffect(() => {
     setCurrentOwnerId(ownerId ?? null);
@@ -107,6 +112,57 @@ export function DealCard({
     setCurrentCodigoRastreo(codigoRastreo ?? null);
     setCurrentClaveRecojo(claveRecojo ?? null);
   }, [numeroGuia, codigoRastreo, claveRecojo]);
+
+  useEffect(() => {
+    setCurrentTags(tags || []);
+  }, [tags]);
+
+  const isPendienteCourier = currentTags.some(
+    (t) =>
+      t.toLowerCase().includes("pendiente") &&
+      t.toLowerCase().includes("courier"),
+  );
+
+  const togglePendienteCourier = async () => {
+    if (!contactId) {
+      toast.info("Operación sin contacto asignado");
+      return;
+    }
+
+    const tagNombre = "pendiente de courier";
+    let nextTags: string[];
+    const yaTiene = currentTags.some((t) => t.toLowerCase() === tagNombre);
+
+    if (yaTiene) {
+      nextTags = currentTags.filter((t) => t.toLowerCase() !== tagNombre);
+    } else {
+      nextTags = [...currentTags, tagNombre];
+    }
+
+    setCurrentTags(nextTags);
+
+    try {
+      const res = await fetch(`/api/contacts/${contactId}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ tags: nextTags }),
+      });
+
+      if (!res.ok) {
+        throw new Error("No se pudo actualizar la marca");
+      }
+
+      if (yaTiene) {
+        toast.info("Marca 'Pendiente de Courier' retirada");
+      } else {
+        toast.success("📦 Pedido marcado: Pendiente de asignación de courier");
+      }
+      router.refresh();
+    } catch {
+      setCurrentTags(currentTags);
+      toast.error("Error al actualizar la marca del pedido");
+    }
+  };
   const {
     attributes,
     listeners,
@@ -242,49 +298,52 @@ export function DealCard({
           {formatCurrency(value)}
         </p>
 
-        <div className="flex items-center justify-between gap-1.5 pt-0.5">
+        {/* Fila 1: Cliente con avatar e initials y NOMBRE COMPLETO en 1 o 2 lineas sin truncar */}
+        <div
+          onClick={handleContactNavigate}
+          className="flex items-start gap-2 cursor-pointer group/contact min-w-0 pt-0.5"
+          title={`Ver ficha de: ${contactName || "Sin contacto"}`}
+        >
           <div
-            onClick={handleContactNavigate}
-            className="flex items-center gap-1.5 cursor-pointer group/contact min-w-0 flex-1"
-            title={
-              currentOwnerName
-                ? `Cliente: ${contactName || "Sin contacto"} (Vendedor asignado: ${currentOwnerName})`
-                : `Cliente: ${contactName || "Sin contacto"} (Sin vendedor asignado)`
-            }
+            className={cn(
+              "h-6 w-6 shrink-0 rounded-full flex items-center justify-center text-[10px] font-bold transition-transform group-hover/contact:scale-110 mt-0.5",
+              avatarBg(contactName ?? "?"),
+            )}
           >
-            <div
+            {getInitials(contactName)}
+          </div>
+          <div className="flex-1 min-w-0">
+            <p className="text-[12.5px] font-bold text-foreground group-hover/contact:text-primary leading-snug line-clamp-2 transition-colors">
+              {contactName || "Sin contacto"}
+            </p>
+          </div>
+        </div>
+
+        {/* Fila 2: Asesor Asignado y Botón Rápido */}
+        <div className="flex items-center justify-between gap-1.5 pl-8 text-[11px]">
+          <div className="flex items-center gap-1 min-w-0">
+            <span className="text-[10px] text-muted-foreground font-medium shrink-0">
+              Asesor:
+            </span>
+            <span
+              onClick={(e) => {
+                if (contactId) {
+                  e.stopPropagation();
+                  setAssignOpen(true);
+                }
+              }}
               className={cn(
-                "h-5 w-5 shrink-0 rounded-full flex items-center justify-center text-[9px] font-semibold transition-transform group-hover/contact:scale-110",
-                avatarBg(contactName ?? "?"),
+                "text-[10px] font-semibold px-1.5 py-0.2 rounded cursor-pointer transition-colors truncate max-w-[110px]",
+                currentOwnerName
+                  ? "text-emerald-700 bg-emerald-500/10 border border-emerald-500/25 dark:text-emerald-300 hover:bg-emerald-500/20"
+                  : "text-amber-700 bg-amber-500/10 border border-amber-500/25 dark:text-amber-300 hover:bg-amber-500/20",
               )}
+              title="Clic para cambiar vendedor asignado"
             >
-              {getInitials(contactName)}
-            </div>
-            <div className="text-[11.5px] text-muted-foreground group-hover/contact:text-foreground truncate flex-1 transition-colors flex items-center gap-1 min-w-0">
-              <span className="font-semibold text-foreground truncate">
-                {contactName || "Sin contacto"}
-              </span>
-              <span
-                onClick={(e) => {
-                  if (contactId) {
-                    e.stopPropagation();
-                    setAssignOpen(true);
-                  }
-                }}
-                className={cn(
-                  "text-[10px] shrink-0 font-medium px-1 py-0.2 rounded transition-colors",
-                  currentOwnerName
-                    ? "text-emerald-700 bg-emerald-500/10 border border-emerald-500/25 dark:text-emerald-300 font-semibold hover:bg-emerald-500/20"
-                    : "text-amber-700 bg-amber-500/10 border border-amber-500/25 dark:text-amber-300 hover:bg-amber-500/20",
-                )}
-                title="Clic para cambiar vendedor asignado"
-              >
-                ({currentOwnerName || "Sin asignar"})
-              </span>
-            </div>
+              ({currentOwnerName || "Sin asignar"})
+            </span>
           </div>
 
-          {/* Botón rápido para asignar vendedor */}
           <button
             type="button"
             onPointerDown={(e) => e.stopPropagation()}
@@ -297,9 +356,9 @@ export function DealCard({
               }
             }}
             className={cn(
-              "shrink-0 inline-flex items-center gap-1 px-1.5 py-0.5 text-[10px] rounded-md border transition-all cursor-pointer shadow-2xs active:scale-95",
+              "shrink-0 inline-flex items-center gap-1 px-1.5 py-0.5 text-[9.5px] rounded-md border transition-all cursor-pointer shadow-2xs active:scale-95",
               currentOwnerName
-                ? "bg-muted/40 hover:bg-muted text-muted-foreground hover:text-foreground border-border/70"
+                ? "bg-muted/40 hover:bg-muted text-muted-foreground hover:text-foreground border-border/70 font-medium"
                 : "bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-700 dark:text-emerald-300 border-emerald-500/30 font-semibold",
             )}
             title={currentOwnerName ? `Reasignar vendedor (actual: ${currentOwnerName})` : "Asignar vendedor a este cliente"}
@@ -307,6 +366,42 @@ export function DealCard({
             <UserCheck className="h-3 w-3 text-emerald-600 dark:text-emerald-400" />
             <span>{currentOwnerName ? "Reasignar" : "Asignar"}</span>
           </button>
+        </div>
+
+        {/* Fila 3: Marca / Etiqueta de 'Pendiente de Courier' */}
+        <div className="flex items-center gap-1 pl-8">
+          {isPendienteCourier ? (
+            <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-bold bg-amber-500/15 text-amber-800 dark:text-amber-300 border border-amber-500/35 shadow-2xs">
+              <Clock className="h-2.5 w-2.5 text-amber-600 dark:text-amber-400 animate-pulse shrink-0" />
+              <span>Pendiente de Courier</span>
+              <button
+                type="button"
+                onPointerDown={(e) => e.stopPropagation()}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  togglePendienteCourier();
+                }}
+                title="Quitar marca de pendiente de courier"
+                className="ml-0.5 p-0.5 hover:text-destructive cursor-pointer rounded hover:bg-amber-500/20"
+              >
+                <X className="h-2.5 w-2.5" />
+              </button>
+            </span>
+          ) : (
+            <button
+              type="button"
+              onPointerDown={(e) => e.stopPropagation()}
+              onClick={(e) => {
+                e.stopPropagation();
+                togglePendienteCourier();
+              }}
+              className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[9.5px] text-muted-foreground/80 hover:text-amber-700 dark:hover:text-amber-300 hover:bg-amber-500/10 border border-dashed border-border/70 hover:border-amber-500/30 transition-all cursor-pointer"
+              title="Marcar pedido como pendiente de asignación de courier"
+            >
+              <Truck className="h-2.5 w-2.5 text-muted-foreground shrink-0" />
+              <span>+ Marcar Pendiente Courier</span>
+            </button>
+          )}
         </div>
 
         {/* Destino y dirección de entrega recopilada */}

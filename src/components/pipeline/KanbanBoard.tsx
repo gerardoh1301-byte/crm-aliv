@@ -192,6 +192,7 @@ export function KanbanBoard({ initialColumns, filters, sort }: KanbanBoardProps)
             codigoRastreo={activeDeal.codigoRastreo}
             ownerId={activeDeal.ownerId}
             ownerName={activeDeal.ownerName}
+            tags={activeDeal.tags}
           />
         ) : null}
       </DragOverlay>

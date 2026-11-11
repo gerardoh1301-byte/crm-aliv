@@ -39,6 +39,7 @@ export default async function PipelinePage() {
       contactName: contacts.name,
       contactPhone: contacts.phone,
       contactEmail: contacts.email,
+      contactTags: contacts.tags,
       contactOwnerId: contacts.ownerId,
       contactOwnerName: teamMembers.name,
       contactCustomFields: contacts.customFields,
@@ -110,6 +111,7 @@ export default async function PipelinePage() {
       estadoPedido: d.ordenEstado || null,
       ownerId: d.contactOwnerId || null,
       ownerName: d.contactOwnerName || null,
+      tags: (d.contactTags || []) as string[],
     };
   });
 

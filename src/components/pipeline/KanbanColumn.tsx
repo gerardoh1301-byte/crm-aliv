@@ -54,6 +54,7 @@ export function KanbanColumn({ id, name, color, deals }: KanbanColumnProps) {
       if (deal.direccion && deal.direccion.toLowerCase().includes(q)) return true;
       if (deal.dniCliente && deal.dniCliente.toLowerCase().includes(q)) return true;
       if (deal.numeroGuia && deal.numeroGuia.toLowerCase().includes(q)) return true;
+      if (deal.tags && deal.tags.some((t) => t.toLowerCase().includes(q))) return true;
 
       return false;
     });
@@ -66,7 +67,7 @@ export function KanbanColumn({ id, name, color, deals }: KanbanColumnProps) {
     <div
       ref={setNodeRef}
       className={cn(
-        "flex flex-col w-65 shrink-0 rounded-xl border border-border/60 bg-card transition-colors",
+        "flex flex-col w-72 shrink-0 rounded-xl border border-border/60 bg-card transition-colors",
         isOver && "border-primary/50 bg-primary/5",
       )}
     >

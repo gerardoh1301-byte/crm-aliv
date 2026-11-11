@@ -112,6 +112,8 @@ export interface DealWithContact extends Deal {
   ownerId?: string | null;
   /** Nombre del vendedor / asesor asignado para mostrar en cartilla. */
   ownerName?: string | null;
+  /** Etiquetas del contacto vinculadas a la operación */
+  tags?: string[];
 }
 
 export interface ContactWithDeals extends Contact {

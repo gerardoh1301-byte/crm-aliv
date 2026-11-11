@@ -52,6 +52,7 @@ interface Props {
 type SaveState = "idle" | "saving" | "saved" | "error";
 
 const ETIQUETAS_PREDEFINIDAS = [
+  { nombre: "pendiente de courier", color: "bg-orange-500/10 text-orange-700 dark:text-orange-300 border-orange-500/30" },
   { nombre: "pendiente de envío", color: "bg-amber-500/10 text-amber-700 dark:text-amber-300 border-amber-500/30" },
   { nombre: "pendiente de cobro", color: "bg-purple-500/10 text-purple-700 dark:text-purple-300 border-purple-500/30" },
   { nombre: "adelanto pagado", color: "bg-emerald-500/10 text-emerald-700 dark:text-emerald-300 border-emerald-500/30" },
