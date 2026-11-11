@@ -134,6 +134,9 @@ export interface SendMessageInput {
   messageTag?: "HUMAN_AGENT";
   messagingType?: "RESPONSE" | "MESSAGE_TAG";
   attachments?: ZernioAttachment[];
+  attachmentUrl?: string;
+  attachmentType?: "image" | "video" | "audio" | "file";
+  attachmentName?: string;
   /** WhatsApp: plantilla aprobada dentro de un hilo que ya existe. */
   template?: ZernioTemplateRef;
   /**
@@ -170,6 +173,17 @@ export async function sendMessage(
   conversationId: string,
   input: SendMessageInput
 ): Promise<ZernioResult<SendMessageResponse>> {
+  const firstAtt = input.attachments?.[0];
+  const attachmentUrl = input.attachmentUrl || firstAtt?.url;
+  const rawType = input.attachmentType || (firstAtt?.type as string | undefined);
+  const attachmentType: "image" | "video" | "audio" | "file" | undefined =
+    rawType === "image" || rawType === "video" || rawType === "audio" || rawType === "file"
+      ? rawType
+      : attachmentUrl
+      ? "image"
+      : undefined;
+  const attachmentName = input.attachmentName || firstAtt?.name;
+
   return zernioFetch<SendMessageResponse>(
     `/inbox/conversations/${encodeURIComponent(conversationId)}/messages`,
     {
@@ -182,7 +196,8 @@ export async function sendMessage(
         ...(input.message ? { message: input.message } : {}),
         ...(input.messageTag ? { messageTag: input.messageTag } : {}),
         ...(input.messagingType ? { messagingType: input.messagingType } : {}),
-        ...(input.attachments?.length ? { attachments: input.attachments } : {}),
+        ...(attachmentUrl ? { attachmentUrl, attachmentType: attachmentType || "image" } : {}),
+        ...(attachmentName ? { attachmentName } : {}),
         ...(input.category ? { category: input.category } : {}),
         // El endpoint espera la plantilla envuelta en `elements`, con un solo elemento.
         ...(input.template

@@ -56,8 +56,16 @@ export const zernio: Conector = {
     let result: Awaited<ReturnType<typeof sendMessage>> | null = null;
 
     if (!isPlaceholderId) {
+      const firstAtt = attachments?.[0];
       result = await sendMessage(ctx.conversation.externalId, {
         accountId,
+        ...(firstAtt?.url
+          ? {
+              attachmentUrl: firstAtt.url,
+              attachmentType: (firstAtt.type as "image" | "video" | "audio" | "file") || "image",
+              attachmentName: firstAtt.name,
+            }
+          : {}),
         ...(attachments?.length ? { attachments } : {}),
         ...(msg.template
           ? {

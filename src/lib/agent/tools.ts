@@ -321,7 +321,7 @@ async function enviarImagenReferencia(
   if (!img) {
     return {
       ok: false,
-      error: `Imagen no encontrada para clave '${args.clave}'. Claves válidas: nac600_frasco, nac600_beneficios, termix_tobillera, yape_adelanto.`,
+      error: `Imagen no encontrada para clave '${args.clave}'. Claves válidas: nac600_frasco, nac600_beneficios, termix_tobillera, termix_caracteristicas, termix_promocion, yape_adelanto.`,
     };
   }
 
@@ -329,10 +329,12 @@ async function enviarImagenReferencia(
     return { ok: false, error: "No hay una conversación activa asociada para enviar la imagen." };
   }
 
+  const caption = args.motivo?.trim() || `¡Aquí te comparto: ${img.titulo}! ✨`;
+
   const res = await deliverMessage(
     ctx.conversationId,
     {
-      text: args.motivo || img.titulo,
+      text: caption,
       attachments: [
         {
           type: "image",
@@ -485,18 +487,18 @@ function toolsGenericas(): ToolAgente[] {
     {
       definicion: definir(
         "enviar_imagen_referencia",
-        "Envía una imagen o infografía de referencia oficial al cliente por WhatsApp (foto del frasco NAC600, ficha de beneficios/ingredientes, tobillera Termix o comprobante/QR de Yape). " +
-          "Claves válidas: 'nac600_frasco', 'nac600_beneficios', 'termix_tobillera', 'yape_adelanto'.",
+        "Envía una imagen o infografía de referencia oficial al cliente por WhatsApp (ficha oficial de tobillera Termix con características y calor/vibración, foto del frasco NAC600, ficha de beneficios/ingredientes o comprobante/QR de Yape). " +
+          "Claves válidas: 'termix_tobillera', 'termix_caracteristicas', 'termix_promocion', 'nac600_frasco', 'nac600_beneficios', 'yape_adelanto'.",
         {
           type: "object",
           properties: {
             clave: {
               type: "string",
-              description: "Identificador de la imagen: 'nac600_frasco', 'nac600_beneficios', 'termix_tobillera' o 'yape_adelanto'.",
+              description: "Identificador de la imagen: 'termix_tobillera', 'termix_caracteristicas', 'termix_promocion', 'nac600_frasco', 'nac600_beneficios' o 'yape_adelanto'.",
             },
             motivo: {
               type: "string",
-              description: "Breve texto explicativo para acompañar la imagen en el chat (opcional).",
+              description: "Pie de foto (caption) breve y cordial para acompañar la imagen en WhatsApp (opcional).",
             },
           },
           required: ["clave"],

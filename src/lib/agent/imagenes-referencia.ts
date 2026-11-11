@@ -23,10 +23,24 @@ export const IMAGENES_REFERENCIA: ImagenReferencia[] = [
   },
   {
     id: "termix_tobillera",
-    titulo: "Tobillera Térmica Termix (Calor de Grafeno y Masaje)",
-    descripcion: "Foto de la tobillera anatómica inalámbrica Termix para alivio de pies y tobillos con doble motor de masaje vibratorio.",
-    url: "https://cdn.shopify.com/s/files/1/0853/5579/0548/files/1-r.jpg?v=1791918500",
+    titulo: "Tobillera Térmica Termix (Calor + Masaje)",
+    descripcion: "Ficha gráfica de características de la Tobillera Termix: calor de grafeno hasta 60 °C, masaje por vibración, batería USB-C, ajuste universal para ambos pies y neopreno suave.",
+    url: "https://crm-aliv.onrender.com/productos/termix-caracteristicas.jpg",
     categoria: "producto",
+  },
+  {
+    id: "termix_caracteristicas",
+    titulo: "Ficha Técnica Tobillera Termix (Calor y Masaje)",
+    descripcion: "Infografía oficial con detalles técnicos de Termix: temperatura, vibración, ajuste ergonómico universal y apagado automático.",
+    url: "https://crm-aliv.onrender.com/productos/termix-caracteristicas.jpg",
+    categoria: "beneficios",
+  },
+  {
+    id: "termix_promocion",
+    titulo: "Promoción Tobillera Termix (Deja el balde)",
+    descripcion: "Pieza publicitaria con oferta y presentación de alivio del dolor para la Tobillera Termix.",
+    url: "https://crm-aliv.onrender.com/productos/termix-promocion.jpg",
+    categoria: "promocion",
   },
   {
     id: "yape_adelanto",

@@ -101,12 +101,16 @@ export function renderSystemPrompt(template: string, opts: { now?: Date; channel
   const conCanal = hint ? `${rendered}\n\n# CANAL\n${hint}` : rendered;
 
   const bloqueImagenes = `\n\n# IMAGENES DE APOYO Y REFERENCIA
-Tienes acceso a la herramienta \`enviar_imagen_referencia\` para compartir imágenes oficiales cuando sea útil para la venta o la atención:
+Tienes acceso a la herramienta \`enviar_imagen_referencia\` para compartir imágenes e infografías oficiales directamente en WhatsApp:
 - Clave "nac600_frasco": Foto oficial del frasco de NAC600 + NAD+ (60 cápsulas). Úsala si el cliente pregunta cómo es el producto, cómo viene la presentación o pide foto del frasco.
 - Clave "nac600_beneficios": Ficha explicativa de soporte hepático, glutatión, energía celular y modo de uso. Úsala si el cliente pregunta por la composición o cómo se toma.
-- Clave "termix_tobillera": Foto de la Tobillera Térmica Termix con calor de grafeno y masaje. Úsala si el cliente consulta por la tobillera.
+- Clave "termix_tobillera" o "termix_caracteristicas": Ficha gráfica oficial con todas las características técnicas de la Tobillera Termix (calor por grafeno 60 °C, masaje vibratorio, USB-C, diseño ergonómico para ambos pies). Úsala cuando consulten por la tobillera, pidan fotos o detalles de funcionamiento.
+- Clave "termix_promocion": Pieza gráfica con la promoción vigente y alivio del dolor.
 - Clave "yape_adelanto": Datos y comprobante oficial de Yape / Plin (951365418 - Gerardo Huaynalaya). Úsala cuando un cliente de provincia solicite los datos de pago para su adelanto de S/ 20.
-Envíalas cuando el cliente pregunte por fotos/cómo es el producto, o cuando coordines el pago/adelanto de provincia.`;
+
+IMPORTANTE SOBRE IMÁGENES:
+- El parámetro \`motivo\` de la herramienta actúa como pie de foto (caption) en WhatsApp. Escribe una frase breve, cordial y vendedora (ej: "¡Aquí te comparto la ficha con todas las características y funciones de la Tobillera Termix! 👟✨").
+- NUNCA respondas con el texto literal "Foto de referencia" ni dejes el mensaje como texto suelto sin contexto.`;
 
   return `${conCanal}${bloqueImagenes}`;
 }
