@@ -172,6 +172,14 @@ export const TRIGGERS: TriggerDef[] = [
           { value: "true", label: "Provincia (Agencia Shalom / Olva)" },
         ],
       },
+      {
+        key: "canal",
+        label: "Origen / Canal del pedido",
+        options: async () => [
+          { value: "shopify", label: "Shopify / Formulario Web (Automático)" },
+          { value: "manual", label: "Manual (Asesor / WhatsApp / Mostrador)" },
+        ],
+      },
     ],
     placeholders: [
       "contacto",

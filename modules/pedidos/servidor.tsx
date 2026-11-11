@@ -314,30 +314,11 @@ const crear: HandlerModulo = async (req, { member }) => {
     .where(eq(contacts.id, contactId))
     .limit(1);
 
-  const ciudadStr = typeof body.ciudad === "string" ? body.ciudad : "";
-  const esProv = !ciudadStr.toLowerCase().includes("lima") && !ciudadStr.toLowerCase().includes("callao");
-  const saldoNum = Math.max(0, totalCalculado - 20);
-
-  await emitAutomationEvent({
-    trigger: "order.created",
-    contactId,
-    payload: {
-      orderId: numeroOrden,
-      numeroOrden,
-      contactName: contacto?.name || "Cliente Aliv",
-      phone: contacto?.phone || "",
-      total: totalCalculado.toFixed(2),
-      totalSoles: totalCalculado,
-      ciudad: ciudadStr,
-      distrito: typeof body.distrito === "string" ? body.distrito : "",
-      direccion: typeof body.direccionEnvio === "string" ? body.direccionEnvio : "",
-      productos: items.map((i) => `${i.cantidad}x ${i.titulo}`).join(", "),
-      esProvincia: String(esProv),
-      adelanto: "20.00",
-      saldo: saldoNum.toFixed(2),
-      modalidadPago: typeof body.modalidadPago === "string" ? body.modalidadPago : "contraentrega",
-    },
-  }).catch(() => {});
+  // REGLA DE NEGOCIO: Los pedidos registrados manualmente desde el CRM corresponden
+  // a ventas coordinadas directamente por el asesor humano (por WhatsApp, teléfono o mostrador).
+  // NO deben disparar automatizaciones de mensajes para no duplicar ni solicitar adelantos
+  // que ya fueron coordinados con el cliente.
+  // Solo los pedidos web de Shopify/EasySell disparan la automatización inicial.
 
   await sincronizarConGoogleDrive().catch(() => {});
   return NextResponse.json(creado, { status: 201 });

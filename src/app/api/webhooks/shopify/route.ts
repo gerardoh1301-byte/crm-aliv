@@ -300,6 +300,8 @@ export async function POST(req: NextRequest) {
         adelanto: "20.00",
         saldo: saldoNum.toFixed(2),
         modalidadPago: "contraentrega",
+        canal: "shopify",
+        origen: "shopify",
       },
     }).catch((err) => console.error("[shopify-webhook] error disparando automatizaciones:", err));
 
