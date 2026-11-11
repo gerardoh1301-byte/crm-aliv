@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { setDealStage } from "@/lib/deals/stage";
 import { db } from "@/db";
-import { pipelineStages, pipelines, deals, contacts } from "@/db/schema";
+import { pipelineStages, pipelines, deals, contacts, teamMembers } from "@/db/schema";
 import { eq, asc } from "drizzle-orm";
 import { requireMember } from "@/lib/api-auth";
 import { ownerFilter, canAccessContactId } from "@/lib/team";
@@ -29,9 +29,12 @@ export async function GET() {
       createdAt: deals.createdAt,
       updatedAt: deals.updatedAt,
       contactName: contacts.name,
+      ownerId: contacts.ownerId,
+      ownerName: teamMembers.name,
     })
     .from(deals)
     .leftJoin(contacts, eq(deals.contactId, contacts.id))
+    .leftJoin(teamMembers, eq(contacts.ownerId, teamMembers.id))
     .where(ownerFilter(auth.member));
 
   const docCounts = await countDocumentsByContact([...new Set(allDeals.map((d) => d.contactId))]);

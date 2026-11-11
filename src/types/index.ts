@@ -107,6 +107,10 @@ export interface DealWithContact extends Deal {
   numeroGuia?: string | null;
   claveRecojo?: string | null;
   estadoPedido?: string | null;
+  /** Vendedor / asesor a cargo (team_members.id). */
+  ownerId?: string | null;
+  /** Nombre del vendedor / asesor asignado para mostrar en cartilla. */
+  ownerName?: string | null;
 }
 
 export interface ContactWithDeals extends Contact {

@@ -48,8 +48,13 @@ export function DealsListView({ deals, stages }: DealsListViewProps) {
             return (
               <TableRow key={d.id}>
                 <TableCell className="font-medium">{d.title}</TableCell>
-                <TableCell className="text-muted-foreground">
-                  {d.contactName || d.contact?.name || "—"}
+                <TableCell>
+                  <span className="font-medium text-foreground">
+                    {d.contactName || d.contact?.name || "—"}
+                  </span>
+                  <span className="text-xs text-muted-foreground ml-1.5 font-normal">
+                    ({d.ownerName || "Sin asignar"})
+                  </span>
                 </TableCell>
                 <TableCell>
                   {stage && (

@@ -189,6 +189,8 @@ export function KanbanBoard({ initialColumns, filters, sort }: KanbanBoardProps)
             distrito={activeDeal.distrito}
             direccion={activeDeal.direccion}
             numeroOrden={activeDeal.numeroOrden}
+            ownerId={activeDeal.ownerId}
+            ownerName={activeDeal.ownerName}
           />
         ) : null}
       </DragOverlay>

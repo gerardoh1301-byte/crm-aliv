@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { formatCurrency } from "@/lib/constants";
@@ -17,6 +17,7 @@ import {
   MapPin,
   Printer,
   Truck,
+  UserCheck,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { avatarBg, getInitials } from "@/lib/avatar";
@@ -27,6 +28,7 @@ import {
   SeguimientoShalomModal,
   type SeguimientoShalomData,
 } from "./SeguimientoShalomModal";
+import { AsignarVendedorModal } from "./AsignarVendedorModal";
 
 export interface DealCardProps {
   id: string;
@@ -53,6 +55,8 @@ export interface DealCardProps {
   numeroGuia?: string | null;
   claveRecojo?: string | null;
   estadoPedido?: string | null;
+  ownerId?: string | null;
+  ownerName?: string | null;
 }
 
 export function DealCard({
@@ -78,10 +82,20 @@ export function DealCard({
   numeroGuia,
   claveRecojo,
   estadoPedido,
+  ownerId,
+  ownerName,
 }: DealCardProps) {
   const router = useRouter();
   const [rotuloOpen, setRotuloOpen] = useState(false);
   const [shalomOpen, setShalomOpen] = useState(false);
+  const [assignOpen, setAssignOpen] = useState(false);
+  const [currentOwnerId, setCurrentOwnerId] = useState<string | null>(ownerId ?? null);
+  const [currentOwnerName, setCurrentOwnerName] = useState<string | null>(ownerName ?? null);
+
+  useEffect(() => {
+    setCurrentOwnerId(ownerId ?? null);
+    setCurrentOwnerName(ownerName ?? null);
+  }, [ownerId, ownerName]);
   const {
     attributes,
     listeners,
@@ -215,21 +229,71 @@ export function DealCard({
           {formatCurrency(value)}
         </p>
 
-        <div
-          onClick={handleContactNavigate}
-          className="flex items-center gap-2 cursor-pointer group/contact"
-        >
+        <div className="flex items-center justify-between gap-1.5 pt-0.5">
           <div
-            className={cn(
-              "h-5 w-5 shrink-0 rounded-full flex items-center justify-center text-[9px] font-semibold transition-transform group-hover/contact:scale-110",
-              avatarBg(contactName ?? "?"),
-            )}
+            onClick={handleContactNavigate}
+            className="flex items-center gap-1.5 cursor-pointer group/contact min-w-0 flex-1"
+            title={
+              currentOwnerName
+                ? `Cliente: ${contactName || "Sin contacto"} (Vendedor asignado: ${currentOwnerName})`
+                : `Cliente: ${contactName || "Sin contacto"} (Sin vendedor asignado)`
+            }
           >
-            {getInitials(contactName)}
+            <div
+              className={cn(
+                "h-5 w-5 shrink-0 rounded-full flex items-center justify-center text-[9px] font-semibold transition-transform group-hover/contact:scale-110",
+                avatarBg(contactName ?? "?"),
+              )}
+            >
+              {getInitials(contactName)}
+            </div>
+            <div className="text-[11.5px] text-muted-foreground group-hover/contact:text-foreground truncate flex-1 transition-colors flex items-center gap-1 min-w-0">
+              <span className="font-semibold text-foreground truncate">
+                {contactName || "Sin contacto"}
+              </span>
+              <span
+                onClick={(e) => {
+                  if (contactId) {
+                    e.stopPropagation();
+                    setAssignOpen(true);
+                  }
+                }}
+                className={cn(
+                  "text-[10px] shrink-0 font-medium px-1 py-0.2 rounded transition-colors",
+                  currentOwnerName
+                    ? "text-emerald-700 bg-emerald-500/10 border border-emerald-500/25 dark:text-emerald-300 font-semibold hover:bg-emerald-500/20"
+                    : "text-amber-700 bg-amber-500/10 border border-amber-500/25 dark:text-amber-300 hover:bg-amber-500/20",
+                )}
+                title="Clic para cambiar vendedor asignado"
+              >
+                ({currentOwnerName || "Sin asignar"})
+              </span>
+            </div>
           </div>
-          <span className="text-[11.5px] text-muted-foreground group-hover/contact:text-foreground truncate flex-1 transition-colors">
-            {contactName || "Sin contacto"}
-          </span>
+
+          {/* Botón rápido para asignar vendedor */}
+          <button
+            type="button"
+            onPointerDown={(e) => e.stopPropagation()}
+            onClick={(e) => {
+              e.stopPropagation();
+              if (contactId) {
+                setAssignOpen(true);
+              } else {
+                toast.info("Operación sin contacto asignado");
+              }
+            }}
+            className={cn(
+              "shrink-0 inline-flex items-center gap-1 px-1.5 py-0.5 text-[10px] rounded-md border transition-all cursor-pointer shadow-2xs active:scale-95",
+              currentOwnerName
+                ? "bg-muted/40 hover:bg-muted text-muted-foreground hover:text-foreground border-border/70"
+                : "bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-700 dark:text-emerald-300 border-emerald-500/30 font-semibold",
+            )}
+            title={currentOwnerName ? `Reasignar vendedor (actual: ${currentOwnerName})` : "Asignar vendedor a este cliente"}
+          >
+            <UserCheck className="h-3 w-3 text-emerald-600 dark:text-emerald-400" />
+            <span>{currentOwnerName ? "Reasignar" : "Asignar"}</span>
+          </button>
         </div>
 
         {/* Destino y dirección de entrega recopilada */}
@@ -478,6 +542,22 @@ export function DealCard({
           open={shalomOpen}
           onOpenChange={setShalomOpen}
           data={shalomData}
+        />
+      )}
+
+      {contactId && (
+        <AsignarVendedorModal
+          open={assignOpen}
+          onOpenChange={setAssignOpen}
+          contactId={contactId}
+          clienteNombre={contactName || "Cliente"}
+          numeroOrden={numeroOrdenLimpio}
+          currentOwnerId={currentOwnerId}
+          currentOwnerName={currentOwnerName}
+          onAssigned={(newId, newName) => {
+            setCurrentOwnerId(newId);
+            setCurrentOwnerName(newName);
+          }}
         />
       )}
     </Card>

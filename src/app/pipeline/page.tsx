@@ -1,5 +1,5 @@
 import { db } from "@/db";
-import { pipelines, pipelineStages, deals, contacts } from "@/db/schema";
+import { pipelines, pipelineStages, deals, contacts, teamMembers } from "@/db/schema";
 import { pedidosOrdenes } from "../../../modules/pedidos/tabla";
 import { eq, asc, or } from "drizzle-orm";
 import { redirect } from "next/navigation";
@@ -39,6 +39,8 @@ export default async function PipelinePage() {
       contactName: contacts.name,
       contactPhone: contacts.phone,
       contactEmail: contacts.email,
+      contactOwnerId: contacts.ownerId,
+      contactOwnerName: teamMembers.name,
       contactCustomFields: contacts.customFields,
       ordenId: pedidosOrdenes.id,
       ordenNumero: pedidosOrdenes.numeroOrden,
@@ -53,6 +55,7 @@ export default async function PipelinePage() {
     })
     .from(deals)
     .leftJoin(contacts, eq(deals.contactId, contacts.id))
+    .leftJoin(teamMembers, eq(contacts.ownerId, teamMembers.id))
     .leftJoin(pedidosOrdenes, or(eq(deals.id, pedidosOrdenes.dealId), eq(deals.contactId, pedidosOrdenes.contactId)))
     // Un asesor ve solo las operaciones de sus contactos.
     .where(ownerFilter(member));
@@ -103,6 +106,8 @@ export default async function PipelinePage() {
       numeroGuia: d.ordenNumeroGuia || null,
       claveRecojo: d.ordenClaveRecojo || null,
       estadoPedido: d.ordenEstado || null,
+      ownerId: d.contactOwnerId || null,
+      ownerName: d.contactOwnerName || null,
     };
   });
 
