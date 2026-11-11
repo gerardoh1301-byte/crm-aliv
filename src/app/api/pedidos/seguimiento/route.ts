@@ -27,6 +27,7 @@ export async function POST(req: NextRequest) {
     numeroOrden,
     transportadora = "Shalom",
     numeroGuia,
+    codigoRastreo,
     claveRecojo,
     estado,
     agencia,
@@ -73,9 +74,20 @@ export async function POST(req: NextRequest) {
     );
   }
 
+  let guiaLimpia = numeroGuia ? String(numeroGuia).trim() : null;
+  let codigoLimpio = codigoRastreo ? String(codigoRastreo).trim() : null;
+
+  // Si vino con formato "103386936/7MJM" y no se envio codigo separado, desglosar
+  if (guiaLimpia && guiaLimpia.includes("/") && !codigoLimpio) {
+    const partes = guiaLimpia.split("/").map((s) => s.trim());
+    guiaLimpia = partes[0] || null;
+    codigoLimpio = partes[1] || null;
+  }
+
   const updates: Record<string, any> = {
     transportadora: transportadora || "Shalom",
-    numeroGuia: numeroGuia ? String(numeroGuia).trim() : null,
+    numeroGuia: guiaLimpia,
+    codigoRastreo: codigoLimpio,
     claveRecojo: claveRecojo ? String(claveRecojo).trim() : null,
     updatedAt: new Date(),
   };

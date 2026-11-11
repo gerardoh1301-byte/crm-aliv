@@ -50,6 +50,7 @@ export default async function PipelinePage() {
       ordenDni: pedidosOrdenes.dniCliente,
       ordenTransportadora: pedidosOrdenes.transportadora,
       ordenNumeroGuia: pedidosOrdenes.numeroGuia,
+      ordenCodigoRastreo: pedidosOrdenes.codigoRastreo,
       ordenClaveRecojo: pedidosOrdenes.claveRecojo,
       ordenEstado: pedidosOrdenes.estado,
     })
@@ -104,6 +105,7 @@ export default async function PipelinePage() {
       pedidoId: d.ordenId || null,
       transportadora: d.ordenTransportadora || null,
       numeroGuia: d.ordenNumeroGuia || null,
+      codigoRastreo: d.ordenCodigoRastreo || null,
       claveRecojo: d.ordenClaveRecojo || null,
       estadoPedido: d.ordenEstado || null,
       ownerId: d.contactOwnerId || null,

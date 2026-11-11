@@ -34,6 +34,7 @@ export const pedidosOrdenes = pgTable("pedidos_ordenes", {
   direccionEnvio: text("direccion_envio"),
   transportadora: text("transportadora"),
   numeroGuia: text("numero_guia"),
+  codigoRastreo: text("codigo_rastreo"),
   claveRecojo: text("clave_recojo"),
   notas: text("notas"),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),

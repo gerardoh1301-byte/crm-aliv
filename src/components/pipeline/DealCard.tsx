@@ -53,6 +53,7 @@ export interface DealCardProps {
   pedidoId?: string | null;
   transportadora?: string | null;
   numeroGuia?: string | null;
+  codigoRastreo?: string | null;
   claveRecojo?: string | null;
   estadoPedido?: string | null;
   ownerId?: string | null;
@@ -80,6 +81,7 @@ export function DealCard({
   pedidoId,
   transportadora,
   numeroGuia,
+  codigoRastreo,
   claveRecojo,
   estadoPedido,
   ownerId,
@@ -91,11 +93,20 @@ export function DealCard({
   const [assignOpen, setAssignOpen] = useState(false);
   const [currentOwnerId, setCurrentOwnerId] = useState<string | null>(ownerId ?? null);
   const [currentOwnerName, setCurrentOwnerName] = useState<string | null>(ownerName ?? null);
+  const [currentNumeroGuia, setCurrentNumeroGuia] = useState<string | null>(numeroGuia ?? null);
+  const [currentCodigoRastreo, setCurrentCodigoRastreo] = useState<string | null>(codigoRastreo ?? null);
+  const [currentClaveRecojo, setCurrentClaveRecojo] = useState<string | null>(claveRecojo ?? null);
 
   useEffect(() => {
     setCurrentOwnerId(ownerId ?? null);
     setCurrentOwnerName(ownerName ?? null);
   }, [ownerId, ownerName]);
+
+  useEffect(() => {
+    setCurrentNumeroGuia(numeroGuia ?? null);
+    setCurrentCodigoRastreo(codigoRastreo ?? null);
+    setCurrentClaveRecojo(claveRecojo ?? null);
+  }, [numeroGuia, codigoRastreo, claveRecojo]);
   const {
     attributes,
     listeners,
@@ -142,8 +153,8 @@ export function DealCard({
   const esShalom =
     transportadoraLower.includes("shalom") ||
     esProvincia ||
-    Boolean(numeroGuia) ||
-    Boolean(claveRecojo);
+    Boolean(currentNumeroGuia) ||
+    Boolean(currentClaveRecojo);
 
   // Aplica cuando la orden está confirmada, preparando o en reparto
   const stageKeyLower = (stageKey || "").toLowerCase();
@@ -180,6 +191,7 @@ export function DealCard({
   const shalomData: SeguimientoShalomData = {
     pedidoId: pedidoId || null,
     dealId: id,
+    contactId: contactId || null,
     numeroOrden: numeroOrdenLimpio,
     clienteNombre: contactName || "Cliente Aliv",
     telefono: contactPhone || "",
@@ -189,8 +201,9 @@ export function DealCard({
     direccion: direccion || "",
     referencia: referencia || null,
     total: value || 0,
-    numeroGuia: numeroGuia || null,
-    claveRecojo: claveRecojo || null,
+    numeroGuia: currentNumeroGuia || null,
+    codigoRastreo: currentCodigoRastreo || null,
+    claveRecojo: currentClaveRecojo || null,
     transportadora: transportadora || "Shalom",
     estadoPedido: estadoPedido || null,
   };
@@ -350,21 +363,21 @@ export function DealCard({
               setShalomOpen(true);
             }}
             title={
-              numeroGuia
-                ? `Guía Shalom: ${numeroGuia}${claveRecojo ? ` (Clave: ${claveRecojo})` : ""}`
+              currentNumeroGuia
+                ? `Guía Shalom: ${currentNumeroGuia}${currentCodigoRastreo ? ` (Cód: ${currentCodigoRastreo})` : ""}${currentClaveRecojo ? ` (Clave: ${currentClaveRecojo})` : ""}`
                 : "Registrar seguimiento y guía de Shalom"
             }
             className={cn(
               "w-full h-7 text-[11px] font-bold flex items-center justify-center gap-1.5 shadow-none transition-all cursor-pointer",
-              numeroGuia
+              currentNumeroGuia
                 ? "bg-red-500/10 hover:bg-red-500/20 text-red-700 dark:text-red-400 border border-red-500/30"
                 : "bg-amber-500/10 hover:bg-amber-500/20 text-amber-700 dark:text-amber-400 border border-amber-500/30"
             )}
           >
             <Truck className="h-3.5 w-3.5 shrink-0 text-red-600" />
             <span className="truncate">
-              {numeroGuia
-                ? `Shalom: #${numeroGuia}${claveRecojo ? ` · ${claveRecojo}` : ""}`
+              {currentNumeroGuia
+                ? `Shalom: #${currentNumeroGuia}${currentCodigoRastreo ? ` · Cód: ${currentCodigoRastreo}` : ""}${currentClaveRecojo ? ` · ${currentClaveRecojo}` : ""}`
                 : "Registrar Guía Shalom"}
             </span>
           </Button>
@@ -413,47 +426,22 @@ export function DealCard({
             </button>
           )}
 
-          {/* 2. WhatsApp / Mensaje */}
-          {waNumber ? (
-            <a
-              href={`https://wa.me/${waNumber}`}
-              target="_blank"
-              rel="noopener noreferrer"
-              title={`Chatear por WhatsApp con ${contactPhone}`}
-              onPointerDown={(e) => e.stopPropagation()}
-              onClick={(e) => e.stopPropagation()}
-              className="p-1 -m-1 rounded hover:bg-emerald-500/10 hover:text-emerald-600 transition-all active:scale-90"
-            >
-              <MessageCircle className="h-3.5 w-3.5" aria-hidden />
-            </a>
-          ) : (
-            <button
-              type="button"
-              title="Abrir bandeja de mensajes"
-              onPointerDown={(e) => e.stopPropagation()}
-              onClick={(e) => {
-                e.stopPropagation();
-                router.push("/conversations");
-              }}
-              className="p-1 -m-1 rounded hover:bg-muted hover:text-primary transition-all active:scale-90"
-            >
-              <MessageCircle className="h-3.5 w-3.5" aria-hidden />
-            </button>
-          )}
-
-          {/* 3. Etiquetas / Ficha del Contacto */}
+          {/* 2. Mensaje / Chat en apartado Conversaciones */}
           <button
             type="button"
-            title="Ver ficha y etiquetas del contacto"
+            title="Abrir chat en apartado Conversaciones"
             onPointerDown={(e) => e.stopPropagation()}
             onClick={(e) => {
               e.stopPropagation();
-              if (contactId) router.push(`/contacts/${contactId}`);
-              else toast.info("Operación sin contacto asignado");
+              if (contactId) {
+                router.push(`/conversations/${contactId}`);
+              } else {
+                router.push("/conversations");
+              }
             }}
-            className="p-1 -m-1 rounded hover:bg-muted hover:text-primary transition-all active:scale-90 cursor-pointer"
+            className="p-1 -m-1 rounded hover:bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 hover:text-emerald-700 transition-all active:scale-90 cursor-pointer"
           >
-            <Tag className="h-3.5 w-3.5" aria-hidden />
+            <MessageCircle className="h-3.5 w-3.5" aria-hidden />
           </button>
 
           {/* 4. Documentos / Notas */}
@@ -542,6 +530,11 @@ export function DealCard({
           open={shalomOpen}
           onOpenChange={setShalomOpen}
           data={shalomData}
+          onUpdated={(guia, codigo, clave) => {
+            setCurrentNumeroGuia(guia || null);
+            setCurrentCodigoRastreo(codigo || null);
+            setCurrentClaveRecojo(clave || null);
+          }}
         />
       )}
 

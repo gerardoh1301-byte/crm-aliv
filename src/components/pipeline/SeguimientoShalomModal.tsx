@@ -16,18 +16,20 @@ import {
   ExternalLink,
   Copy,
   Check,
-  PackageCheck,
   Save,
   MapPin,
-  Clock,
+  Send,
+  Loader2,
+  Sparkles,
+  Lock,
 } from "lucide-react";
 import { toast } from "sonner";
-import { formatCurrency } from "@/lib/constants";
 import { useRouter } from "next/navigation";
 
 export interface SeguimientoShalomData {
   pedidoId?: string | null;
   dealId?: string | null;
+  contactId?: string | null;
   numeroOrden: string;
   clienteNombre: string;
   telefono?: string | null;
@@ -38,6 +40,7 @@ export interface SeguimientoShalomData {
   referencia?: string | null;
   total: number;
   numeroGuia?: string | null;
+  codigoRastreo?: string | null;
   claveRecojo?: string | null;
   transportadora?: string | null;
   estadoPedido?: string | null;
@@ -47,18 +50,36 @@ interface SeguimientoShalomModalProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   data: SeguimientoShalomData;
+  onUpdated?: (numeroGuia: string, codigoRastreo: string, claveRecojo: string) => void;
 }
 
 export function SeguimientoShalomModal({
   open,
   onOpenChange,
   data,
+  onUpdated,
 }: SeguimientoShalomModalProps) {
   const router = useRouter();
-  const [numeroGuia, setNumeroGuia] = useState(data.numeroGuia || "");
+
+  // Si vino "103386936/7MJM" en numeroGuia, desglosar automáticamente
+  const initialGuia = (data.numeroGuia || "").trim();
+  const initialCodigo = (data.codigoRastreo || "").trim();
+
+  let defaultGuia = initialGuia;
+  let defaultCodigo = initialCodigo;
+  if (initialGuia.includes("/") && !initialCodigo) {
+    const [g, c] = initialGuia.split("/").map((s) => s.trim());
+    defaultGuia = g || "";
+    defaultCodigo = c || "";
+  }
+
+  const [numeroGuia, setNumeroGuia] = useState(defaultGuia);
+  const [codigoRastreo, setCodigoRastreo] = useState(defaultCodigo);
   const [claveRecojo, setClaveRecojo] = useState(data.claveRecojo || "");
   const [estado, setEstado] = useState(data.estadoPedido || "enviado");
   const [saving, setSaving] = useState(false);
+  const [sendingAuto, setSendingAuto] = useState(false);
+  const [sendingClaveAuto, setSendingClaveAuto] = useState(false);
   const [copied, setCopied] = useState(false);
   const [copiedClave, setCopiedClave] = useState(false);
 
@@ -79,77 +100,93 @@ export function SeguimientoShalomModal({
     .filter(Boolean)
     .join(" - ");
 
-  // Mensaje inicial de envío (NUNCA incluye la clave de recojo para asegurar el cobro del saldo)
-  const handleCopiarMensaje = () => {
-    const texto = `¡Hola, ${data.clienteNombre.split(" ")[0]}! 👋 Te saluda Aliv Perú.
+  // Mensaje inicial de envío (NUNCA incluye la clave secreta de recojo para asegurar el cobro del saldo)
+  const generarTextoSeguimiento = () => {
+    const guiaText = numeroGuia.trim() || "(En proceso de emisión)";
+    const codigoText = codigoRastreo.trim() || "(En proceso)";
+
+    return `¡Hola, ${data.clienteNombre.split(" ")[0]}! 👋 Te saluda Aliv Perú.
 Te compartimos los datos de tu envío por *Shalom Empresarial* 🚚📦:
 
-• *N° de Orden:* ${data.numeroOrden}
-• *N° de Guía:* ${numeroGuia.trim() || "(En proceso de emisión)"}
+• *N° de Orden Shalom:* ${guiaText}
+• *Código de Orden:* ${codigoText}
 • *Destino / Agencia:* ${destinoLimpio || "Provincia"}
 
 💰 *Detalle de Pago:*
 • Monto total del pedido: S/ ${totalSoles.toFixed(2)}
 • Adelanto de envío recibido: - S/ ${adelantoSoles.toFixed(2)}
 ━━━━━━━━━━━━━━━━━━━━
-👉 *Saldo restante por pagar:* *S/ ${saldoSoles.toFixed(2)}*
+👉 *Saldo restante por pagar al retirar:* *S/ ${saldoSoles.toFixed(2)}*
 
-🔒 *Código de Recojo en Agencia:*
-Tu clave secreta de recojo se te enviará por aquí apenas canceles el saldo restante de *S/ ${saldoSoles.toFixed(2)}* a nuestro Yape / Plin (*951365418* - Gerardo Huaynalaya).
+🔒 *Clave de Recojo en Agencia:*
+Tu clave secreta de recojo te la enviaremos por aquí en cuanto confirmes el pago del saldo restante de *S/ ${saldoSoles.toFixed(2)}* a nuestro Yape / Plin (*951365418* - Gerardo Huaynalaya).
 
-🔍 Puedes rastrear tu envío en tiempo real ingresando tu guía aquí:
-👉 https://rastreo.shalom.pe/
+🔍 *Rastrea tu paquete en tiempo real:*
+Ingresa a 👉 https://shalom.com.pe/rastrea/
+Coloca tu *N° de Orden* (${guiaText}) y tu *Código* (${codigoText}) para ver dónde se encuentra tu envío.
 
 ¡Muchas gracias por tu compra en Aliv Perú! 🌿`;
+  };
 
+  // Mensaje posterior cuando el cliente ya transfirió el saldo restante
+  const generarTextoClave = () => {
+    return `¡Pago del saldo de S/ ${saldoSoles.toFixed(2)} confirmado con éxito! 🙌🎉
+
+🔑 Tu *Clave / Código de Recojo en Agencia Shalom* es: *${claveRecojo.trim()}*
+📦 N° de Orden Shalom: ${numeroGuia.trim() || data.numeroOrden}
+🏷️ Código de Orden: ${codigoRastreo.trim() || "-"}
+📍 Destino: ${destinoLimpio || "Agencia Shalom"}
+
+Recuerda acudir con tu DNI físico original para el retiro. ¡Que disfrutes tus productos Aliv! 💚`;
+  };
+
+  const handleCopiarMensaje = () => {
+    const texto = generarTextoSeguimiento();
     navigator.clipboard.writeText(texto);
     setCopied(true);
     toast.success("Mensaje copiado (código de recojo reservado)");
     setTimeout(() => setCopied(false), 2500);
   };
 
-  // Mensaje posterior cuando el cliente ya transfirió el saldo restante
   const handleCopiarMensajeClave = () => {
     if (!claveRecojo.trim()) {
       toast.error("Registra primero la clave de recojo de Shalom");
       return;
     }
-    const texto = `¡Pago del saldo de S/ ${saldoSoles.toFixed(2)} confirmado con éxito! 🙌🎉
-
-🔑 Tu *Clave / Código de Recojo en Agencia Shalom* es: *${claveRecojo.trim()}*
-📦 N° de Guía: ${numeroGuia.trim() || data.numeroOrden}
-📍 Destino: ${destinoLimpio || "Agencia Shalom"}
-
-Recuerda acudir con tu DNI físico original para el retiro. ¡Que disfrutes tus productos Aliv! 💚`;
-
+    const texto = generarTextoClave();
     navigator.clipboard.writeText(texto);
     setCopiedClave(true);
     toast.success("Mensaje con Clave de Recojo copiado para WhatsApp");
     setTimeout(() => setCopiedClave(false), 2500);
   };
 
+  const guardarEnBaseDeDatos = async () => {
+    const res = await fetch("/api/pedidos/seguimiento", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        pedidoId: data.pedidoId,
+        dealId: data.dealId,
+        numeroOrden: data.numeroOrden,
+        transportadora: "Shalom",
+        numeroGuia: numeroGuia.trim(),
+        codigoRastreo: codigoRastreo.trim(),
+        claveRecojo: claveRecojo.trim(),
+        estado,
+      }),
+    });
+
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err.error || "No se pudo guardar el seguimiento");
+    }
+  };
+
   const handleGuardar = async () => {
     setSaving(true);
     try {
-      const res = await fetch("/api/pedidos/seguimiento", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          pedidoId: data.pedidoId,
-          dealId: data.dealId,
-          numeroOrden: data.numeroOrden,
-          transportadora: "Shalom",
-          numeroGuia: numeroGuia.trim(),
-          claveRecojo: claveRecojo.trim(),
-          estado,
-        }),
-      });
-
-      if (!res.ok) {
-        const err = await res.json().catch(() => ({}));
-        throw new Error(err.error || "No se pudo guardar el seguimiento");
-      }
-
+      await guardarEnBaseDeDatos();
+      onUpdated?.(numeroGuia.trim(), codigoRastreo.trim(), claveRecojo.trim());
       toast.success("Seguimiento de Shalom guardado exitosamente");
       onOpenChange(false);
       router.refresh();
@@ -157,6 +194,99 @@ Recuerda acudir con tu DNI físico original para el retiro. ¡Que disfrutes tus 
       toast.error(e.message || "Error al guardar seguimiento");
     } finally {
       setSaving(false);
+    }
+  };
+
+  // Envío automático del mensaje de seguimiento por WhatsApp
+  const handleEnviarAuto = async () => {
+    if (!numeroGuia.trim()) {
+      toast.error("Ingresa el N° de Orden de Shalom antes de enviar");
+      return;
+    }
+
+    setSendingAuto(true);
+    const texto = generarTextoSeguimiento();
+
+    try {
+      // 1. Guardar primero en la base de datos
+      await guardarEnBaseDeDatos();
+      onUpdated?.(numeroGuia.trim(), codigoRastreo.trim(), claveRecojo.trim());
+
+      // 2. Enviar por WhatsApp vía API
+      if (data.telefono) {
+        const res = await fetch("/api/whatsapp/send", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            to: data.telefono,
+            contactId: data.contactId,
+            text: texto,
+          }),
+        });
+
+        if (res.ok) {
+          toast.success("✅ ¡Mensaje de seguimiento enviado por WhatsApp al cliente!");
+          onOpenChange(false);
+          router.refresh();
+          return;
+        }
+      }
+
+      // Fallback: Si no hay teléfono o ventana cerrada, copiar al portapapeles
+      navigator.clipboard.writeText(texto);
+      toast.info("Seguimiento guardado y mensaje copiado al portapapeles");
+      onOpenChange(false);
+      router.refresh();
+    } catch (err: any) {
+      navigator.clipboard.writeText(texto);
+      toast.error(err.message || "No se pudo enviar auto; mensaje copiado al portapapeles");
+    } finally {
+      setSendingAuto(false);
+    }
+  };
+
+  // Envío automático de la clave de recojo tras confirmar el pago
+  const handleEnviarClaveAuto = async () => {
+    if (!claveRecojo.trim()) {
+      toast.error("Registra la clave de recojo antes de enviar");
+      return;
+    }
+
+    setSendingClaveAuto(true);
+    const texto = generarTextoClave();
+
+    try {
+      await guardarEnBaseDeDatos();
+      onUpdated?.(numeroGuia.trim(), codigoRastreo.trim(), claveRecojo.trim());
+
+      if (data.telefono) {
+        const res = await fetch("/api/whatsapp/send", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            to: data.telefono,
+            contactId: data.contactId,
+            text: texto,
+          }),
+        });
+
+        if (res.ok) {
+          toast.success("✅ ¡Clave de recojo enviada por WhatsApp al cliente!");
+          onOpenChange(false);
+          router.refresh();
+          return;
+        }
+      }
+
+      navigator.clipboard.writeText(texto);
+      toast.info("Clave guardada y mensaje copiado al portapapeles");
+      onOpenChange(false);
+      router.refresh();
+    } catch (err: any) {
+      navigator.clipboard.writeText(texto);
+      toast.error(err.message || "Error al enviar clave auto; copiada al portapapeles");
+    } finally {
+      setSendingClaveAuto(false);
     }
   };
 
@@ -190,12 +320,12 @@ Recuerda acudir con tu DNI físico original para el retiro. ¡Que disfrutes tus 
               </p>
             </div>
             <a
-              href="https://rastreo.shalom.pe/"
+              href="https://shalom.com.pe/rastrea/"
               target="_blank"
               rel="noopener noreferrer"
-              className="inline-flex items-center gap-1 text-[11px] font-semibold text-red-600 hover:text-red-700 bg-white dark:bg-card px-2 py-1 rounded border border-red-200 shadow-xs transition-colors"
+              className="inline-flex items-center gap-1 text-[11px] font-semibold text-red-600 hover:text-red-700 bg-white dark:bg-card px-2 py-1 rounded border border-red-200 shadow-2xs transition-colors"
             >
-              <span>rastreo.shalom.pe</span>
+              <span>shalom.com.pe/rastrea</span>
               <ExternalLink className="h-3 w-3" />
             </a>
           </div>
@@ -218,47 +348,66 @@ Recuerda acudir con tu DNI físico original para el retiro. ¡Que disfrutes tus 
                 <span className="tabular-nums">- S/ {adelantoSoles.toFixed(2)}</span>
               </div>
               <div className="flex justify-between text-[11px] font-bold text-red-700 dark:text-red-400 pt-0.5 border-t border-dashed border-red-200 mt-0.5">
-                <span>Saldo a cancelar:</span>
+                <span>Saldo a cobrar:</span>
                 <span className="tabular-nums text-foreground">S/ {saldoSoles.toFixed(2)}</span>
               </div>
             </div>
           </div>
         </div>
 
-        {/* Formulario para registrar / editar Guía y Clave */}
-        <div className="space-y-3 py-1">
-          <div className="space-y-1.5">
-            <Label htmlFor="shalom-guia" className="text-xs font-semibold">
-              N° de Guía / N° de Orden Shalom:
-            </Label>
-            <Input
-              id="shalom-guia"
-              placeholder="Ej. 103265650"
-              value={numeroGuia}
-              onChange={(e) => setNumeroGuia(e.target.value)}
-              className="text-xs font-mono h-8"
-            />
-          </div>
-
-          <div className="space-y-1.5">
-            <div className="flex justify-between items-center">
-              <Label htmlFor="shalom-clave" className="text-xs font-semibold">
-                Código / Clave de Recojo en Agencia:
+        {/* Formulario para registrar / editar Guía, Código de Rastreo y Clave Secreta */}
+        <div className="space-y-2.5 py-1">
+          <div className="grid grid-cols-2 gap-2.5">
+            <div className="space-y-1">
+              <Label htmlFor="shalom-guia" className="text-xs font-semibold">
+                N° de Orden Shalom:
               </Label>
-              <span className="text-[10px] text-amber-700 dark:text-amber-400 font-medium">
-                🔒 No se comparte hasta pagar saldo
+              <Input
+                id="shalom-guia"
+                placeholder="Ej. 103386936"
+                value={numeroGuia}
+                onChange={(e) => setNumeroGuia(e.target.value.trim())}
+                className="text-xs font-mono h-8 font-semibold"
+              />
+            </div>
+
+            <div className="space-y-1">
+              <Label htmlFor="shalom-codigo" className="text-xs font-semibold">
+                Código de Orden:
+              </Label>
+              <Input
+                id="shalom-codigo"
+                placeholder="Ej. 7MJM"
+                value={codigoRastreo}
+                onChange={(e) => setCodigoRastreo(e.target.value.toUpperCase().trim())}
+                className="text-xs font-mono font-bold tracking-wider h-8 uppercase"
+              />
+            </div>
+          </div>
+          <p className="text-[10px] text-muted-foreground leading-tight">
+            ℹ️ Ambos datos figuran en el rótulo de Shalom y son requeridos para consultar en <strong className="text-red-600">shalom.com.pe/rastrea</strong>.
+          </p>
+
+          <div className="space-y-1 pt-1">
+            <div className="flex justify-between items-center">
+              <Label htmlFor="shalom-clave" className="text-xs font-semibold flex items-center gap-1">
+                <Lock className="h-3 w-3 text-amber-600" />
+                <span>Clave Secreta de Recojo en Agencia:</span>
+              </Label>
+              <span className="text-[9.5px] text-amber-700 dark:text-amber-400 font-semibold bg-amber-500/10 px-1.5 py-0.2 rounded">
+                🔒 No compartir hasta pagar saldo
               </span>
             </div>
             <Input
               id="shalom-clave"
-              placeholder="Ej. 9JJ3"
+              placeholder="Ej. 1330"
               value={claveRecojo}
-              onChange={(e) => setClaveRecojo(e.target.value.toUpperCase())}
+              onChange={(e) => setClaveRecojo(e.target.value.toUpperCase().trim())}
               className="text-xs font-mono font-bold tracking-wider h-8"
             />
           </div>
 
-          <div className="space-y-1.5">
+          <div className="space-y-1">
             <Label htmlFor="shalom-estado" className="text-xs font-semibold">
               Estado de la orden:
             </Label>
@@ -275,16 +424,39 @@ Recuerda acudir con tu DNI físico original para el retiro. ¡Que disfrutes tus 
           </div>
         </div>
 
-        {/* Acciones */}
+        {/* Acciones de Envío Automático y Copia */}
         <div className="flex flex-col gap-2 pt-2 border-t border-border/50">
+          {/* Botón Principal: Envío Automático WhatsApp */}
+          <Button
+            type="button"
+            variant="default"
+            size="sm"
+            disabled={sendingAuto || saving}
+            onClick={handleEnviarAuto}
+            className="w-full h-8.5 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs gap-1.5 shadow-sm cursor-pointer"
+            title="Guarda y envía el mensaje de seguimiento de Shalom automáticamente por WhatsApp al cliente"
+          >
+            {sendingAuto ? (
+              <>
+                <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                <span>Enviando WhatsApp al cliente...</span>
+              </>
+            ) : (
+              <>
+                <Send className="h-3.5 w-3.5" />
+                <span>Enviar WhatsApp Automático (Seguimiento y Saldo)</span>
+              </>
+            )}
+          </Button>
+
           <div className="flex items-center justify-between gap-2">
             <Button
               type="button"
               variant="outline"
               size="sm"
               onClick={handleCopiarMensaje}
-              className="text-xs h-8.5 flex-1"
-              title="Copiar mensaje con guía y saldo (sin clave de recojo)"
+              className="text-xs h-8 flex-1"
+              title="Copiar mensaje con orden, código y saldo al portapapeles"
             >
               {copied ? (
                 <>
@@ -294,7 +466,7 @@ Recuerda acudir con tu DNI físico original para el retiro. ¡Que disfrutes tus 
               ) : (
                 <>
                   <Copy className="h-3.5 w-3.5 mr-1" />
-                  Copiar WhatsApp (Sin clave)
+                  Copiar Mensaje
                 </>
               )}
             </Button>
@@ -304,19 +476,20 @@ Recuerda acudir con tu DNI físico original para el retiro. ¡Que disfrutes tus 
                 type="button"
                 variant="outline"
                 size="sm"
-                onClick={handleCopiarMensajeClave}
-                className="text-xs h-8.5 bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-700 dark:text-emerald-400 border-emerald-500/30"
-                title="Copiar mensaje con la clave de recojo una vez cancelado el saldo"
+                disabled={sendingClaveAuto}
+                onClick={handleEnviarClaveAuto}
+                className="text-xs h-8 flex-1 bg-amber-500/10 hover:bg-amber-500/20 text-amber-700 dark:text-amber-400 border-amber-500/30 font-semibold"
+                title="Enviar la clave de recojo automáticamente por WhatsApp tras confirmar el pago del saldo"
               >
-                {copiedClave ? (
+                {sendingClaveAuto ? (
                   <>
-                    <Check className="h-3.5 w-3.5 mr-1" />
-                    Clave copiada
+                    <Loader2 className="h-3.5 w-3.5 animate-spin mr-1" />
+                    Enviando clave...
                   </>
                 ) : (
                   <>
-                    <Check className="h-3.5 w-3.5 mr-1" />
-                    Enviar Clave (Post-Pago)
+                    <Lock className="h-3.5 w-3.5 mr-1" />
+                    Enviar Clave Auto
                   </>
                 )}
               </Button>
@@ -329,7 +502,7 @@ Recuerda acudir con tu DNI físico original para el retiro. ¡Que disfrutes tus 
               variant="outline"
               size="sm"
               onClick={() => onOpenChange(false)}
-              className="text-xs h-8.5"
+              className="text-xs h-8"
             >
               Cancelar
             </Button>
@@ -337,12 +510,12 @@ Recuerda acudir con tu DNI físico original para el retiro. ¡Que disfrutes tus 
               type="button"
               variant="default"
               size="sm"
-              disabled={saving}
+              disabled={saving || sendingAuto}
               onClick={handleGuardar}
-              className="text-xs h-8.5 bg-red-600 hover:bg-red-700 text-white font-semibold"
+              className="text-xs h-8 bg-red-600 hover:bg-red-700 text-white font-semibold"
             >
               <Save className="h-3.5 w-3.5 mr-1.5" />
-              {saving ? "Guardando..." : "Guardar Seguimiento"}
+              {saving ? "Guardando..." : "Guardar sin Enviar"}
             </Button>
           </div>
         </div>

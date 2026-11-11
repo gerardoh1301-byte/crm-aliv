@@ -105,6 +105,7 @@ export interface DealWithContact extends Deal {
   pedidoId?: string | null;
   transportadora?: string | null;
   numeroGuia?: string | null;
+  codigoRastreo?: string | null;
   claveRecojo?: string | null;
   estadoPedido?: string | null;
   /** Vendedor / asesor a cargo (team_members.id). */
