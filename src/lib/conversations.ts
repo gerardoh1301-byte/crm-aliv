@@ -135,9 +135,9 @@ export async function listConversations(filter?: {
       and(
         soloConectadas,
         filter?.channel ? eq(conversations.channel, filter.channel) : undefined,
-        // Un asesor ve solo los hilos de sus contactos. Los hilos sin contacto
-        // (raros: llegaron antes de crear el contacto) los ve solo el admin.
-        filter?.ownerId ? or(eq(contacts.ownerId, filter.ownerId), isNull(contacts.ownerId)) : undefined
+        // Un asesor ve UNICAMENTE los hilos de los contactos que tiene asignados.
+        // Los no asignados o asignados a otros asesores solo los ve el admin (maestro).
+        filter?.ownerId ? eq(contacts.ownerId, filter.ownerId) : undefined
       )
     )
     .orderBy(

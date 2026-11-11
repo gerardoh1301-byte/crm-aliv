@@ -93,10 +93,12 @@ export async function getMember(id: string): Promise<TeamMember | null> {
 
 /**
  * Condicion SQL de visibilidad sobre `contacts`. `undefined` = sin filtro (admin).
+ * Un asesor/vendedor ve UNICAMENTE los clientes que tiene asignados (ownerId = member.id).
+ * Los no asignados o asignados a otros asesores solo los ve el admin.
  */
 export function ownerFilter(member: TeamMember): SQL | undefined {
   if (member.role === "admin") return undefined;
-  return or(eq(contacts.ownerId, member.id), isNull(contacts.ownerId));
+  return eq(contacts.ownerId, member.id);
 }
 
 export function visibleOwnerId(member: TeamMember): string | undefined {
@@ -107,7 +109,7 @@ export function canAccessContact(
   member: TeamMember,
   contact: { ownerId: string | null }
 ): boolean {
-  return member.role === "admin" || contact.ownerId === member.id || contact.ownerId === null;
+  return member.role === "admin" || contact.ownerId === member.id;
 }
 
 export async function canAccessContactId(
@@ -120,7 +122,7 @@ export async function canAccessContactId(
     .from(contacts)
     .where(eq(contacts.id, contactId))
     .limit(1);
-  return Boolean(row) && (row.ownerId === member.id || row.ownerId === null);
+  return Boolean(row) && row.ownerId === member.id;
 }
 
 export async function hayMiembros(): Promise<boolean> {

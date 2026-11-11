@@ -4,7 +4,7 @@ import { db } from "@/db";
 import { pipelineStages, pipelines, deals, contacts } from "@/db/schema";
 import { eq, asc } from "drizzle-orm";
 import { requireMember } from "@/lib/api-auth";
-import { ownerFilter } from "@/lib/team";
+import { ownerFilter, canAccessContactId } from "@/lib/team";
 import { countDocumentsByContact } from "@/lib/documents";
 
 export async function GET() {
@@ -47,6 +47,9 @@ export async function GET() {
 }
 
 export async function PUT(request: NextRequest) {
+  const auth = await requireMember();
+  if ("response" in auth) return auth.response;
+
   let body;
   try {
     body = await request.json();
@@ -58,7 +61,7 @@ export async function PUT(request: NextRequest) {
   if (body.dealId && body.stageId) {
     const existingRows = await db.select().from(deals).where(eq(deals.id, body.dealId)).limit(1);
     const existing = existingRows[0];
-    if (!existing) {
+    if (!existing || !(await canAccessContactId(auth.member, existing.contactId))) {
       return NextResponse.json({ error: "Deal no encontrado" }, { status: 404 });
     }
 
@@ -75,8 +78,11 @@ export async function PUT(request: NextRequest) {
     return NextResponse.json(result);
   }
 
-  // Bulk update stages (from /setup or /customize)
+  // Bulk update stages (from /setup or /customize) - solo admin
   if (body.stages && Array.isArray(body.stages)) {
+    if (auth.member.role !== "admin") {
+      return NextResponse.json({ error: "Solo administradores pueden reordenar etapas" }, { status: 403 });
+    }
     // Delete existing stages (only if no deals reference them)
     const existingDeals = await db.select().from(deals);
     if (existingDeals.length > 0) {

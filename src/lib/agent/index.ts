@@ -8,6 +8,7 @@ import { displayName, listMembers } from "@/lib/team";
 import { getConfig } from "@/lib/config";
 import { getAgentConfig } from "./config";
 import { renderContexto, renderSystemPrompt } from "./prompt";
+import { esSaludoAutomatico, renderOrigenAnuncio } from "./origen-anuncio";
 import { executeTool, getEnabledToolDefinitions, type ToolContext } from "./tools";
 import { getOpenRouterClient, getAgentModel, hasOpenRouterKey } from "./openrouter";
 
@@ -65,7 +66,11 @@ export async function runAgentForConversation(conversationId: string): Promise<R
   const llmMessages: OpenAI.Chat.Completions.ChatCompletionMessageParam[] = [
     {
       role: "system",
-      content: renderSystemPrompt(config.systemPrompt, { channel: conversation.provider === "simulador" ? "simulador" : channel }) + contexto + equipo,
+      content:
+        renderSystemPrompt(config.systemPrompt, { channel: conversation.provider === "simulador" ? "simulador" : channel }) +
+        contexto +
+        renderOrigenAnuncio(conversation.metadata, collapsed.some((m) => m.role === "assistant")) +
+        equipo,
     },
     ...collapsed,
   ];
@@ -173,7 +178,7 @@ async function renderTeamBlock(currentOwnerId: string | null): Promise<string> {
 
 async function loadHistory(conversationId: string): Promise<CollapsedHistory> {
   const rows = await db
-    .select({ direction: messages.direction, body: messages.body })
+    .select({ direction: messages.direction, origin: messages.origin, body: messages.body })
     .from(messages)
     .where(eq(messages.conversationId, conversationId))
     .orderBy(desc(messages.createdAt))
@@ -183,6 +188,9 @@ async function loadHistory(conversationId: string): Promise<CollapsedHistory> {
 
   const collapsed: Array<{ role: "user" | "assistant"; content: string }> = [];
   for (const m of rows.reverse()) {
+    // El saludo automatico de WhatsApp Business no cuenta como respuesta: si lo
+    // dejaramos, el primer "Quiero mas informacion" del anuncio quedaria sin contestar.
+    if (esSaludoAutomatico(m.direction, m.origin, m.body)) continue;
     const role: "user" | "assistant" = m.direction === "in" ? "user" : "assistant";
     const text = m.body?.trim();
     if (!text) continue;

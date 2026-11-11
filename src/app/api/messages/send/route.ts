@@ -49,13 +49,18 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  // Un asesor solo escribe en hilos de sus contactos (404: no se confirma que exista).
+  // Un asesor solo escribe en hilos de sus contactos asignados (404: no se confirma que exista).
   const [conv] = await db
     .select({ contactId: conversations.contactId })
     .from(conversations)
     .where(eq(conversations.id, body.conversationId))
     .limit(1);
-  if (!conv || (conv.contactId && !(await canAccessContactId(member, conv.contactId)))) {
+  if (
+    !conv ||
+    (conv.contactId
+      ? !(await canAccessContactId(member, conv.contactId))
+      : member.role !== "admin")
+  ) {
     return NextResponse.json({ error: "conversation_not_found" }, { status: 404 });
   }
 
