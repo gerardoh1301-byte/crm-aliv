@@ -13,6 +13,7 @@ import { renderContexto, renderSystemPrompt } from "./prompt";
 import { esSaludoAutomatico, renderOrigenAnuncio } from "./origen-anuncio";
 import { executeTool, getEnabledToolDefinitions, type ToolContext } from "./tools";
 import { getOpenRouterClient, getAgentModel, hasOpenRouterKey, createChatCompletionWithFallback } from "./openrouter";
+import { autoDetectarYAgendarHorario } from "./scheduler";
 
 const MAX_TOOL_ROUNDS = 6;
 const HISTORY_LIMIT = 30;
@@ -89,6 +90,7 @@ export async function runAgentForConversation(
   };
 
   let toolCalls = 0;
+  const executedTools: string[] = [];
   let pedidoTextoExplicito = false;
 
   try {
@@ -112,6 +114,7 @@ export async function runAgentForConversation(
         for (const tc of assistantMsg.tool_calls) {
           if (tc.type !== "function") continue;
           toolCalls++;
+          executedTools.push(tc.function.name);
 
           let args: unknown = {};
           try {
@@ -160,6 +163,18 @@ export async function runAgentForConversation(
       }
 
       await db.update(contacts).set({ updatedAt: new Date() }).where(eq(contacts.id, contact.id));
+
+      // Auto-detección defensiva: si el cliente o el bot acordaron fecha/horario y el LLM no llamó la tool, agendar en Calendario
+      if (!executedTools.includes("agendar_entrega")) {
+        const lastUser = Array.isArray(collapsed) ? collapsed[collapsed.length - 1]?.content : "";
+        autoDetectarYAgendarHorario({
+          contactId: contact.id,
+          mensajeUsuario: lastUser,
+          respuestaBot: reply,
+          conversationId: conversation.id,
+        }).catch((err) => console.warn("[scheduler] Error en auto-detección:", err));
+      }
+
       return { ok: true, reply, toolCalls };
     }
 
@@ -176,6 +191,17 @@ export async function runAgentForConversation(
       const entrega = await deliverMessage(conversation.id, { text: textoFinal }, "agent");
       if (entrega.ok) {
         await db.update(contacts).set({ updatedAt: new Date() }).where(eq(contacts.id, contact.id));
+
+        if (!executedTools.includes("agendar_entrega")) {
+          const lastUser = Array.isArray(collapsed) ? collapsed[collapsed.length - 1]?.content : "";
+          autoDetectarYAgendarHorario({
+            contactId: contact.id,
+            mensajeUsuario: lastUser,
+            respuestaBot: textoFinal,
+            conversationId: conversation.id,
+          }).catch((err) => console.warn("[scheduler] Error en auto-detección:", err));
+        }
+
         return { ok: true, reply: textoFinal, toolCalls };
       }
     }

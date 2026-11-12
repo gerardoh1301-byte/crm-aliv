@@ -1,9 +1,10 @@
 "use client";
 
 import { useState, useEffect } from "react";
+import Link from "next/link";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
+import { Button, buttonVariants } from "@/components/ui/button";
 import { EmptyState } from "@/components/shared/EmptyState";
 import { ActivityForm } from "@/components/activities/ActivityForm";
 import {
@@ -16,6 +17,9 @@ import {
   CheckCircle2,
   Activity,
   Plus,
+  Calendar,
+  Truck,
+  DollarSign,
 } from "lucide-react";
 import { formatRelativeDate, formatDate } from "@/lib/constants";
 import { ACTIVITY_TYPE_CONFIG } from "@/lib/constants";
@@ -31,6 +35,8 @@ const typeIcons: Record<string, typeof Phone> = {
   meeting: Users,
   note: FileText,
   follow_up: Clock,
+  delivery: Truck,
+  payment: DollarSign,
 };
 
 const typeStyles: Record<string, string> = {
@@ -39,6 +45,8 @@ const typeStyles: Record<string, string> = {
   meeting: "bg-emerald-50 text-emerald-600",
   note: "bg-amber-50 text-amber-600",
   follow_up: "bg-rose-50 text-rose-600",
+  delivery: "bg-blue-50 text-blue-600",
+  payment: "bg-emerald-50 text-emerald-600",
 };
 
 function activityGroupLabel(date: Date): string {
@@ -111,10 +119,22 @@ export default function ActivitiesPage() {
         title="Actividades"
         subtitle="Historial de interacciones y seguimientos pendientes"
         actions={
-          <Button onClick={() => setShowForm(true)} className="cursor-pointer">
-            <Plus className="h-4 w-4" />
-            Registrar
-          </Button>
+          <div className="flex items-center gap-2">
+            <Link
+              href="/calendar"
+              className={cn(
+                buttonVariants({ variant: "outline", size: "sm" }),
+                "cursor-pointer gap-1.5 border-primary/30 text-primary hover:bg-primary/5"
+              )}
+            >
+              <Calendar className="h-4 w-4" />
+              <span>Ver Calendario</span>
+            </Link>
+            <Button onClick={() => setShowForm(true)} size="sm" className="cursor-pointer gap-1.5">
+              <Plus className="h-4 w-4" />
+              <span>Registrar</span>
+            </Button>
+          </div>
         }
       />
 

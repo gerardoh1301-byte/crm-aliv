@@ -9,6 +9,7 @@ import {
   Users,
   Kanban,
   Activity,
+  Calendar,
   Settings,
   MessageSquare,
   BarChart3,
@@ -64,6 +65,7 @@ function construirSecciones(esAdmin: boolean): NavSection[] {
       title: "Productividad",
       items: [
         ...si(moduloActivo("actividades"), { href: "/activities", label: "Actividades", icon: Activity }),
+        ...si(moduloActivo("actividades"), { href: "/calendar", label: "Calendario", icon: Calendar }),
         ...seccion("Productividad"),
       ],
     },

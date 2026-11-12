@@ -28,6 +28,8 @@ export const ACTIVITY_TYPE_CONFIG: Record<
   meeting: { label: "Reunion", icon: "Users" },
   note: { label: "Nota", icon: "FileText" },
   follow_up: { label: "Seguimiento", icon: "Clock" },
+  delivery: { label: "Entrega / Envío", icon: "Truck" },
+  payment: { label: "Cobro / Pago", icon: "DollarSign" },
 };
 
 /** Montos en centavos; la moneda sale de config/cliente.ts (`moneda`). */

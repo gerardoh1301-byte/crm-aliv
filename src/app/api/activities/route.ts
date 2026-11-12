@@ -30,6 +30,8 @@ export async function GET(request: NextRequest) {
       completedAt: activities.completedAt,
       createdAt: activities.createdAt,
       contactName: contacts.name,
+      contactPhone: contacts.phone,
+      contactEmail: contacts.email,
     })
     .from(activities)
     .leftJoin(contacts, eq(activities.contactId, contacts.id));

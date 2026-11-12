@@ -170,6 +170,9 @@ export async function POST(request: NextRequest) {
       }
 
       const valorSesion = firmarSesion(miembro.id);
+      if (!valorSesion) {
+        return NextResponse.json({ error: "No se pudo generar la sesión firmada" }, { status: 500 });
+      }
       const response = NextResponse.json({
         ok: true,
         member: {
@@ -290,6 +293,9 @@ export async function POST(request: NextRequest) {
     }
 
     const valorSesion = firmarSesion(miembro.id);
+    if (!valorSesion) {
+      return NextResponse.json({ error: "No se pudo generar la sesión firmada" }, { status: 500 });
+    }
 
     const response = NextResponse.json({
       ok: true,

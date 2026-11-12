@@ -18,25 +18,27 @@ export const DURACION_SESION_SEG = 30 * 24 * 60 * 60;
 
 const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
-function secreto(): string {
+function secreto(): string | null {
   const valor =
     process.env.SESSION_SECRET ||
-    process.env.AGENT_WORKER_SECRET ||
-    process.env.ZERNIO_WEBHOOK_SECRET ||
-    process.env.DATABASE_URL;
+    process.env.AGENT_WORKER_SECRET;
   if (valor) return valor;
-  return modoLocal() && process.env.NODE_ENV !== "production"
-    ? "modo-local-sin-secreto"
-    : "aliv-crm-master-session-secret-2026";
+  if (process.env.NODE_ENV === "test") return null;
+  return process.env.ZERNIO_WEBHOOK_SECRET ||
+    process.env.DATABASE_URL ||
+    (modoLocal() && process.env.NODE_ENV !== "production"
+      ? "modo-local-sin-secreto"
+      : "aliv-crm-master-session-secret-2026");
 }
 
 function firmar(datos: string, clave: string): string {
   return crypto.createHmac("sha256", clave).update(datos).digest("base64url");
 }
 
-/** Valor para la cookie firmada. */
-export function firmarSesion(memberId: string): string {
+/** Valor para la cookie firmada, o null si no hay clave en entorno seguro. */
+export function firmarSesion(memberId: string): string | null {
   const clave = secreto();
+  if (!clave) return null;
   const expira = Math.floor(Date.now() / 1000) + DURACION_SESION_SEG;
   const datos = `${memberId}.${expira}`;
   return `${datos}.${firmar(datos, clave)}`;
@@ -46,12 +48,13 @@ export function firmarSesion(memberId: string): string {
 export function verificarSesion(valor: string | undefined | null): string | null {
   if (!valor) return null;
 
-  // Compatibilidad con cookies previas sin firma (UUID directo) para evitar bloqueo en /sin-acceso
-  if (UUID_REGEX.test(valor.trim())) {
+  // Compatibilidad con cookies previas sin firma (solo en modo local de desarrollo)
+  if (modoLocal() && UUID_REGEX.test(valor.trim())) {
     return valor.trim();
   }
 
   const clave = secreto();
+  if (!clave) return null;
   const partes = valor.split(".");
   if (partes.length !== 3) return null;
   const [memberId, expiraTexto, firma] = partes;

@@ -214,7 +214,101 @@ const TIPOS_ACTIVIDAD: Record<string, string> = {
   llamada: "call",
   reunion: "meeting",
   email: "email",
+  entrega: "delivery",
+  envio: "delivery",
+  despacho: "delivery",
+  cobro: "payment",
+  pago: "payment",
 };
+
+async function agendarEntrega(
+  args: {
+    tipo?: string;
+    fecha?: string;
+    horario?: string;
+    descripcion?: string;
+    direccion?: string;
+    monto?: number | string;
+  },
+  ctx: ToolContext
+): Promise<ToolResult> {
+  const tipoRaw = String(args.tipo ?? "entrega").toLowerCase();
+  const tipo = TIPOS_ACTIVIDAD[tipoRaw] ?? (tipoRaw === "cobro" ? "payment" : "delivery");
+  const horario = String(args.horario ?? "").trim();
+  const direccion = String(args.direccion ?? "").trim();
+  const monto = args.monto ? String(args.monto).trim() : null;
+  const descBase = String(args.descripcion ?? "").trim();
+
+  // Calcular la fecha/hora de agendamiento
+  let scheduledAt: Date | null = null;
+  if (args.fecha) {
+    const fechaLimpia = String(args.fecha).trim();
+    if (/^\d{4}-\d{2}-\d{2}$/.test(fechaLimpia)) {
+      let horaInicio = 9; // por defecto 9am hora Perú
+      const horaMatch = horario.match(/\b(\d{1,2})(?::(\d{2}))?\s*(am|pm)?\b/i);
+      if (horaMatch) {
+        let h = parseInt(horaMatch[1], 10);
+        const esPm = /pm/i.test(horaMatch[3] || "");
+        if (esPm && h < 12) h += 12;
+        if (!esPm && h === 12 && /am/i.test(horaMatch[3] || "")) h = 0;
+        if (h >= 0 && h <= 23) horaInicio = h;
+      }
+      scheduledAt = new Date(`${fechaLimpia}T${String(horaInicio).padStart(2, "0")}:00:00-05:00`);
+    } else {
+      const d = new Date(fechaLimpia);
+      if (!Number.isNaN(d.getTime())) scheduledAt = d;
+    }
+  }
+
+  let dealId: string | null = null;
+  try {
+    const [deal] = await db
+      .select({ id: deals.id })
+      .from(deals)
+      .where(eq(deals.contactId, ctx.contactId))
+      .orderBy(desc(deals.updatedAt))
+      .limit(1);
+    if (deal) dealId = deal.id;
+  } catch {
+    // ignorar
+  }
+
+  const partesDesc: string[] = [];
+  if (tipo === "delivery") partesDesc.push("🚚 [ENTREGA]");
+  else if (tipo === "payment") partesDesc.push("💰 [COBRO]");
+  else partesDesc.push("📅 [AGENDADO]");
+
+  if (descBase) partesDesc.push(descBase);
+  if (horario) partesDesc.push(`Horario: ${horario}`);
+  if (direccion) partesDesc.push(`Destino: ${direccion}`);
+  if (monto) partesDesc.push(`Total: S/ ${monto}`);
+
+  const descripcionFinal = partesDesc.join(" · ");
+
+  const [row] = await db
+    .insert(activities)
+    .values({
+      type: tipo,
+      description: descripcionFinal,
+      contactId: ctx.contactId,
+      dealId,
+      scheduledAt: scheduledAt ?? new Date(),
+    })
+    .returning({ id: activities.id });
+
+  return {
+    ok: true,
+    data: {
+      agendado: true,
+      actividadId: row.id,
+      tipo,
+      fecha: scheduledAt?.toISOString() ?? null,
+      horario,
+      descripcion: descripcionFinal,
+      message: "Actividad colocada con éxito en el Calendario oficial del CRM.",
+    },
+  };
+}
 
 async function registrarActividad(
   args: { tipo?: string; descripcion?: string; fecha?: string },
@@ -510,7 +604,7 @@ function toolsGenericas(): ToolAgente[] {
         {
           type: "object",
           properties: {
-            tipo: { type: "string", enum: ["nota", "tarea", "llamada", "reunion", "email"] },
+            tipo: { type: "string", enum: ["nota", "tarea", "llamada", "reunion", "email", "entrega", "cobro"] },
             descripcion: { type: "string" },
             fecha: { type: "string", description: "ISO 8601 si es una tarea con fecha (opcional)." },
           },
@@ -520,6 +614,47 @@ function toolsGenericas(): ToolAgente[] {
       ),
       descripcionUI: "Registra notas y tareas con fecha en la ficha del contacto.",
       ejecutar: (a, ctx) => registrarActividad(a as Parameters<typeof registrarActividad>[0], ctx),
+    },
+    {
+      definicion: definir(
+        "agendar_entrega",
+        "Agenda una entrega de pedido, despacho o cobro con fecha y horario en el Calendario oficial del CRM. " +
+          "OBLIGATORIO usarla cuando el cliente indique o confirme el día u horario para recibir su pedido (ej. 'Sábado de 8 a 4', 'el viernes en la mañana', 'mañana a las 3pm').",
+        {
+          type: "object",
+          properties: {
+            tipo: {
+              type: "string",
+              enum: ["entrega", "cobro", "llamada", "seguimiento"],
+              description: "Tipo de evento: 'entrega' (despacho/entrega a domicilio), 'cobro' (pago programado), 'llamada' o 'seguimiento'.",
+            },
+            fecha: {
+              type: "string",
+              description: "Fecha en formato YYYY-MM-DD (ej: '2026-11-14'). Calcula el día exacto usando la fecha de hoy {{fecha}}.",
+            },
+            horario: {
+              type: "string",
+              description: "Franja u horario indicado por el cliente (ej: 'Sábado de 8:00 a 16:00', 'de 8 a 4', 'en la mañana').",
+            },
+            descripcion: {
+              type: "string",
+              description: "Detalle completo del pedido y entrega (ej: 'Entrega pedido #1081: 2 frascos NAC600 (S/189) a José Navarro').",
+            },
+            direccion: {
+              type: "string",
+              description: "Dirección de destino completa o agencia donde se entregará.",
+            },
+            monto: {
+              type: "number",
+              description: "Monto total a cobrar en soles si es pago al recibir (contraentrega).",
+            },
+          },
+          required: ["tipo", "fecha", "descripcion"],
+          additionalProperties: false,
+        }
+      ),
+      descripcionUI: "Agenda entregas, envíos y cobros con fecha y horario directamente en el Calendario del CRM.",
+      ejecutar: (a, ctx) => agendarEntrega(a as Parameters<typeof agendarEntrega>[0], ctx),
     },
     {
       definicion: definir(
