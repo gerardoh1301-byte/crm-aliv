@@ -1,9 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/db";
-import { contacts, conversations } from "@/db/schema";
+import { activities, contacts, conversations } from "@/db/schema";
 import { eq } from "drizzle-orm";
 import { requireMember } from "@/lib/api-auth";
-import { canAccessContactId } from "@/lib/team";
+import { canAccessContactId, displayName } from "@/lib/team";
 
 interface Body {
   enabled?: boolean;
@@ -51,10 +51,16 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
         updatedAt: now,
       })
       .where(eq(conversations.id, conversationId));
-    if (conv.contactId && body.enabled === true) {
+    if (conv.contactId && (body.enabled === true || body.clearNeedsHuman === true)) {
       await db
         .update(contacts)
-        .set({ aiEnabled: true, needsHuman: false, needsHumanReason: null, needsHumanAt: null, updatedAt: now })
+        .set({
+          ...(body.enabled === true ? { aiEnabled: true } : {}),
+          needsHuman: false,
+          needsHumanReason: null,
+          needsHumanAt: null,
+          updatedAt: now,
+        })
         .where(eq(contacts.id, conv.contactId));
     }
   } else if (body.enabled === false) {
@@ -64,6 +70,22 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
       .where(eq(conversations.id, conversationId));
   } else {
     return NextResponse.json({ error: "Nada para actualizar" }, { status: 400 });
+  }
+
+  // Registro de quien pausa, activa o atiende el bot (antes no quedaba rastro).
+  if (conv.contactId) {
+    const quien = displayName(auth.member);
+    const hora = now.toLocaleString("es-PE", { timeZone: "America/Lima", dateStyle: "short", timeStyle: "short" });
+    const accion =
+      body.enabled === false
+        ? "pausó el agente"
+        : body.enabled === true
+          ? "activó el agente"
+          : "marcó la alerta como atendida (el agente sigue como estaba)";
+    await db
+      .insert(activities)
+      .values({ type: "note", description: `${quien} ${accion} en esta conversación (${hora}).`, contactId: conv.contactId })
+      .catch((err) => console.warn("[agente] no se pudo registrar la actividad:", err));
   }
 
   const [c2] = await db.select().from(conversations).where(eq(conversations.id, conversationId)).limit(1);

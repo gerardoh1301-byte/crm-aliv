@@ -1,10 +1,11 @@
 import type OpenAI from "openai";
 import { db } from "@/db";
-import { activities, contacts, conversations, messages, notifications } from "@/db/schema";
+import { activities, contacts, conversations, messages } from "@/db/schema";
 import { desc, eq } from "drizzle-orm";
 import { deliverMessage, getConversationRow } from "@/lib/channels/deliver";
 import { isChannel, type Channel } from "@/lib/channels/types";
 import { displayName, listMembers } from "@/lib/team";
+import { alertarEquipo } from "./alertas";
 import { getConfig } from "@/lib/config";
 import { getAgentConfig } from "./config";
 import { renderContexto, renderSystemPrompt } from "./prompt";
@@ -14,6 +15,8 @@ import { getOpenRouterClient, getAgentModel, hasOpenRouterKey, createChatComplet
 
 const MAX_TOOL_ROUNDS = 6;
 const HISTORY_LIMIT = 30;
+const REINTENTO_MS = 20_000;
+const MENSAJE_CORTESIA = "Disculpa la demora 🙏 En unos minutos te respondo por aquí.";
 
 export interface RunAgentResult {
   ok: boolean;
@@ -31,7 +34,10 @@ export interface RunAgentResult {
  * 4. Responde por `deliverMessage`, el unico camino de salida: el conector de la
  *    conversacion decide si eso es Zernio, Meta o el simulador.
  */
-export async function runAgentForConversation(conversationId: string): Promise<RunAgentResult> {
+export async function runAgentForConversation(
+  conversationId: string,
+  opts: { reintento?: boolean } = {}
+): Promise<RunAgentResult> {
   const conversation = await getConversationRow(conversationId);
   if (!conversation) return { ok: false, reason: "conversation_not_found" };
   if (!conversation.contactId) return { ok: false, reason: "conversation_without_contact" };
@@ -163,56 +169,57 @@ export async function runAgentForConversation(conversationId: string): Promise<R
       categoriaError = "Error de autenticación de IA (401 Unauthorized)";
     }
 
-    // R9: Si el cliente estaba esperando respuesta (ej. dio sus datos), enviar mensaje de cortesía fijo
-    // en lugar de dejar el chat en silencio absoluto.
-    try {
-      await deliverMessage(
-        conversation.id,
-        { text: "Ya tomé tus datos, en unos minutos te confirmo 🙌" },
-        "agent"
-      );
-    } catch (deliverErr) {
-      console.warn("[agent] No se pudo enviar mensaje fallback al cliente:", deliverErr);
+    // R9a: reintento unico. Solo si el turno no ejecuto ninguna herramienta todavia
+    // (repetirlo no puede duplicar pedidos ni operaciones) y el error es transitorio.
+    const transitorio = status === undefined || status === 429 || status === 500 || status === 503 || /timeout|timed out/i.test(rawMsg);
+    if (opts.reintento !== false && toolCalls === 0 && transitorio) {
+      console.warn(`[agent] Reintentando turno de ${conversation.id} en ${REINTENTO_MS / 1000}s tras: ${categoriaError}`);
+      await new Promise((r) => setTimeout(r, REINTENTO_MS));
+      // Si el segundo intento tambien falla, el mismo envia el mensaje de cortesia y avisa.
+      return runAgentForConversation(conversationId, { reintento: false });
+    }
+
+    // R9b: si tampoco hubo suerte, mensaje fijo y neutral (sin modelo) para que el cliente
+    // no quede en silencio. No se repite si ya fue el ultimo mensaje enviado.
+    const [ultimoOut] = await db
+      .select({ body: messages.body, direction: messages.direction })
+      .from(messages)
+      .where(eq(messages.conversationId, conversation.id))
+      .orderBy(desc(messages.createdAt))
+      .limit(1);
+    if (!(ultimoOut?.direction === "out" && ultimoOut.body === MENSAJE_CORTESIA)) {
+      try {
+        await deliverMessage(conversation.id, { text: MENSAJE_CORTESIA }, "agent");
+      } catch (deliverErr) {
+        console.warn("[agent] No se pudo enviar mensaje fallback al cliente:", deliverErr);
+      }
     }
 
     // 1. Registrar nota de actividad visible y precisa en la ficha del contacto
     await db.insert(activities).values({
       type: "note",
-      description: `[ALERTA BOT] El bot tuvo contingencia: ${categoriaError}. Detalle: ${rawMsg.slice(0, 120)}. Se envió mensaje de cortesía y se alertó a asesores.`,
+      description: `[ALERTA BOT] El bot no pudo responder (tras reintento): ${categoriaError}. Detalle: ${rawMsg.slice(0, 120)}. Se envió mensaje de cortesía y se avisó al equipo.`,
       contactId: contact.id,
     });
 
-    // 2. Registrar el motivo de alerta en la conversación (marca needsHuman para revisión humana)
+    // 2. Marca "requiere humano" (ya no silencia al bot: solo es aviso y filtro de bandeja)
     await db
       .update(conversations)
       .set({
         needsHuman: true,
-        needsHumanReason: `Revisión requerida: ${categoriaError}`,
+        needsHumanReason: `El bot no pudo responder: ${categoriaError}`,
         needsHumanAt: new Date(),
         updatedAt: new Date(),
       })
       .where(eq(conversations.id, conversation.id));
 
-    // 3. Crear notificación interna para todos los asesores activos y administradores (N2)
-    try {
-      const miembros = await listMembers({ onlyActive: true });
-      const destinatarios = miembros.filter(
-        (m) => m.id === contact.ownerId || m.role === "admin"
-      );
-      const targets = destinatarios.length > 0 ? destinatarios : miembros;
-      for (const m of targets) {
-        await db.insert(notifications).values({
-          memberId: m.id,
-          kind: "system",
-          title: `Alerta: Chat sin respuesta (${contact.name})`,
-          body: `El bot no pudo responder a ${contact.name} (${contact.phone || "sin teléfono"}): ${categoriaError}.`,
-          url: `/conversations/${conversation.id}`,
-          contactId: contact.id,
-        });
-      }
-    } catch (notifErr) {
-      console.warn("[agent] No se pudo crear notificación interna:", notifErr);
-    }
+    // 3. Aviso inmediato con push al celular (N2)
+    await alertarEquipo({
+      contactId: contact.id,
+      conversationId: conversation.id,
+      titulo: `Chat sin respuesta: ${contact.name}`,
+      cuerpo: `El bot no pudo responder a ${contact.name} (${contact.phone || "sin teléfono"}): ${categoriaError}. Responde a mano.`,
+    });
 
     return { ok: false, reason: `llm_failure: ${rawMsg}`, toolCalls };
   }

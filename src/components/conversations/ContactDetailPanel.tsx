@@ -13,6 +13,7 @@ import { toast } from "sonner";
 import { CHANNEL_LABELS, type Channel } from "@/lib/channels/types";
 import { CHANNEL_COLORS, ChannelIcon } from "@/components/icons/channels";
 import { OwnerSelect } from "@/components/contacts/OwnerSelect";
+import { AdelantoConfirmadoPanel } from "./AdelantoConfirmadoPanel";
 import { CamposPersonalizadosLista } from "@/components/contacts/CamposPersonalizados";
 import { camposContacto } from "@/lib/config";
 import {
@@ -324,19 +325,20 @@ export function ContactDetailPanel({
           )}
 
           <div className="flex gap-2">
-            {needsHuman ? (
+            {needsHuman && (
               <Button
                 type="button"
                 size="sm"
                 disabled={aiBusy}
                 onClick={() =>
-                  updateAi({ enabled: true, clearNeedsHuman: true })
+                  updateAi({ enabled: aiEnabled, clearNeedsHuman: true })
                 }
                 className="cursor-pointer h-8 text-xs flex-1"
               >
-                Reactivar agente
+                Marcar atendido
               </Button>
-            ) : aiEnabled ? (
+            )}
+            {aiEnabled ? (
               <Button
                 type="button"
                 size="sm"
@@ -360,6 +362,8 @@ export function ContactDetailPanel({
             )}
           </div>
         </div>
+
+        <AdelantoConfirmadoPanel contactId={contact.id} />
 
         <div className="px-4 py-5 border-b border-border space-y-2.5">
           <Label className="text-xs font-medium text-muted-foreground uppercase tracking-wider">

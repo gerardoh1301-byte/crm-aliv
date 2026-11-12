@@ -389,8 +389,39 @@ export function ChatPanel({
                         const imgUrl = imgMatch ? imgMatch[0] : null;
                         const textoLimpio = imgUrl ? m.body?.replace(imgUrl, "").replace(/\[imagen\]/i, "").trim() : m.body;
 
+                        // Archivos que envio el cliente (Zernio): se ven por /api/media, que
+                        // los descarga con la clave del servidor.
+                        const rawMedia = (m.rawPayload ?? {}) as { message?: { attachments?: unknown } };
+                        const adjuntos: Array<{ type?: string }> = Array.isArray(rawMedia.message?.attachments)
+                          ? (rawMedia.message.attachments as Array<{ type?: string }>)
+                          : [];
+                        const esEntrante = m.direction === "in";
+
                         return (
                           <div className="space-y-1.5">
+                            {esEntrante && !imgUrl && adjuntos.map((adj, i) => {
+                              const tipoAdj = String(adj?.type ?? m.type ?? "").toLowerCase();
+                              const src = `/api/media/${m.id}?i=${i}`;
+                              if (tipoAdj === "image" || tipoAdj === "sticker") {
+                                return (
+                                  <a key={i} href={src} target="_blank" rel="noopener noreferrer" className="block overflow-hidden rounded-lg border border-border/50 max-w-[280px]" title="Abrir en tamaño completo">
+                                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                                    <img src={src} alt="Imagen enviada por el cliente" className="w-full h-auto object-cover max-h-[260px] rounded" loading="lazy" />
+                                  </a>
+                                );
+                              }
+                              if (tipoAdj === "video") {
+                                return <video key={i} src={src} controls preload="metadata" className="w-full max-w-[280px] max-h-[260px] rounded-lg border border-border/50" />;
+                              }
+                              if (tipoAdj === "audio" || tipoAdj === "voice") {
+                                return <audio key={i} src={src} controls preload="none" className="w-full max-w-[260px]" />;
+                              }
+                              return (
+                                <a key={i} href={src} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 underline text-[12px]">
+                                  📎 Abrir {tipoAdj === "file" || tipoAdj === "document" ? "documento" : "archivo"}
+                                </a>
+                              );
+                            })}
                             {imgUrl && (
                               <div className="overflow-hidden rounded-lg border border-border/50 max-w-[280px]">
                                 {/* eslint-disable-next-line @next/next/no-img-element */}

@@ -15,6 +15,7 @@ import { setDealStage } from "@/lib/deals/stage";
 import { emitAutomationEvent } from "@/lib/automations";
 import { deliverMessage } from "@/lib/channels/deliver";
 import { sincronizarConGoogleDrive } from "@/lib/drive-sync";
+import { extraerDatosFormularioShopify } from "@/lib/shopify/form-extractor";
 import type { ModuloServidor, HandlerModulo, ToolModulo } from "@/lib/modules/types";
 import manifiesto from "./manifiesto";
 import { pedidosOrdenes, type ItemPedido } from "./tabla";
@@ -613,9 +614,16 @@ const tools: ToolModulo[] = [
       const notas = args.notas ? String(args.notas).trim() : null;
 
       const numeroOrden = await generarNumeroOrden();
+      // Provincia (adelanto por Yape): el pedido queda "por confirmar" hasta que una PERSONA
+      // verifique el adelanto con el boton "Adelanto confirmado". El bot nunca da por
+      // recibido un pago (antes lo marcaba confirmado por una imagen que no podia ver).
+      const esProvinciaChat =
+        ["adelanto_agencia", "yape", "plin"].includes(modalidadPago) ||
+        extraerDatosFormularioShopify({ shipping_address: { city: distrito || ciudad, address1: direccionEnvio } }).esProvincia;
+      const estadoInicial = esProvinciaChat ? "por_confirmar_cod" : "confirmado";
       const dealId = await sincronizarEtapaPipeline(
         ctx.contactId,
-        "confirmado",
+        estadoInicial,
         `${numeroOrden} · ${itemsFinales[0].titulo}`,
         totalSoles
       );
@@ -626,7 +634,7 @@ const tools: ToolModulo[] = [
           numeroOrden,
           contactId: ctx.contactId,
           dealId,
-          estado: "confirmado",
+          estado: estadoInicial,
           modalidadPago,
           items: itemsFinales,
           total: totalSoles.toFixed(2),
@@ -671,7 +679,7 @@ const tools: ToolModulo[] = [
 
       await db.insert(activities).values({
         type: "note",
-        description: `[IA] Pedido COD ${numeroOrden} confirmado por S/ ${totalSoles.toFixed(
+        description: `[IA] Pedido ${numeroOrden} ${esProvinciaChat ? "registrado (adelanto de S/20 pendiente de verificar por una persona)" : "confirmado"} por S/ ${totalSoles.toFixed(
           2
         )} (${itemsFinales.map((i) => `${i.cantidad}x ${i.titulo}`).join(", ")}) — Destino: ${
           distrito ? `${distrito}, ` : ""

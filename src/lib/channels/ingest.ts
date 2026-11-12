@@ -473,6 +473,11 @@ async function maybeReactivateAfterInactivity(
 
   if (!conv) return;
   if (conv.aiEnabled && !conv.needsHuman) return;
+  // Bloqueo permanente: solo una persona puede volver a encender el bot.
+  if (contactId) {
+    const [c] = await db.select({ tags: contacts.tags }).from(contacts).where(eq(contacts.id, contactId)).limit(1);
+    if ((c?.tags ?? []).includes("no-reactivar")) return;
+  }
 
   const [lastMsg] = await db
     .select({ sentAt: messages.sentAt, createdAt: messages.createdAt })

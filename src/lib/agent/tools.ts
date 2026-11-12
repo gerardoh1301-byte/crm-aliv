@@ -17,6 +17,7 @@ import { setDealStage } from "@/lib/deals/stage";
 import { camposContacto, getConfig } from "@/lib/config";
 import { validarCamposPersonalizados } from "@/lib/config/campos";
 import { toolsDeModulos } from "@/lib/modules";
+import { alertarEquipo, esMotivoDeBaja } from "./alertas";
 
 /**
  * Tools del agente.
@@ -237,7 +238,7 @@ async function derivarAsesor(args: { motivo?: string; apagarAgente?: boolean }, 
 
   // "Avisar sin apagar": marca alerta para el equipo humano pero NO apaga aiEnabled
   // a menos que sea una baja ("no me escriban más").
-  const apagar = Boolean(args.apagarAgente) || /no (me )?escriban|baja|no contactar/i.test(motivo);
+  const apagar = Boolean(args.apagarAgente) || esMotivoDeBaja(motivo);
 
   if (ctx.conversationId) {
     await db
@@ -267,6 +268,19 @@ async function derivarAsesor(args: { motivo?: string; apagarAgente?: boolean }, 
     type: "note",
     description: `Agente IA notificó a asesor. Motivo: ${motivo}${apagar ? " (Agente pausado)" : " (Agente sigue activo)"}`,
     contactId: ctx.contactId,
+  });
+
+  // Aviso inmediato al celular (push), a cualquier hora, sin esperar el barrido de alertas.
+  const [c] = await db
+    .select({ name: contacts.name, phone: contacts.phone })
+    .from(contacts)
+    .where(eq(contacts.id, ctx.contactId))
+    .limit(1);
+  await alertarEquipo({
+    contactId: ctx.contactId,
+    conversationId: ctx.conversationId,
+    titulo: `Requiere humano: ${c?.name ?? "cliente"}`,
+    cuerpo: `${motivo}${apagar ? " (bot pausado por baja)" : " (el bot sigue activo)"}`,
   });
 
   return {

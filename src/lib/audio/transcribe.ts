@@ -155,10 +155,16 @@ export async function inspectImageAttachment(
       headers,
       signal: AbortSignal.timeout(timeoutMs),
     });
-    if (!imgRes.ok) return null;
+    if (!imgRes.ok) {
+      console.warn(`[vision] error descargando imagen de Zernio (${imgRes.status})`);
+      return null;
+    }
 
     const arrayBuf = await imgRes.arrayBuffer();
-    if (arrayBuf.byteLength === 0) return null;
+    if (arrayBuf.byteLength === 0) {
+      console.warn("[vision] imagen vacia");
+      return null;
+    }
 
     const base64Image = Buffer.from(arrayBuf).toString("base64");
     const rawMime =
@@ -167,7 +173,10 @@ export async function inspectImageAttachment(
       "image/jpeg";
     const cleanMime = rawMime.split(";")[0].trim().toLowerCase();
 
-    const geminiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${geminiKey}`;
+    // gemini-2.5-flash devolvia 404 con esta clave (ver auditoria): se usa un modelo
+    // configurable, por defecto el mismo que usa el agente.
+    const visionModel = process.env.VISION_MODEL || "gemini-3.1-flash-lite";
+    const geminiUrl = `https://generativelanguage.googleapis.com/v1beta/models/${visionModel}:generateContent?key=${geminiKey}`;
     const gRes = await fetch(geminiUrl, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -195,7 +204,11 @@ export async function inspectImageAttachment(
       signal: AbortSignal.timeout(timeoutMs),
     });
 
-    if (!gRes.ok) return null;
+    if (!gRes.ok) {
+      const detalle = await gRes.text().catch(() => "");
+      console.warn(`[vision] Gemini ${visionModel} respondio ${gRes.status}: ${detalle.slice(0, 200)}`);
+      return null;
+    }
     const data = await gRes.json();
     const desc = data?.candidates?.[0]?.content?.parts?.[0]?.text?.trim();
     return desc || null;

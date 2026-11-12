@@ -2,9 +2,10 @@ import { NextRequest, NextResponse } from "next/server";
 import { createHmac, timingSafeEqual } from "node:crypto";
 import { db } from "@/db";
 import { activities, contacts, crmSettings, webhookEvents } from "@/db/schema";
-import { and, eq, gte, or } from "drizzle-orm";
+import { and, eq, gte, ne, or } from "drizzle-orm";
 import { resolveDefaultTenantId } from "@/lib/tenants";
 import { sincronizarConGoogleDrive } from "@/lib/drive-sync";
+import { alertarEquipo } from "@/lib/agent/alertas";
 import { pedidosOrdenes, type ItemPedido } from "../../../../../modules/pedidos/tabla";
 import { sincronizarEtapaPipeline } from "../../../../../modules/pedidos/servidor";
 import { emitAutomationEvent } from "@/lib/automations";
@@ -259,7 +260,7 @@ export async function POST(req: NextRequest) {
       totalSoles
     );
 
-    await db.insert(pedidosOrdenes).values({
+    const [pedidoNuevo] = await db.insert(pedidosOrdenes).values({
       numeroOrden,
       shopifyOrderId,
       contactId,
@@ -276,7 +277,7 @@ export async function POST(req: NextRequest) {
       notas:
         payload.note ||
         `Pedido web ${numeroOrden} desde ${shopDomain} (Canal: ${payload.gateway || "EasySell COD Form"})`,
-    });
+    }).returning({ id: pedidosOrdenes.id });
 
     // R1: Detección de pedidos duplicados en las últimas 72 horas para el mismo cliente
     const hace72Horas = new Date(Date.now() - 72 * 60 * 60 * 1000);
@@ -286,7 +287,10 @@ export async function POST(req: NextRequest) {
       .where(
         and(
           eq(pedidosOrdenes.contactId, contactId),
-          gte(pedidosOrdenes.createdAt, hace72Horas)
+          gte(pedidosOrdenes.createdAt, hace72Horas),
+          // Excluir el pedido que se acaba de registrar arriba: sin esto, todo pedido
+          // nuevo se encontraba a si mismo y ninguno recibia la plantilla.
+          ne(pedidosOrdenes.id, pedidoNuevo.id)
         )
       )
       .limit(1);
@@ -309,6 +313,12 @@ export async function POST(req: NextRequest) {
           updatedAt: new Date(),
         })
         .where(eq(contacts.id, contactId));
+
+      await alertarEquipo({
+        contactId,
+        titulo: `Posible pedido duplicado: ${nombre}`,
+        cuerpo: `${numeroOrden} y ${pedidoPrevioReciente.numeroOrden} en menos de 72 h. No se envió plantilla: confirma con el cliente cuál vale.`,
+      });
     } else {
       const esProv = datosForm.esProvincia;
       const totalNum = Number(payload.total_price) || 0;

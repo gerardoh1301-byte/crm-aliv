@@ -176,6 +176,7 @@ async function maybeReactivateAfterInactivity(contactId: string): Promise<void> 
     .select({
       aiEnabled: contacts.aiEnabled,
       needsHuman: contacts.needsHuman,
+      tags: contacts.tags,
     })
     .from(contacts)
     .where(eq(contacts.id, contactId))
@@ -183,6 +184,8 @@ async function maybeReactivateAfterInactivity(contactId: string): Promise<void> 
 
   if (!contact) return;
   if (contact.aiEnabled && !contact.needsHuman) return;
+  // Bloqueo permanente: solo una persona puede volver a encender el bot.
+  if ((contact.tags ?? []).includes("no-reactivar")) return;
 
   const [lastMsg] = await db
     .select({

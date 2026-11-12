@@ -1,8 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/db";
-import { contacts } from "@/db/schema";
+import { activities, contacts } from "@/db/schema";
 import { eq } from "drizzle-orm";
-import { canAccessContactId } from "@/lib/team";
+import { canAccessContactId, displayName } from "@/lib/team";
 import { requireMember } from "@/lib/api-auth";
 
 interface Body {
@@ -50,6 +50,16 @@ export async function PATCH(
       { error: "Nada para actualizar" },
       { status: 400 }
     );
+  }
+
+  if (typeof body.enabled === "boolean" || body.clearNeedsHuman) {
+    const hora = new Date().toLocaleString("es-PE", { timeZone: "America/Lima", dateStyle: "short", timeStyle: "short" });
+    const accion =
+      body.enabled === false ? "pausó el agente" : body.enabled === true ? "activó el agente" : "marcó la alerta como atendida";
+    await db
+      .insert(activities)
+      .values({ type: "note", description: `${displayName(member)} ${accion} para todo el contacto (${hora}).`, contactId: id })
+      .catch((err) => console.warn("[contacts/ai] no se pudo registrar la actividad:", err));
   }
 
   const [updated] = await db
