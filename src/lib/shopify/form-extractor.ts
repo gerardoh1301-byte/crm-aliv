@@ -59,7 +59,7 @@ const DISTRITOS_LIMA_CALLAO = [
 const REGIONES_PROVINCIA = [
   "amazonas", "ancash", "apurimac", "arequipa", "ayacucho", "cajamarca", "cusco", "cuzco",
   "huancavelica", "huanuco", "ica", "junin", "la libertad", "lambayeque", "loreto",
-  "madre de dios", "moquegua", "pasco", "piura", "puno", "tacna", "tumbes", "ucayali",
+  "madre de dios", "moquegua", "pasco", "piura", "puno", "san martin", "tacna", "tumbes", "ucayali",
   "trujillo", "chiclayo", "huancayo", "chimbote", "iquitos", "pucallpa", "juliaca", "tarapoto",
   "moyobamba", "rioja", "juanjui", "sullana", "chincha", "pisco", "huacho", "barranca",
   "canete", "talara", "ilo", "huaraz", "paita"
@@ -73,6 +73,9 @@ function esRegionProvincia(...textos: (string | null | undefined)[]): boolean {
       .normalize("NFD")
       .replace(/[\u0300-\u036f]/g, "")
       .trim();
+    // Si dice explícitamente "san martin de porres" o "smp", nunca es provincia
+    if (clean.includes("san martin de porres") || clean === "smp") continue;
+
     for (const reg of REGIONES_PROVINCIA) {
       const regex = new RegExp(`\\b${reg}\\b`, "i");
       if (clean === reg || regex.test(clean)) {
@@ -256,21 +259,31 @@ export function extraerDatosFormularioShopify(payload: Record<string, any>): Ext
   }
 
   // 9. Flag Provincia vs Lima/Callao
-  // Regla segura:
-  // 1. Si el distrito o ciudad es un distrito reconocido de Lima o Callao (ej. San Martín de Porres, SMP, Miraflores, Surco), es LIMA.
-  // 2. Si el departamento o ciudad es una región/provincia reconocida (ej. Arequipa, Cusco, Trujillo), es PROVINCIA.
-  // 3. NUNCA evaluar el texto libre de direccionEnvio para evitar falsos positivos con nombres de avenidas ("Av. Lima").
-  const esDistritoLimaOCallao = esUbicacionLimaOCallao(distrito, ciudad);
-  const esProvinciaExplicita = esRegionProvincia(deptoAttr, ciudad, distrito);
+  // Jerarquía estricta para resolver B2 y B2b:
+  // 1. Si el departamento (deptoAttr, shipping.province, billing.province) indica Lima o Callao -> LIMA.
+  // 2. Si el departamento indica una región de provincia (Arequipa, Lambayeque, Áncash, San Martín, etc.) -> PROVINCIA.
+  //    (Evita que Miraflores/Arequipa o La Victoria/Lambayeque salgan como Lima).
+  // 3. Si no hay departamento especificado o es genérico ("Peru"):
+  //    a) Si distrito o ciudad es un distrito de Lima/Callao reconocido -> LIMA.
+  //    b) Si ciudad o distrito es una provincia/ciudad reconocida -> PROVINCIA.
+  //    c) Por defecto -> LIMA.
+  const deptoRaw = [deptoAttr, shipping.province, billing.province].filter(Boolean).join(" ");
+  const deptoLimpio = deptoRaw.toLowerCase().replace(/per[uú]/g, "").trim();
 
   let esLima = false;
-  if (esDistritoLimaOCallao) {
+  if (deptoLimpio && esUbicacionLimaOCallao(deptoLimpio)) {
     esLima = true;
-  } else if (esProvinciaExplicita) {
+  } else if (deptoLimpio && esRegionProvincia(deptoLimpio)) {
     esLima = false;
   } else {
-    // Si no coincide con ninguno, verificar deptoAttr
-    esLima = esUbicacionLimaOCallao(deptoAttr);
+    // Sin departamento concluyente: evaluar distrito y ciudad
+    if (esUbicacionLimaOCallao(distrito, ciudad)) {
+      esLima = true;
+    } else if (esRegionProvincia(ciudad, distrito)) {
+      esLima = false;
+    } else {
+      esLima = true;
+    }
   }
 
   const esProvincia = !esLima;
