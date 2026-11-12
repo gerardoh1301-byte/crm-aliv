@@ -207,7 +207,7 @@ async function handleStatusEvent(
           ? {
               status: "failed",
               errorMessage: JSON.stringify(
-                msg?.deliveryError ?? { message: "envio fallido" }
+                payload.error ?? msg?.deliveryError ?? { message: "envio fallido" }
               ).slice(0, 1000),
             }
           : { status: "deleted" };
