@@ -144,38 +144,52 @@ export async function runAgentForConversation(conversationId: string): Promise<R
 
     return { ok: false, reason: "max_tool_rounds_exceeded", toolCalls };
   } catch (err: unknown) {
-    const errorObj = err as { message?: string };
-    const errMessage = errorObj?.message || String(err);
-    console.error(`[agent] Error crítico en turno del bot para conversación ${conversation.id}:`, errMessage);
+    const errorObj = err as { status?: number; code?: string | number; message?: string };
+    const status = errorObj?.status;
+    const rawMsg = errorObj?.message || String(err);
+    console.error(`[agent] Error en turno del bot para conversación ${conversation.id}:`, rawMsg);
 
-    // 1. Activar bandera needsHuman para que el chat NO quede abandonado en silencio
+    // Clasificar el error real para no confundir con "saturación" (N3)
+    let categoriaError = "Error inesperado de IA";
+    if (status === 429) {
+      categoriaError = "Límite de cuota de IA alcanzado (429 Rate Limit)";
+    } else if (status === 404) {
+      categoriaError = "Modelo de IA no encontrado (404 Not Found)";
+    } else if (status === 503 || status === 500) {
+      categoriaError = `Servidor de IA no disponible (${status} Service Unavailable)`;
+    } else if (status === 401) {
+      categoriaError = "Error de autenticación de IA (401 Unauthorized)";
+    }
+
+    // 1. Registrar nota de actividad visible y precisa en la ficha del contacto
+    await db.insert(activities).values({
+      type: "note",
+      description: `[ALERTA BOT] El bot no pudo responder: ${categoriaError}. Detalle: ${rawMsg.slice(0, 120)}.`,
+      contactId: contact.id,
+    });
+
+    // 2. Registrar el motivo de alerta en la conversación sin bloquear permanentemente el bot (N1)
     await db
       .update(conversations)
       .set({
-        needsHuman: true,
-        needsHumanReason: `Error de IA (${errMessage.slice(0, 100)}). Requiere atención humana inmediata.`,
-        needsHumanAt: new Date(),
+        needsHumanReason: `Alerta temporal: ${categoriaError}`,
         updatedAt: new Date(),
       })
       .where(eq(conversations.id, conversation.id));
 
-    // 2. Registrar nota de actividad visible en la ficha del contacto
-    await db.insert(activities).values({
-      type: "note",
-      description: `[ALERTA BOT] El bot falló por saturación de IA (${errMessage.slice(0, 140)}). El chat quedó marcado con atención humana para que un asesor responda.`,
-      contactId: contact.id,
-    });
-
-    // 3. Crear notificación interna para la campanita del equipo
+    // 3. Crear notificación interna para todos los asesores activos y administradores (N2)
     try {
       const miembros = await listMembers({ onlyActive: true });
-      const primerAdmin = miembros.find((m) => m.role === "admin") || miembros[0];
-      if (primerAdmin) {
+      const destinatarios = miembros.filter(
+        (m) => m.id === contact.ownerId || m.role === "admin"
+      );
+      const targets = destinatarios.length > 0 ? destinatarios : miembros;
+      for (const m of targets) {
         await db.insert(notifications).values({
-          memberId: primerAdmin.id,
+          memberId: m.id,
           kind: "system",
           title: `Alerta: Chat sin respuesta (${contact.name})`,
-          body: `El bot no pudo responder a ${contact.name} (${contact.phone || "sin teléfono"}) por error de IA. Requiere respuesta manual.`,
+          body: `El bot no pudo responder a ${contact.name} (${contact.phone || "sin teléfono"}): ${categoriaError}.`,
           url: `/conversations/${conversation.id}`,
           contactId: contact.id,
         });
@@ -184,7 +198,7 @@ export async function runAgentForConversation(conversationId: string): Promise<R
       console.warn("[agent] No se pudo crear notificación interna:", notifErr);
     }
 
-    return { ok: false, reason: `llm_failure: ${errMessage}`, toolCalls };
+    return { ok: false, reason: `llm_failure: ${rawMsg}`, toolCalls };
   }
 }
 

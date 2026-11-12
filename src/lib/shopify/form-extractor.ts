@@ -56,6 +56,32 @@ const DISTRITOS_LIMA_CALLAO = [
   "lurigancho"
 ];
 
+const REGIONES_PROVINCIA = [
+  "amazonas", "ancash", "apurimac", "arequipa", "ayacucho", "cajamarca", "cusco", "cuzco",
+  "huancavelica", "huanuco", "ica", "junin", "la libertad", "lambayeque", "loreto",
+  "madre de dios", "moquegua", "pasco", "piura", "puno", "san martin", "tacna", "tumbes", "ucayali",
+  "trujillo", "chiclayo", "huancayo", "chimbote", "iquitos", "pucallpa", "juliaca", "tarapoto",
+  "sullana", "chincha", "pisco", "huacho", "barranca", "canete", "talara", "ilo", "huaraz", "paita"
+];
+
+function esRegionProvincia(...textos: (string | null | undefined)[]): boolean {
+  for (const t of textos) {
+    if (!t) continue;
+    const clean = t
+      .toLowerCase()
+      .normalize("NFD")
+      .replace(/[\u0300-\u036f]/g, "")
+      .trim();
+    for (const reg of REGIONES_PROVINCIA) {
+      const regex = new RegExp(`\\b${reg}\\b`, "i");
+      if (clean === reg || regex.test(clean)) {
+        return true;
+      }
+    }
+  }
+  return false;
+}
+
 function esUbicacionLimaOCallao(...textos: (string | null | undefined)[]): boolean {
   for (const t of textos) {
     if (!t) continue;
@@ -229,7 +255,18 @@ export function extraerDatosFormularioShopify(payload: Record<string, any>): Ext
   }
 
   // 9. Flag Provincia vs Lima/Callao
-  const esLima = esUbicacionLimaOCallao(ciudad, distrito, deptoAttr, direccionEnvio);
+  // Regla segura: Solo evaluar campos de localidad (ciudad, distrito, departamento).
+  // NUNCA evaluar el texto libre de direccionEnvio porque una calle como "Av. Lima 123" en Arequipa generaba falsos positivos.
+  const esProvinciaExplicita = esRegionProvincia(deptoAttr, ciudad, distrito);
+  let esLima = false;
+
+  if (esProvinciaExplicita) {
+    esLima = false;
+  } else {
+    // Si no es provincia explícita, verificar si ciudad, distrito o departamento corresponden a Lima/Callao
+    esLima = esUbicacionLimaOCallao(ciudad, distrito, deptoAttr);
+  }
+
   const esProvincia = !esLima;
 
   // Si detectamos que es un distrito de Lima/Callao pero en ciudad pusieron el distrito:

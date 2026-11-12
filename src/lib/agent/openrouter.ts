@@ -1,9 +1,16 @@
 import OpenAI from "openai";
 import { getConfig, marca } from "@/lib/config";
 
-const DEFAULT_MODEL = "gemini-3.5-flash";
+const DEFAULT_MODEL = "gemini-3.1-flash-lite";
 const OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1";
 const GEMINI_BASE_URL = "https://generativelanguage.googleapis.com/v1beta/openai/";
+
+// Modelos activos y comprobados en la API de Google
+const GEMINI_FALLBACK_MODELS = [
+  "gemini-3.1-flash-lite",
+  "gemini-flash-lite-latest",
+  "gemini-3.5-flash-lite",
+];
 
 let geminiClient: OpenAI | null = null;
 let openRouterClient: OpenAI | null = null;
@@ -39,7 +46,7 @@ function getOpenRouterClientOnly(): OpenAI | null {
 /**
  * Cliente primario para el agente.
  * Si GEMINI_API_KEY existe, usa Gemini con su URL oficial.
- * Si no, usa OpenRouter con su propia URL y clave (evita el bug de mezclar claves).
+ * Si no, usa OpenRouter con su propia URL y clave.
  */
 export function getOpenRouterClient(): OpenAI {
   const gemini = getGeminiClient();
@@ -52,10 +59,10 @@ export function getOpenRouterClient(): OpenAI {
 }
 
 export function getAgentModel(): string {
-  if (process.env.GEMINI_API_KEY) {
-    return process.env.AGENT_MODEL || "gemini-3.5-flash";
+  if (process.env.AGENT_MODEL) {
+    return process.env.AGENT_MODEL;
   }
-  return process.env.AGENT_MODEL || getConfig().agente.modelo || DEFAULT_MODEL;
+  return getConfig().agente?.modelo || DEFAULT_MODEL;
 }
 
 export function hasOpenRouterKey(): boolean {
@@ -64,52 +71,72 @@ export function hasOpenRouterKey(): boolean {
 
 /**
  * Ejecuta la llamada al LLM con reintento automático y conmutación por error (failover).
- * Si el proveedor principal devuelve 429 (cuota) o 503 (saturación), reintenta
- * con una breve pausa y un modelo de respaldo (gemini-2.5-flash u OpenRouter).
+ * Si el proveedor principal devuelve 429 (cuota), 503 (saturación), 404 (modelo inválido)
+ * o 500, reintenta de inmediato probando la cadena de modelos garantizados.
  */
 export async function createChatCompletionWithFallback(
   params: OpenAI.Chat.Completions.ChatCompletionCreateParamsNonStreaming
 ): Promise<OpenAI.Chat.Completions.ChatCompletion> {
   const primaryClient = getOpenRouterClient();
-  const primaryModel = params.model;
+  const requestedModel = params.model || getAgentModel();
 
+  // 1. Intento primario con el modelo configurado
   try {
-    return await primaryClient.chat.completions.create(params);
+    return await primaryClient.chat.completions.create({
+      ...params,
+      model: requestedModel,
+    });
   } catch (err: unknown) {
     const error = err as { status?: number; code?: string | number; message?: string };
     const status = error?.status;
-    const isRateLimitOrUnavailable = status === 429 || status === 503 || status === 500;
-
     console.warn(
-      `[agent-llm] Fallo en modelo primario (${primaryModel}, status ${status}): ${error?.message || err}. Iniciando failover...`
+      `[agent-llm] Fallo en modelo primario (${requestedModel}, status ${status}): ${error?.message || err}. Iniciando failover...`
     );
 
-    if (!isRateLimitOrUnavailable && status !== undefined) {
-      // Si fue error de validación o 400/401 no transitorio, propagar
+    // Si fue error de autenticación 401 puro o 400 de parámetros irrecuperable, propagar
+    if (status === 401) {
       throw err;
     }
 
-    // Espera breve de cortesía antes del respaldo (1.5 segundos)
-    await new Promise((resolve) => setTimeout(resolve, 1500));
-
-    // Determinar cliente y modelo de respaldo
-    let fallbackClient = getOpenRouterClientOnly();
-    let fallbackModel = "google/gemini-2.5-flash";
-
-    if (!fallbackClient && process.env.GEMINI_API_KEY) {
-      // Si solo tenemos Gemini directo, cambiar al modelo estable de respaldo
-      fallbackClient = getGeminiClient();
-      fallbackModel = primaryModel.includes("3.5") ? "gemini-2.5-flash" : "gemini-2.0-flash";
+    // 2. Probar candidatos de respaldo en Gemini
+    const gemini = getGeminiClient();
+    if (gemini) {
+      for (const fallbackModel of GEMINI_FALLBACK_MODELS) {
+        if (fallbackModel === requestedModel) continue;
+        try {
+          console.info(`[agent-llm] Intentando modelo Gemini de respaldo: ${fallbackModel}`);
+          return await gemini.chat.completions.create({
+            ...params,
+            model: fallbackModel,
+          });
+        } catch (fbErr: unknown) {
+          const fbStatus = (fbErr as { status?: number })?.status;
+          console.warn(`[agent-llm] Falló respaldo ${fallbackModel} con status ${fbStatus}`);
+        }
+      }
     }
 
-    if (!fallbackClient) {
-      throw err;
+    // 3. Si Gemini falló o no está, intentar con OpenRouter si está configurado
+    const openRouter = getOpenRouterClientOnly();
+    if (openRouter) {
+      const openRouterCandidates = [
+        "google/gemini-flash-1.5",
+        "meta-llama/llama-3.3-70b-instruct",
+      ];
+      for (const orModel of openRouterCandidates) {
+        try {
+          console.info(`[agent-llm] Intentando failover OpenRouter con ${orModel}`);
+          return await openRouter.chat.completions.create({
+            ...params,
+            model: orModel,
+          });
+        } catch (orErr) {
+          console.warn(`[agent-llm] Falló OpenRouter ${orModel}`);
+        }
+      }
     }
 
-    console.info(`[agent-llm] Intentando llamada con modelo de respaldo: ${fallbackModel}`);
-    return await fallbackClient.chat.completions.create({
-      ...params,
-      model: fallbackModel,
-    });
+    // Si todos los respaldos fallaron, lanzar el error original para trazabilidad
+    throw err;
   }
 }
