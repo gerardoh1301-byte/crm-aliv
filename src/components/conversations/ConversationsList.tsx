@@ -2,7 +2,8 @@
 
 import Link from "next/link";
 import { AlertCircle, Bot, Search, X } from "lucide-react";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
+import { useSearchParams } from "next/navigation";
 import { ConversationListItem } from "@/lib/conversations";
 import { cn } from "@/lib/utils";
 import { avatarBg, getInitials } from "@/lib/avatar";
@@ -13,6 +14,13 @@ import { CHANNEL_COLORS, ChannelIcon } from "@/components/icons/channels";
 import { ChannelFilter } from "./ChannelFilter";
 import { ETIQUETAS_PRINCIPALES, getTagStyle } from "@/lib/tags";
 
+const MINUTOS_ESPERA = 10;
+
+function formatoEspera(min: number): string {
+  if (min < 60) return `${min} min`;
+  return `${Math.floor(min / 60)} h`;
+}
+
 interface Props {
   conversations: ConversationListItem[];
   selectedId?: string;
@@ -22,6 +30,24 @@ export function ConversationsList({ conversations, selectedId }: Props) {
   const [search, setSearch] = useState("");
   const [channel, setChannel] = useState<Channel | "all">("all");
   const [tagFilter, setTagFilter] = useState<string>("all");
+  const searchParams = useSearchParams();
+  const [soloAtencion, setSoloAtencion] = useState(searchParams.get("filtro") === "atencion");
+  // Reloj de la bandeja: "espera N min" avanza solo cada minuto.
+  const [ahora, setAhora] = useState(() => Date.now());
+  useEffect(() => {
+    const t = setInterval(() => setAhora(Date.now()), 60_000);
+    return () => clearInterval(t);
+  }, []);
+
+  /** Alerta del bot, o cliente que escribio y espera respuesta hace mas de 10 min. */
+  const minutosEsperando = (c: ConversationListItem): number | null => {
+    if (c.lastDirection !== "in" || !c.lastAt || c.provider === "simulador") return null;
+    const min = Math.floor((ahora - new Date(c.lastAt).getTime()) / 60_000);
+    // Mas de 2 dias sin respuesta ya no es "esperando": es un chat que quedo atras.
+    return min >= MINUTOS_ESPERA && min <= 48 * 60 ? min : null;
+  };
+  const requiereAtencion = (c: ConversationListItem) => c.needsHuman || minutosEsperando(c) !== null;
+  const totalAtencion = conversations.filter(requiereAtencion).length;
 
   const counts = useMemo(() => {
     const acc: Record<string, number> = {};
@@ -43,10 +69,11 @@ export function ConversationsList({ conversations, selectedId }: Props) {
   }, [conversations]);
 
   const filtered = useMemo(() => {
+    const base = soloAtencion ? conversations.filter(requiereAtencion) : conversations;
     const byChannel =
       channel === "all"
-        ? conversations
-        : conversations.filter((c) => c.channel === channel);
+        ? base
+        : base.filter((c) => c.channel === channel);
 
     const byTag =
       tagFilter === "all"
@@ -67,7 +94,8 @@ export function ConversationsList({ conversations, selectedId }: Props) {
       if (c.tags?.some((t) => t.toLowerCase().includes(q))) return true;
       return false;
     });
-  }, [conversations, search, channel, tagFilter]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [conversations, search, channel, tagFilter, soloAtencion]);
 
   return (
     <aside
@@ -110,6 +138,41 @@ export function ConversationsList({ conversations, selectedId }: Props) {
               <X className="h-3 w-3" />
             </button>
           )}
+        </div>
+      </div>
+
+      {/* Vista rapida: todo o solo lo que necesita a una persona */}
+      <div className="px-3 pt-2 pb-1.5 border-b border-border/50 bg-card" role="tablist" aria-label="Vista de la bandeja">
+        <div className="grid grid-cols-2 gap-1 rounded-lg bg-muted/60 p-0.5 text-[11.5px] font-medium">
+          <button
+            type="button"
+            role="tab"
+            aria-selected={!soloAtencion}
+            onClick={() => setSoloAtencion(false)}
+            className={cn(
+              "h-7 rounded-md cursor-pointer transition-colors",
+              !soloAtencion ? "bg-card shadow-xs text-foreground" : "text-muted-foreground hover:text-foreground"
+            )}
+          >
+            Todas
+          </button>
+          <button
+            type="button"
+            role="tab"
+            aria-selected={soloAtencion}
+            onClick={() => setSoloAtencion(true)}
+            className={cn(
+              "h-7 rounded-md cursor-pointer transition-colors inline-flex items-center justify-center gap-1.5",
+              soloAtencion ? "bg-card shadow-xs text-foreground" : "text-muted-foreground hover:text-foreground"
+            )}
+          >
+            Requiere atención
+            {totalAtencion > 0 && (
+              <span className="inline-flex items-center justify-center h-4 min-w-4 px-1 rounded-full bg-amber-500 text-white text-[10px] font-semibold tabular-nums">
+                {totalAtencion}
+              </span>
+            )}
+          </button>
         </div>
       </div>
 
@@ -168,7 +231,7 @@ export function ConversationsList({ conversations, selectedId }: Props) {
         ) : filtered.length === 0 ? (
           <div className="px-4 py-12 text-center">
             <p className="text-sm text-muted-foreground">
-              Sin resultados para &quot;{search}&quot;
+              {soloAtencion && !search ? "Nada pendiente: ningún chat requiere atención." : <>Sin resultados para &quot;{search}&quot;</>}
             </p>
             <p className="text-xs text-muted-foreground/70 mt-1">
               Probá buscando por nombre, usuario o número.
@@ -231,26 +294,36 @@ export function ConversationsList({ conversations, selectedId }: Props) {
                             <span
                               title={
                                 c.needsHumanReason
-                                  ? `Necesita humano: ${c.needsHumanReason}`
-                                  : "Necesita humano"
+                                  ? `Alerta del bot: ${c.needsHumanReason}`
+                                  : "Alerta del bot: requiere una persona"
                               }
                               className="shrink-0 inline-flex items-center gap-0.5 h-4 px-1 rounded-sm bg-amber-100 text-amber-800 text-[9px] font-semibold uppercase tracking-wide dark:bg-amber-950/40 dark:text-amber-300"
                             >
                               <AlertCircle className="h-2.5 w-2.5" />
-                              humano
+                              alerta
                             </span>
                           )}
-                          {!c.needsHuman && !c.aiEnabled && (
-                            <span
-                              title="IA desactivada para este contacto"
-                              className="shrink-0 inline-flex items-center gap-0.5 h-4 px-1 rounded-sm bg-muted text-muted-foreground text-[9px] font-semibold uppercase tracking-wide"
-                            >
-                              <Bot className="h-2.5 w-2.5" />
-                              off
-                            </span>
-                          )}
+                          <span
+                            title={c.aiEnabled ? "Bot activo en este chat" : "Bot apagado: atiende una persona"}
+                            className={cn(
+                              "shrink-0 inline-flex items-center gap-0.5 h-4 px-1 rounded-sm text-[9px] font-semibold uppercase tracking-wide",
+                              c.aiEnabled
+                                ? "bg-emerald-100 text-emerald-800 dark:bg-emerald-950/40 dark:text-emerald-300"
+                                : "bg-muted text-muted-foreground"
+                            )}
+                          >
+                            <Bot className="h-2.5 w-2.5" />
+                            {c.aiEnabled ? "on" : "off"}
+                          </span>
                         </span>
-                        {c.lastAt && (
+                        {minutosEsperando(c) !== null ? (
+                          <span
+                            className="text-[10px] font-semibold text-red-600 dark:text-red-400 shrink-0 tabular-nums"
+                            title="El cliente escribió y nadie respondió"
+                          >
+                            espera {formatoEspera(minutosEsperando(c)!)}
+                          </span>
+                        ) : c.lastAt && (
                           <span className="text-[10px] font-mono text-muted-foreground shrink-0 tabular-nums">
                             {formatDistanceToNow(c.lastAt, {
                               addSuffix: false,

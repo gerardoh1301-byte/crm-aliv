@@ -31,9 +31,10 @@ export const simulador: Conector = {
       cuentas: [],
       notas: [
         "Para demos y autoverificacion: las conversaciones simuladas no salen a ningun canal real.",
-        process.env.OPENROUTER_API_KEY
+        // El agente responde con Gemini o con OpenRouter: basta con una de las dos claves.
+        process.env.GEMINI_API_KEY || process.env.OPENROUTER_API_KEY
           ? "Agente listo para responder."
-          : "Falta OPENROUTER_API_KEY: el simulador no puede hacer responder al agente.",
+          : "Falta GEMINI_API_KEY u OPENROUTER_API_KEY: el simulador no puede hacer responder al agente.",
       ],
     };
   },

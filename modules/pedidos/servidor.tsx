@@ -541,7 +541,7 @@ const tools: ToolModulo[] = [
             },
             dni_cliente: {
               type: "string",
-              description: "Numero de DNI del cliente (requerido para Shalom/Olva o boleta).",
+              description: "Numero de DNI del cliente (requerido para Shalom o boleta).",
             },
             ciudad: {
               type: "string",
@@ -553,7 +553,7 @@ const tools: ToolModulo[] = [
             },
             direccion_envio: {
               type: "string",
-              description: "Direccion exacta con referencia o sede de agencia Shalom / Olva Courier.",
+              description: "Direccion exacta con referencia o agencia Shalom (provincia).",
             },
             modalidad_pago: {
               type: "string",
@@ -736,7 +736,7 @@ const tools: ToolModulo[] = [
       function: {
         name: "consultar_pedido",
         description:
-          "Consulta el estado actual, productos, monto en Soles, empresa de envio (Motorizado Lima, Shalom, Olva Courier), numero de guia y clave de recojo de los pedidos del cliente.",
+          "Consulta el estado actual, productos, monto en Soles, empresa de envio (Motorizado Lima o Shalom), numero de guia y clave de recojo de los pedidos del cliente.",
         parameters: {
           type: "object",
           properties: {

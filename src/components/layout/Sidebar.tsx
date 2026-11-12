@@ -114,8 +114,19 @@ export function SidebarBrand() {
 
 export function SidebarNav({ className }: { className?: string }) {
   const pathname = usePathname();
-  const esAdmin = useEsAdmin() === true;
+  const rol = useEsAdmin();
+  const esAdmin = rol === true;
 
+  // Mientras no se sabe el rol, esqueleto: asi no aparece un menu recortado que luego crece.
+  if (rol === null) {
+    return (
+      <nav className={cn("px-3 py-4 space-y-2", className)} aria-busy="true" aria-label="Cargando menú">
+        {Array.from({ length: 9 }).map((_, i) => (
+          <div key={i} className="h-7 rounded-md bg-white/5 animate-pulse" />
+        ))}
+      </nav>
+    );
+  }
 
 
   const sections = construirSecciones(esAdmin);
@@ -172,8 +183,8 @@ function NavLink({ item, pathname }: { item: NavItem; pathname: string }) {
 
 export function SidebarFooter() {
   const pathname = usePathname();
-  const esAdmin = useEsAdmin() === true;
-
+  const rol = useEsAdmin();
+  const esAdmin = rol === true;
 
   return (
     <div className="border-t border-sidebar-border px-3 py-3 space-y-1">
@@ -183,6 +194,9 @@ export function SidebarFooter() {
       <div className="pt-2">
         <UserMenu />
       </div>
+      {rol === null ? (
+        <div className="mx-2.5 mt-2 h-6 rounded-md bg-white/5 animate-pulse" aria-hidden />
+      ) : (
       <div
         className={`mx-2.5 mt-2 rounded-md px-2.5 py-1.5 text-[11px] leading-tight flex items-center gap-2 font-medium ${
           esAdmin
@@ -193,6 +207,7 @@ export function SidebarFooter() {
         <span className={`w-2 h-2 rounded-full ${esAdmin ? "bg-emerald-400" : "bg-blue-400"} shrink-0`} />
         <span className="truncate">{esAdmin ? "Administrador (Total)" : "Ventas (Restringido)"}</span>
       </div>
+      )}
       {false && (
         <p
           className="mx-2.5 mt-2 rounded-md bg-amber-500/15 px-2 py-1.5 text-[10px] leading-tight text-amber-200"

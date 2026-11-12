@@ -7,10 +7,9 @@ import { formatCurrency } from "@/lib/constants";
 import { useSortable } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
 import {
-  GripVertical,
+  MoreHorizontal,
   Phone,
   MessageCircle,
-  Tag,
   FileText,
   CheckSquare,
   Calendar,
@@ -19,7 +18,6 @@ import {
   Truck,
   UserCheck,
   Clock,
-  X,
   Package,
   FileImage,
 } from "lucide-react";
@@ -34,6 +32,13 @@ import {
   type SeguimientoShalomData,
 } from "./SeguimientoShalomModal";
 import { AsignarVendedorModal } from "./AsignarVendedorModal";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 
 export interface DealCardProps {
   id: string;
@@ -314,439 +319,233 @@ export function DealCard({
     }
   };
 
+  // Tarjeta compacta: nombre, monto, productos, destino y UNA accion principal segun la
+  // etapa. Asignar, marcar courier, rotulos y accesos van en el menu "⋯".
+  const etapaTemprana =
+    !pedidoId &&
+    (/consulta|carrito|intenci/.test(stageKeyLower) || /consulta|intenci/.test(stageNameLower));
+  const accionPrincipal: "shalom" | "motorizado" | null = etapaTemprana
+    ? null
+    : mostrarBotonShalom && !esLima
+      ? "shalom"
+      : mostrarBotonRotulo
+        ? "motorizado"
+        : mostrarBotonShalom
+          ? "shalom"
+          : null;
+
+  const itemsList: Array<{ titulo: string; cantidad: number }> = (() => {
+    let crudos: unknown = ordenItems;
+    if (typeof crudos === "string") {
+      try {
+        crudos = JSON.parse(crudos);
+      } catch {
+        crudos = null;
+      }
+    }
+    if (!Array.isArray(crudos)) return [];
+    return crudos.map((it: { titulo?: string; title?: string; cantidad?: number; quantity?: number }) => ({
+      titulo: it.titulo ?? it.title ?? "Producto",
+      cantidad: Number(it.cantidad ?? it.quantity ?? 1),
+    }));
+  })();
+  const resumenItems = itemsList.map((it) => `${it.cantidad}x ${it.titulo}`).join(" · ");
+  const pararArrastre = {
+    onPointerDown: (e: React.PointerEvent) => e.stopPropagation(),
+  };
+
   return (
     <Card
       ref={setNodeRef}
       style={style}
       {...attributes}
       {...listeners}
-      className="group relative p-3.5 cursor-grab active:cursor-grabbing border-border/60 hover:border-primary/30 hover:shadow-md transition-all select-none"
+      className="group relative p-3 cursor-grab active:cursor-grabbing border-border/60 hover:border-primary/30 hover:shadow-md transition-all select-none"
     >
-      <GripVertical
-        aria-hidden
-        className="absolute top-2 right-2 h-3.5 w-3.5 text-muted-foreground/60 opacity-0 group-hover:opacity-100 transition-opacity"
-      />
-      <div className="space-y-2.5">
-        <p
-          onClick={handleContactNavigate}
-          className="text-[13px] font-semibold leading-snug line-clamp-2 pr-4 hover:text-primary transition-colors cursor-pointer"
-          title="Ver ficha del contacto"
-        >
-          {title}
-        </p>
-
-        <p className="text-base font-bold tabular-nums text-foreground">
-          {formatCurrency(value)}
-        </p>
-
-        {/* Cantidad y productos comprados en el pedido */}
-        {(() => {
-          let itemsList: Array<{ titulo: string; cantidad: number; precioUnitario?: number }> = [];
-          if (Array.isArray(ordenItems) && ordenItems.length > 0) {
-            itemsList = ordenItems.map((it: any) => ({
-              titulo: it.titulo ?? it.title ?? "Producto",
-              cantidad: Number(it.cantidad ?? it.quantity ?? 1),
-              precioUnitario: it.precioUnitario ? Number(it.precioUnitario) : undefined,
-            }));
-          } else if (typeof ordenItems === "string" && ordenItems.trim()) {
-            try {
-              const parsed = JSON.parse(ordenItems);
-              if (Array.isArray(parsed) && parsed.length > 0) {
-                itemsList = parsed.map((it: any) => ({
-                  titulo: it.titulo ?? it.title ?? "Producto",
-                  cantidad: Number(it.cantidad ?? it.quantity ?? 1),
-                  precioUnitario: it.precioUnitario ? Number(it.precioUnitario) : undefined,
-                }));
-              }
-            } catch {
-              // ignore
-            }
-          }
-
-          // Fallback por titulo o valor si no hay items registrados
-          if (itemsList.length === 0) {
-            const matchQty = title.match(/(\d+)\s*x/i);
-            if (matchQty) {
-              const qty = parseInt(matchQty[1], 10);
-              const cleanTitle = title.replace(/^#\w+\s*·\s*/, "").replace(/^\d+x\s*/i, "").trim();
-              itemsList = [{ titulo: cleanTitle || "Producto", cantidad: qty }];
-            } else if (value > 0) {
-              const soles = Math.round(value / 100);
-              const cleanTitle = title.replace(/^#\w+\s*·\s*/, "").trim();
-              let inferredQty = 1;
-              if (soles === 199 || soles === 219) inferredQty = 3;
-              else if (soles === 169 || soles === 179 || soles === 189) inferredQty = 2;
-              else if (soles === 119 || soles === 99) inferredQty = 1;
-              itemsList = [{ titulo: cleanTitle || "Producto", cantidad: inferredQty }];
-            }
-          }
-
-          if (itemsList.length === 0) return null;
-
-          const totalCant = itemsList.reduce((acc, it) => acc + (it.cantidad || 1), 0);
-
-          return (
-            <div className="rounded-md border border-amber-200/90 bg-amber-50/70 dark:border-amber-900/40 dark:bg-amber-950/20 px-2.5 py-1.5 space-y-1">
-              <div className="flex items-center justify-between text-[11px] font-semibold text-amber-950 dark:text-amber-200">
-                <span className="flex items-center gap-1.5">
-                  <Package className="h-3.5 w-3.5 text-amber-600 dark:text-amber-400 shrink-0" />
-                  <span>
-                    Pedido: <strong className="text-amber-900 dark:text-amber-100 font-bold">{totalCant} {totalCant === 1 ? "unidad" : "unidades"}</strong>
-                  </span>
-                </span>
-                {ordenModalidadPago && (
-                  <span className="text-[9px] font-medium text-muted-foreground uppercase px-1 py-0.2 rounded bg-background/70 border border-border/50">
-                    {ordenModalidadPago.replace(/_/g, " ")}
-                  </span>
-                )}
-              </div>
-              <div className="space-y-0.5 pt-1 border-t border-amber-200/60 dark:border-amber-900/40">
-                {itemsList.map((it, idx) => (
-                  <div key={idx} className="text-[11.5px] leading-tight text-foreground font-medium flex items-center justify-between gap-1">
-                    <span className="truncate">
-                      <span className="font-bold text-amber-700 dark:text-amber-400">{it.cantidad}x</span> {it.titulo}
-                    </span>
-                    {it.precioUnitario ? (
-                      <span className="text-[10px] text-muted-foreground tabular-nums shrink-0">
-                        S/ {(it.precioUnitario * it.cantidad).toFixed(2)}
-                      </span>
-                    ) : null}
-                  </div>
-                ))}
-              </div>
-            </div>
-          );
-        })()}
-
-        {/* Fila 1: Cliente con avatar e initials y NOMBRE COMPLETO en 1 o 2 lineas sin truncar */}
-        <div
-          onClick={handleContactNavigate}
-          className="flex items-start gap-2 cursor-pointer group/contact min-w-0 pt-0.5"
-          title={`Ver ficha de: ${contactName || "Sin contacto"}`}
-        >
+      <div className="space-y-2">
+        {/* Cabecera: cliente y monto */}
+        <div className="flex items-start gap-2">
           <div
             className={cn(
-              "h-6 w-6 shrink-0 rounded-full flex items-center justify-center text-[10px] font-bold transition-transform group-hover/contact:scale-110 mt-0.5",
+              "h-7 w-7 shrink-0 rounded-full flex items-center justify-center text-[10px] font-bold",
               avatarBg(contactName ?? "?"),
             )}
+            aria-hidden
           >
             {getInitials(contactName)}
           </div>
-          <div className="flex-1 min-w-0">
-            <p className="text-[12.5px] font-bold text-foreground group-hover/contact:text-primary leading-snug line-clamp-2 transition-colors">
-              {contactName || "Sin contacto"}
+          <div className="min-w-0 flex-1">
+            <p
+              onClick={handleContactNavigate}
+              className="text-[13px] font-semibold leading-snug line-clamp-2 hover:text-primary cursor-pointer"
+              title="Ver ficha del contacto"
+            >
+              {contactName || title}
             </p>
+            {numeroOrden && <p className="text-[10.5px] font-mono text-muted-foreground">{numeroOrden}</p>}
           </div>
-        </div>
-
-        {/* Fila 2: Asesor Asignado y Botón Rápido */}
-        <div className="flex items-center justify-between gap-1.5 pl-8 text-[11px]">
-          <div className="flex items-center gap-1 min-w-0">
-            <span className="text-[10px] text-muted-foreground font-medium shrink-0">
-              Asesor:
-            </span>
-            <span
-              onClick={(e) => {
-                if (contactId) {
-                  e.stopPropagation();
-                  setAssignOpen(true);
-                }
-              }}
-              className={cn(
-                "text-[10px] font-semibold px-1.5 py-0.2 rounded cursor-pointer transition-colors truncate max-w-[110px]",
-                currentOwnerName
-                  ? "text-emerald-700 bg-emerald-500/10 border border-emerald-500/25 dark:text-emerald-300 hover:bg-emerald-500/20"
-                  : "text-amber-700 bg-amber-500/10 border border-amber-500/25 dark:text-amber-300 hover:bg-amber-500/20",
-              )}
-              title="Clic para cambiar vendedor asignado"
-            >
-              ({currentOwnerName || "Sin asignar"})
-            </span>
-          </div>
-
-          <button
-            type="button"
-            onPointerDown={(e) => e.stopPropagation()}
-            onClick={(e) => {
-              e.stopPropagation();
-              if (contactId) {
-                setAssignOpen(true);
-              } else {
-                toast.info("Operación sin contacto asignado");
-              }
-            }}
-            className={cn(
-              "shrink-0 inline-flex items-center gap-1 px-1.5 py-0.5 text-[9.5px] rounded-md border transition-all cursor-pointer shadow-2xs active:scale-95",
-              currentOwnerName
-                ? "bg-muted/40 hover:bg-muted text-muted-foreground hover:text-foreground border-border/70 font-medium"
-                : "bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-700 dark:text-emerald-300 border-emerald-500/30 font-semibold",
-            )}
-            title={currentOwnerName ? `Reasignar vendedor (actual: ${currentOwnerName})` : "Asignar vendedor a este cliente"}
-          >
-            <UserCheck className="h-3 w-3 text-emerald-600 dark:text-emerald-400" />
-            <span>{currentOwnerName ? "Reasignar" : "Asignar"}</span>
-          </button>
-        </div>
-
-        {/* Fila 3: Marca / Etiqueta de 'Pendiente de Courier' */}
-        <div className="flex items-center gap-1 pl-8">
-          {isPendienteCourier ? (
-            <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-bold bg-amber-500/15 text-amber-800 dark:text-amber-300 border border-amber-500/35 shadow-2xs">
-              <Clock className="h-2.5 w-2.5 text-amber-600 dark:text-amber-400 animate-pulse shrink-0" />
-              <span>Pendiente de Courier</span>
-              <button
-                type="button"
-                onPointerDown={(e) => e.stopPropagation()}
-                onClick={(e) => {
-                  e.stopPropagation();
-                  togglePendienteCourier();
-                }}
-                title="Quitar marca de pendiente de courier"
-                className="ml-0.5 p-0.5 hover:text-destructive cursor-pointer rounded hover:bg-amber-500/20"
-              >
-                <X className="h-2.5 w-2.5" />
-              </button>
-            </span>
-          ) : (
-            <button
-              type="button"
-              onPointerDown={(e) => e.stopPropagation()}
-              onClick={(e) => {
-                e.stopPropagation();
-                togglePendienteCourier();
-              }}
-              className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[9.5px] text-muted-foreground/80 hover:text-amber-700 dark:hover:text-amber-300 hover:bg-amber-500/10 border border-dashed border-border/70 hover:border-amber-500/30 transition-all cursor-pointer"
-              title="Marcar pedido como pendiente de asignación de courier"
-            >
-              <Truck className="h-2.5 w-2.5 text-muted-foreground shrink-0" />
-              <span>+ Marcar Pendiente Courier</span>
-            </button>
+          {value > 0 && (
+            <p className="text-sm font-bold tabular-nums text-foreground shrink-0">{formatCurrency(value)}</p>
           )}
         </div>
 
-        {/* Destino y dirección de entrega recopilada */}
-        {(direccion || ciudad || distrito) && (
-          <div
-            onClick={handleContactNavigate}
-            title={[ciudad, distrito && distrito.toLowerCase() !== ciudad?.toLowerCase() ? distrito : null, direccion]
-              .filter(Boolean)
-              .join(" — ")}
-            className="flex items-start gap-1.5 text-[11px] text-muted-foreground bg-muted/40 hover:bg-muted/70 rounded px-2 py-1.5 border border-border/40 transition-colors cursor-pointer"
-          >
-            <MapPin className="h-3.5 w-3.5 shrink-0 text-emerald-600 dark:text-emerald-400 mt-0.5" />
-            <div className="leading-tight min-w-0 flex-1">
-              {ciudad && (
-                <span className="font-semibold text-foreground mr-1">
-                  {ciudad}
-                  {distrito && distrito.toLowerCase() !== ciudad.toLowerCase() ? ` (${distrito})` : ""}
-                  :
-                </span>
-              )}
-              <span className="line-clamp-2 text-foreground/80">
-                {direccion || "Dirección pendiente"}
+        {/* Productos en una linea */}
+        {resumenItems && (
+          <div className="flex items-center gap-1.5 text-[11px] text-foreground/85 min-w-0" title={resumenItems}>
+            <Package className="h-3.5 w-3.5 shrink-0 text-amber-600" aria-hidden />
+            <span className="truncate">{resumenItems}</span>
+            {ordenModalidadPago && ordenModalidadPago !== "contraentrega" && (
+              <span className="ml-auto shrink-0 text-[9px] uppercase text-muted-foreground border border-border/60 rounded px-1">
+                {ordenModalidadPago.replace(/_/g, " ")}
               </span>
-            </div>
+            )}
           </div>
         )}
 
-        {/* Botón de Seguimiento Shalom: Registro y gestión de Guía, N° Orden y Código (función original) */}
-        {mostrarBotonShalom && (
+        {/* Destino */}
+        {(ciudad || distrito) && (
+          <div
+            className="flex items-center gap-1.5 text-[11px] text-muted-foreground min-w-0"
+            title={[ciudad, distrito, direccion].filter(Boolean).join(" — ")}
+          >
+            <MapPin className="h-3.5 w-3.5 shrink-0 text-emerald-600" aria-hidden />
+            <span className="truncate">
+              <span className="font-medium text-foreground/90">
+                {ciudad}
+                {distrito && distrito.toLowerCase() !== (ciudad ?? "").toLowerCase() ? ` · ${distrito}` : ""}
+              </span>
+              {!direccion && <span className="text-amber-700 dark:text-amber-400"> · sin dirección</span>}
+            </span>
+          </div>
+        )}
+
+        {isPendienteCourier && (
+          <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-semibold bg-amber-500/15 text-amber-800 dark:text-amber-300 border border-amber-500/35">
+            <Clock className="h-2.5 w-2.5" aria-hidden />
+            Pendiente de courier
+          </span>
+        )}
+
+        {/* Accion principal segun la etapa */}
+        {accionPrincipal === "shalom" && (
           <Button
             type="button"
             size="sm"
             variant="outline"
+            {...pararArrastre}
             onClick={(e) => {
               e.stopPropagation();
               setShalomOpen(true);
             }}
-            title={
-              currentNumeroGuia
-                ? `Guía Shalom: ${currentNumeroGuia}${currentCodigoRastreo ? ` (Cód: ${currentCodigoRastreo})` : ""}${currentClaveRecojo ? ` (Clave: ${currentClaveRecojo})` : ""}`
-                : "Registrar datos y guía de Shalom (N° orden, código y clave)"
-            }
             className={cn(
-              "w-full h-7 text-[11px] font-bold flex items-center justify-center gap-1.5 shadow-none transition-all cursor-pointer",
+              "w-full h-7 text-[11px] font-semibold gap-1.5 shadow-none cursor-pointer",
               currentNumeroGuia
-                ? "bg-red-500/10 hover:bg-red-500/20 text-red-700 dark:text-red-400 border border-red-500/30"
-                : "bg-amber-500/10 hover:bg-amber-500/20 text-amber-700 dark:text-amber-400 border border-amber-500/30"
+                ? "bg-red-500/10 hover:bg-red-500/20 text-red-700 dark:text-red-400 border-red-500/30"
+                : "bg-amber-500/10 hover:bg-amber-500/20 text-amber-700 dark:text-amber-400 border-amber-500/30",
             )}
           >
-            <Truck className="h-3.5 w-3.5 shrink-0 text-red-600" />
+            <Truck className="h-3.5 w-3.5 shrink-0" aria-hidden />
             <span className="truncate">
-              {currentNumeroGuia
-                ? `Shalom: #${currentNumeroGuia}${currentCodigoRastreo ? ` · Cód: ${currentCodigoRastreo}` : ""}${currentClaveRecojo ? ` · ${currentClaveRecojo}` : ""}`
-                : "Registrar Guía Shalom"}
+              {currentNumeroGuia ? `Shalom #${currentNumeroGuia}` : "Registrar guía Shalom"}
             </span>
           </Button>
         )}
-
-        {/* Botón Adicional de Rótulo Shalom (Generar imagen oficial de etiqueta para paquete) */}
-        {mostrarBotonShalomRotulo && (
+        {accionPrincipal === "motorizado" && (
           <Button
             type="button"
             size="sm"
             variant="outline"
-            onClick={(e) => {
-              e.stopPropagation();
-              setRotuloShalomOpen(true);
-            }}
-            title="Generar e imprimir imagen oficial de rótulo / etiqueta Shalom para el paquete"
-            className="w-full h-7 text-[11px] font-bold bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-800 dark:text-slate-200 border border-slate-300 dark:border-slate-700 flex items-center justify-center gap-1.5 shadow-none transition-all cursor-pointer"
-          >
-            <FileImage className="h-3.5 w-3.5 text-red-600 shrink-0" />
-            <span className="truncate">Rótulo Shalom (Imagen)</span>
-          </Button>
-        )}
-
-        {/* Botón de Rótulo Motorizado (Para órdenes de Lima/Callao) */}
-        {mostrarBotonRotulo && (
-          <Button
-            type="button"
-            size="sm"
-            variant="outline"
+            {...pararArrastre}
             onClick={(e) => {
               e.stopPropagation();
               setRotuloOpen(true);
             }}
-            title="Generar e imprimir rótulo 10.5 × 9.0 cm para motorizado"
-            className="w-full h-7 text-[11px] font-bold bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-700 dark:text-emerald-400 border border-emerald-500/30 flex items-center justify-center gap-1.5 shadow-none transition-all cursor-pointer"
+            className="w-full h-7 text-[11px] font-semibold gap-1.5 shadow-none cursor-pointer bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-700 dark:text-emerald-400 border-emerald-500/30"
           >
-            <Printer className="h-3.5 w-3.5 shrink-0" />
-            <span>Rótulo Motorizado (10.5×9 cm)</span>
+            <Printer className="h-3.5 w-3.5 shrink-0" aria-hidden />
+            Rótulo motorizado
           </Button>
         )}
 
-        <div className="flex items-center gap-2 pt-1">
-          <div className="h-1 flex-1 bg-muted rounded-full overflow-hidden">
-            <div
-              className="h-full bg-primary rounded-full transition-all"
-              style={{ width: `${probability}%` }}
-            />
-          </div>
-          <span className="text-[10.5px] font-medium text-muted-foreground tabular-nums">
-            {probability}%
-          </span>
-        </div>
-
-        {/* Barra interactiva de acciones rápidas */}
-        <div
-          className="flex items-center gap-3 pt-2 mt-1 border-t border-border/40 text-muted-foreground/75"
-          onClick={(e) => e.stopPropagation()}
-        >
-          {/* 1. Teléfono */}
+        {/* Pie: contacto rapido, asesor y menu */}
+        <div className="flex items-center gap-2.5 pt-2 border-t border-border/40 text-muted-foreground" onClick={(e) => e.stopPropagation()}>
           {contactPhone ? (
             <a
               href={`tel:${contactPhone}`}
               title={`Llamar a ${contactPhone}`}
-              onPointerDown={(e) => e.stopPropagation()}
-              onClick={(e) => e.stopPropagation()}
-              className="p-1 -m-1 rounded hover:bg-muted hover:text-primary transition-all active:scale-90"
+              {...pararArrastre}
+              className="p-1 -m-1 rounded hover:bg-muted hover:text-primary"
             >
               <Phone className="h-3.5 w-3.5" aria-hidden />
             </a>
-          ) : (
-            <button
-              type="button"
-              title="Sin teléfono registrado"
-              onPointerDown={(e) => e.stopPropagation()}
-              onClick={(e) => {
-                e.stopPropagation();
-                toast.info("Contacto sin teléfono registrado");
-              }}
-              className="p-1 -m-1 rounded hover:bg-muted hover:text-muted-foreground opacity-40 transition-all cursor-not-allowed"
-            >
-              <Phone className="h-3.5 w-3.5" aria-hidden />
-            </button>
-          )}
-
-          {/* 2. Mensaje / Chat en apartado Conversaciones */}
+          ) : null}
           <button
             type="button"
-            title="Abrir chat en apartado Conversaciones"
-            onPointerDown={(e) => e.stopPropagation()}
-            onClick={(e) => {
-              e.stopPropagation();
-              if (contactId) {
-                router.push(`/conversations/${contactId}`);
-              } else {
-                router.push("/conversations");
-              }
-            }}
-            className="p-1 -m-1 rounded hover:bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 hover:text-emerald-700 transition-all active:scale-90 cursor-pointer"
+            title="Abrir chat"
+            {...pararArrastre}
+            onClick={() => router.push(contactId ? `/conversations/${contactId}` : "/conversations")}
+            className="p-1 -m-1 rounded hover:bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 cursor-pointer"
           >
             <MessageCircle className="h-3.5 w-3.5" aria-hidden />
           </button>
-
-          {/* 4. Documentos / Notas */}
+          {closeDateFormatted && (
+            <span className="inline-flex items-center gap-1 text-[10px] tabular-nums" title="Cierre estimado">
+              <Calendar className="h-3 w-3" aria-hidden />
+              {closeDateFormatted}
+            </span>
+          )}
           <button
             type="button"
-            title={
-              docCount > 0
-                ? `${docCount} documento${docCount === 1 ? "" : "s"} en la ficha`
-                : "Ver documentos y notas"
-            }
-            onPointerDown={(e) => e.stopPropagation()}
-            onClick={(e) => {
-              e.stopPropagation();
-              if (contactId) router.push(`/contacts/${contactId}#documentos`);
-              else toast.info("Operación sin contacto asignado");
-            }}
+            {...pararArrastre}
+            onClick={() => (contactId ? setAssignOpen(true) : toast.info("Operación sin contacto asignado"))}
+            title={currentOwnerName ? `Asesor: ${currentOwnerName} (clic para reasignar)` : "Asignar asesor"}
             className={cn(
-              "inline-flex items-center gap-1 p-1 -m-1 rounded hover:bg-muted transition-all active:scale-90 cursor-pointer",
-              docCount > 0
-                ? "text-primary font-semibold hover:text-primary"
-                : "hover:text-primary",
+              "ml-auto truncate max-w-[110px] text-[10px] font-medium px-1.5 py-0.5 rounded border cursor-pointer",
+              currentOwnerName
+                ? "border-border/60 hover:bg-muted text-foreground/80"
+                : "border-amber-500/40 bg-amber-500/10 text-amber-700 dark:text-amber-300",
             )}
           >
-            <FileText className="h-3.5 w-3.5" aria-hidden />
-            {docCount > 0 && (
-              <span className="text-[10px] tabular-nums">{docCount}</span>
-            )}
+            {currentOwnerName ? currentOwnerName.replace(/\s*\(.*\)$/, "") : "Sin asesor"}
           </button>
-
-          {/* 5. Tareas / Actividades */}
-          <button
-            type="button"
-            title="Ver actividades y tareas pendientes"
-            onPointerDown={(e) => e.stopPropagation()}
-            onClick={(e) => {
-              e.stopPropagation();
-              router.push(
-                contactId ? `/activities?contactId=${contactId}` : "/activities",
-              );
-            }}
-            className="p-1 -m-1 rounded hover:bg-muted hover:text-primary transition-all active:scale-90 cursor-pointer"
-          >
-            <CheckSquare className="h-3.5 w-3.5" aria-hidden />
-          </button>
-
-          {/* 6. Calendario / Fecha de Cierre Estimado */}
-          <button
-            type="button"
-            title={
-              closeDateFormatted
-                ? `Cierre estimado: ${closeDateFormatted}`
-                : "Ver calendario de seguimiento"
-            }
-            onPointerDown={(e) => e.stopPropagation()}
-            onClick={(e) => {
-              e.stopPropagation();
-              router.push("/activities");
-            }}
-            className={cn(
-              "inline-flex items-center gap-1 p-1 -m-1 rounded hover:bg-muted transition-all active:scale-90 cursor-pointer",
-              closeDateFormatted
-                ? "text-primary font-semibold hover:text-primary"
-                : "hover:text-primary",
-            )}
-          >
-            <Calendar className="h-3.5 w-3.5" aria-hidden />
-            {closeDateFormatted && (
-              <span className="text-[10px] tabular-nums">
-                {closeDateFormatted}
-              </span>
-            )}
-          </button>
+          <DropdownMenu>
+            <DropdownMenuTrigger
+              {...pararArrastre}
+              render={<Button variant="ghost" size="sm" className="h-6 w-6 p-0 cursor-pointer" aria-label="Más acciones" />}
+            >
+              <MoreHorizontal className="h-4 w-4" />
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end" onPointerDown={(e) => e.stopPropagation()}>
+              {mostrarBotonShalom && accionPrincipal !== "shalom" && (
+                <DropdownMenuItem onClick={() => setShalomOpen(true)}>
+                  <Truck className="h-4 w-4" /> {currentNumeroGuia ? `Guía Shalom #${currentNumeroGuia}` : "Registrar guía Shalom"}
+                </DropdownMenuItem>
+              )}
+              {mostrarBotonShalomRotulo && (
+                <DropdownMenuItem onClick={() => setRotuloShalomOpen(true)}>
+                  <FileImage className="h-4 w-4" /> Rótulo Shalom (imagen)
+                </DropdownMenuItem>
+              )}
+              {mostrarBotonRotulo && accionPrincipal !== "motorizado" && (
+                <DropdownMenuItem onClick={() => setRotuloOpen(true)}>
+                  <Printer className="h-4 w-4" /> Rótulo motorizado
+                </DropdownMenuItem>
+              )}
+              <DropdownMenuItem onClick={togglePendienteCourier}>
+                <Truck className="h-4 w-4" /> {isPendienteCourier ? "Quitar pendiente de courier" : "Marcar pendiente de courier"}
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={() => (contactId ? setAssignOpen(true) : toast.info("Operación sin contacto asignado"))}>
+                <UserCheck className="h-4 w-4" /> {currentOwnerName ? "Reasignar asesor" : "Asignar asesor"}
+              </DropdownMenuItem>
+              <DropdownMenuSeparator />
+              <DropdownMenuItem onClick={() => contactId && router.push(`/contacts/${contactId}#documentos`)}>
+                <FileText className="h-4 w-4" /> Documentos{docCount > 0 ? ` (${docCount})` : ""}
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={() => router.push(contactId ? `/activities?contactId=${contactId}` : "/activities")}>
+                <CheckSquare className="h-4 w-4" /> Actividades
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
         </div>
       </div>
 

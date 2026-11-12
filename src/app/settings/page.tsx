@@ -22,6 +22,7 @@ import { ChannelsSettings } from "@/components/settings/ChannelsSettings";
 import { TeamSettings } from "@/components/settings/TeamSettings";
 import Link from "next/link";
 import { PushSettings } from "@/components/settings/PushSettings";
+import { PushStatusBanner } from "@/components/settings/PushStatusBanner";
 
 export default function SettingsPage() {
   const [stages, setStages] = useState<
@@ -41,6 +42,8 @@ export default function SettingsPage() {
         title="Configuracion"
         subtitle="Canales, equipo, agente y notificaciones"
       />
+
+      <PushStatusBanner />
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         {/* Pipeline stages */}
@@ -183,7 +186,7 @@ export default function SettingsPage() {
         </Card>
 
         {/* Notifications */}
-        <Card className="lg:col-span-2">
+        <Card id="notificaciones" className="lg:col-span-2 scroll-mt-20">
           <CardHeader>
             <CardTitle className="text-base flex items-center gap-2">
               <Bell className="h-4 w-4" />

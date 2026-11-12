@@ -6,7 +6,7 @@ import { requireMember } from "@/lib/api-auth";
 import { canAccessContactId, displayName } from "@/lib/team";
 import { pedidosOrdenes } from "../../../../../modules/pedidos/tabla";
 import { sincronizarEtapaPipeline } from "../../../../../modules/pedidos/servidor";
-import { extraerDatosFormularioShopify } from "@/lib/shopify/form-extractor";
+import { adelantoRegistrado, esPedidoDeProvincia } from "@/lib/pedidos/adelanto";
 
 /**
  * "Adelanto confirmado" (semiautomatico) para pedidos de provincia por Shalom.
@@ -24,14 +24,6 @@ export const dynamic = "force-dynamic";
 
 const ESTADOS_ABIERTOS = ["por_confirmar_cod", "confirmado", "preparando"];
 
-function esPedidoDeProvincia(p: { ciudad: string | null; distrito: string | null; direccionEnvio: string | null }): boolean {
-  const ciudad = p.ciudad || p.distrito;
-  if (!ciudad) return false;
-  return extraerDatosFormularioShopify({
-    shipping_address: { city: ciudad, address1: p.direccionEnvio ?? "" },
-    ...(p.distrito && p.distrito !== ciudad ? { note_attributes: [{ name: "Distrito", value: p.distrito }] } : {}),
-  }).esProvincia;
-}
 
 export async function GET(request: NextRequest) {
   const auth = await requireMember();
@@ -71,7 +63,6 @@ export async function GET(request: NextRequest) {
     .where(eq(contacts.id, contactId))
     .limit(1);
 
-  const adelantoRegistrado = (notas: string | null) => /\[ADELANTO VERIFICADO\]/.test(notas ?? "");
 
   return NextResponse.json({
     contacto: contacto ?? null,

@@ -1,6 +1,8 @@
 "use client";
 
 import { useEffect, useState, useCallback } from "react";
+import { useSearchParams } from "next/navigation";
+import { adelantoRegistrado, esPedidoDeProvincia, quienVerificoAdelanto } from "@/lib/pedidos/adelanto";
 import Link from "next/link";
 import {
   ShoppingBag,
@@ -96,7 +98,8 @@ interface ProductoSimple {
 export function PedidosPage() {
   const [pedidos, setPedidos] = useState<PedidoConContacto[]>([]);
   const [loading, setLoading] = useState(true);
-  const [filtroEstado, setFiltroEstado] = useState<string>("todos");
+  const searchParams = useSearchParams();
+  const [filtroEstado, setFiltroEstado] = useState<string>(() => searchParams.get("filtro") ?? "todos");
   const [busqueda, setBusqueda] = useState("");
   const [driveStatus, setDriveStatus] = useState<{
     carpeta: string;
@@ -332,7 +335,11 @@ export function PedidosPage() {
   const totalCobrado = entregados.reduce((acc, p) => acc + (Number(p.total) || 0), 0);
 
   const filtrados = pedidos.filter((p) => {
-    if (filtroEstado !== "todos" && p.estado !== filtroEstado) return false;
+    if (filtroEstado === "provincia_sin_guia") {
+      if (!esPedidoDeProvincia(p) || p.numeroGuia || ["entregado", "cancelado"].includes(p.estado)) return false;
+    } else if (filtroEstado === "adelanto") {
+      if (p.estado !== "por_confirmar_cod" || p.numeroGuia || adelantoRegistrado(p.notas) || !esPedidoDeProvincia(p)) return false;
+    } else if (filtroEstado !== "todos" && p.estado !== filtroEstado) return false;
     if (!busqueda.trim()) return true;
     const q = busqueda.toLowerCase();
     return (
@@ -350,7 +357,7 @@ export function PedidosPage() {
     <div className="space-y-6">
       <PageHeader
         title="Pedidos COD — Aliv Store"
-        subtitle="Gestión de órdenes Contraentrega, despachos por Motorizado Lima / Shalom / Olva Courier y guardado automático en Google Drive."
+        subtitle="Gestión de órdenes Contraentrega, despachos por motorizado en Lima y Shalom a provincia, y guardado automático en Google Drive."
         actions={
           <div className="flex flex-wrap items-center gap-2">
             <div className="flex items-center gap-1">
@@ -470,7 +477,7 @@ export function PedidosPage() {
             <Truck className="h-4 w-4 text-sky-600" />
           </div>
           <p className="text-2xl font-bold mt-1 tabular-nums">{enCamino}</p>
-          <p className="text-xs text-muted-foreground mt-0.5">Motorizado / Shalom / Olva</p>
+          <p className="text-xs text-muted-foreground mt-0.5">Motorizado / Shalom</p>
         </Card>
         <Card className="p-4">
           <div className="flex items-center justify-between text-xs text-muted-foreground">
@@ -496,6 +503,8 @@ export function PedidosPage() {
             { id: "enviado", label: "En camino" },
             { id: "entregado", label: "Entregados" },
             { id: "cancelado", label: "Cancelados" },
+            { id: "adelanto", label: "Adelanto por verificar" },
+            { id: "provincia_sin_guia", label: "Provincia sin guía" },
           ].map((tab) => (
             <Button
               key={tab.id}
@@ -541,6 +550,7 @@ export function PedidosPage() {
                   <TableHead>Cliente / Destino</TableHead>
                   <TableHead>Productos</TableHead>
                   <TableHead>Total COD</TableHead>
+                  <TableHead>Adelanto</TableHead>
                   <TableHead className="hidden lg:table-cell">Envío / Guía</TableHead>
                   <TableHead>Estado</TableHead>
                   <TableHead className="text-right">Acción rápida</TableHead>
@@ -594,6 +604,33 @@ export function PedidosPage() {
                       <p className="text-[11px] text-muted-foreground capitalize">
                         {p.modalidadPago.replace(/_/g, " ")}
                       </p>
+                    </TableCell>
+                    <TableCell className="text-xs">
+                      {(() => {
+                        if (!esPedidoDeProvincia(p)) {
+                          return <span className="text-muted-foreground" title="Lima: paga al recibir">—</span>;
+                        }
+                        if (adelantoRegistrado(p.notas)) {
+                          const quien = quienVerificoAdelanto(p.notas);
+                          return (
+                            <span
+                              className="inline-flex items-center rounded-full px-2 py-0.5 font-semibold bg-emerald-500/10 text-emerald-700 dark:text-emerald-300 border border-emerald-500/30"
+                              title={quien ? `Verificado por ${quien}` : "Adelanto verificado"}
+                            >
+                              Verificado{quien ? ` · ${quien.split(" ")[0]}` : ""}
+                            </span>
+                          );
+                        }
+                        if (p.numeroGuia || ["enviado", "entregado"].includes(p.estado)) {
+                          return <span className="text-muted-foreground">Despachado</span>;
+                        }
+                        if (p.estado === "cancelado") return <span className="text-muted-foreground">—</span>;
+                        return (
+                          <span className="inline-flex items-center rounded-full px-2 py-0.5 font-semibold bg-amber-500/10 text-amber-700 dark:text-amber-300 border border-amber-500/30">
+                            Pendiente S/20
+                          </span>
+                        );
+                      })()}
                     </TableCell>
                     <TableCell className="hidden lg:table-cell text-xs">
                       {p.transportadora ? (
@@ -885,7 +922,7 @@ export function PedidosPage() {
             </div>
 
             <div className="space-y-1.5">
-              <Label>Dirección Exacta o Sede Agencia Shalom / Olva</Label>
+              <Label>Dirección exacta o agencia Shalom</Label>
               <Input
                 placeholder="Av. Arequipa 1240 Dpto 302 / Agencia Shalom Av. Grau"
                 value={nuevoForm.direccionEnvio}
