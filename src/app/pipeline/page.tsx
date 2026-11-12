@@ -61,7 +61,7 @@ export default async function PipelinePage() {
     .from(deals)
     .leftJoin(contacts, eq(deals.contactId, contacts.id))
     .leftJoin(teamMembers, eq(contacts.ownerId, teamMembers.id))
-    .leftJoin(pedidosOrdenes, or(eq(deals.id, pedidosOrdenes.dealId), eq(deals.contactId, pedidosOrdenes.contactId)))
+    .leftJoin(pedidosOrdenes, eq(deals.id, pedidosOrdenes.dealId))
     // Un asesor ve solo las operaciones de sus contactos.
     .where(ownerFilter(member));
 
