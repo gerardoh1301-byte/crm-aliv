@@ -577,6 +577,33 @@ const tools: ToolModulo[] = [
         return { ok: false, error: "Debes indicar al menos un producto para crear el pedido" };
       }
 
+      // Un solo pedido de chat abierto por cliente: el bot a veces volvia a llamar esta
+      // herramienta en el turno siguiente y duplicaba el pedido (#ALIV-1038 y #ALIV-1039).
+      const hace72h = new Date(Date.now() - 72 * 60 * 60 * 1000);
+      const [yaAbierto] = await db
+        .select({ numeroOrden: pedidosOrdenes.numeroOrden, total: pedidosOrdenes.total, estado: pedidosOrdenes.estado })
+        .from(pedidosOrdenes)
+        .where(
+          and(
+            eq(pedidosOrdenes.contactId, ctx.contactId),
+            inArray(pedidosOrdenes.estado, ["por_confirmar_cod", "confirmado"]),
+            sql`${pedidosOrdenes.createdAt} >= ${hace72h}`
+          )
+        )
+        .orderBy(desc(pedidosOrdenes.createdAt))
+        .limit(1);
+      if (yaAbierto) {
+        return {
+          ok: true,
+          data: {
+            ya_existia: true,
+            numeroOrden: yaAbierto.numeroOrden,
+            total: yaAbierto.total,
+            message: `El cliente ya tiene el pedido ${yaAbierto.numeroOrden} abierto (S/ ${yaAbierto.total}). No se creo otro. Si quiere cambiar cantidad o datos, usa avisar_asesor.`,
+          },
+        };
+      }
+
       const itemsFinales: ItemPedido[] = [];
       const subtotales: number[] = [];
       for (const item of listaRaw as Array<{ producto?: string; cantidad?: number }>) {

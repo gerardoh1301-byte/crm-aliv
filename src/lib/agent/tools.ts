@@ -18,6 +18,7 @@ import { camposContacto, getConfig } from "@/lib/config";
 import { validarCamposPersonalizados } from "@/lib/config/campos";
 import { toolsDeModulos } from "@/lib/modules";
 import { alertarEquipo, esMotivoDeBaja } from "./alertas";
+import { pedidosOrdenes } from "../../../modules/pedidos/tabla";
 
 /**
  * Tools del agente.
@@ -92,6 +93,25 @@ async function moverEtapa(args: { etapa?: string; motivo?: string }, ctx: ToolCo
       ok: false,
       error: `Etapa desconocida "${args.etapa}". Disponibles: ${stages.map((s) => s.key ?? s.name).join(", ")}`,
     };
+  }
+
+  // Etapas que solo mueve una persona: despacho y entrega siempre; "Pedido confirmado"
+  // mientras haya un pedido con el adelanto sin verificar (una captura no es un pago).
+  if (stage.key === "en_reparto" || stage.key === "entregado") {
+    return { ok: false, error: `La etapa "${stage.name}" la mueve una persona del equipo. Usa avisar_asesor si hace falta.` };
+  }
+  if (stage.key === "pedido_confirmado") {
+    const [pendiente] = await db
+      .select({ numeroOrden: pedidosOrdenes.numeroOrden })
+      .from(pedidosOrdenes)
+      .where(and(eq(pedidosOrdenes.contactId, ctx.contactId), eq(pedidosOrdenes.estado, "por_confirmar_cod")))
+      .limit(1);
+    if (pendiente) {
+      return {
+        ok: false,
+        error: `El pedido ${pendiente.numeroOrden} tiene el adelanto sin verificar. Solo una persona lo confirma con el boton "Adelanto confirmado". No muevas la etapa: usa avisar_asesor y dile al cliente que el equipo valida su pago.`,
+      };
+    }
   }
 
   // Operacion abierta del contacto en este pipeline (la mas reciente).
