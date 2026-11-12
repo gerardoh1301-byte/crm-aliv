@@ -124,4 +124,39 @@ describe("Clasificación de direcciones Lima vs Provincia (16 casos de auditorí
     });
     expect(res.esProvincia).toBe(true);
   });
+
+  it("17. Marcona sin departamento (pedido real #1064 EasySell) -> Provincia (B2c)", () => {
+    const res = extraerDatosFormularioShopify({
+      shipping_address: { city: "Marcona", address1: "Calle Comercio 12" },
+    });
+    expect(res.esProvincia).toBe(true);
+  });
+
+  it("18. Abancay sin departamento -> Provincia (B2c)", () => {
+    const res = extraerDatosFormularioShopify({
+      shipping_address: { city: "Abancay", address1: "Av. Arenas 45" },
+    });
+    expect(res.esProvincia).toBe(true);
+  });
+
+  it("19. Jaén sin departamento -> Provincia (B2c)", () => {
+    const res = extraerDatosFormularioShopify({
+      shipping_address: { city: "Jaén", address1: "Jr. Mariscal Castilla 80" },
+    });
+    expect(res.esProvincia).toBe(true);
+  });
+
+  it("20. Nazca sin departamento -> Provincia (B2c)", () => {
+    const res = extraerDatosFormularioShopify({
+      shipping_address: { city: "Nazca", address1: "Calle Bolognesi 21" },
+    });
+    expect(res.esProvincia).toBe(true);
+  });
+
+  it("21. Tingo María sin departamento -> Provincia (B2c)", () => {
+    const res = extraerDatosFormularioShopify({
+      shipping_address: { city: "Tingo María", address1: "Av. Raimondi 100" },
+    });
+    expect(res.esProvincia).toBe(true);
+  });
 });

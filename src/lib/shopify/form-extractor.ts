@@ -276,13 +276,14 @@ export function extraerDatosFormularioShopify(payload: Record<string, any>): Ext
   } else if (deptoLimpio && esRegionProvincia(deptoLimpio)) {
     esLima = false;
   } else {
-    // Sin departamento concluyente: evaluar distrito y ciudad
+    // Sin departamento concluyente: evaluar distrito y ciudad.
+    // La lista de los 58 distritos de Lima y Callao (DISTRITOS_LIMA_CALLAO) es exhaustiva y completa.
+    // Si la ciudad/distrito coincide con alguno de ellos -> LIMA.
+    // Si no coincide con ningún distrito de Lima/Callao (ej. Marcona, Abancay, Jaén, Nazca, Tingo María) -> PROVINCIA (B2c).
     if (esUbicacionLimaOCallao(distrito, ciudad)) {
       esLima = true;
-    } else if (esRegionProvincia(ciudad, distrito)) {
-      esLima = false;
     } else {
-      esLima = true;
+      esLima = false;
     }
   }
 
