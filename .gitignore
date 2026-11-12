@@ -31,6 +31,8 @@ npm-debug.log*
 yarn-debug.log*
 .pnpm-debug.log*
 /coverage
+# Scripts locales con credenciales o temporales
+/scripts/
 /scratch/
 
 # OS / editor

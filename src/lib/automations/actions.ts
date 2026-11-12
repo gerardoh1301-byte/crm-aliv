@@ -336,35 +336,52 @@ const sendMessage: ActionDef = {
 
     // Si viene de un evento de orden, preparar plantilla de WhatsApp por si la ventana de 24h está cerrada
     let template: { name: string; language: string; params: string[]; previewText: string } | undefined = undefined;
+    let renderedOrderText = text;
     const payload = (ctx.event?.payload ?? {}) as Record<string, any>;
     if (payload.numeroOrden || payload.orderId) {
       const clienteNombre = String(payload.contactName || contactInfo?.name || "Cliente").split(" ")[0];
-      const ordenNum = String(payload.numeroOrden || payload.orderId || "");
-      const prods = String(payload.productos || "NAC600");
-      const tot = String(payload.total || payload.totalSoles || "119");
+      const ordenNum = String(payload.numeroOrden || payload.orderId || "").replace(/^#/, "");
+      
+      // Formatear texto amigable de productos
+      const rawProds = String(payload.productos || "NAC600");
+      let prods = rawProds;
+      if (/^1\s*x?\s+NAC/i.test(rawProds)) prods = "1 frasco de NAC600";
+      else if (/^2\s*x?\s+NAC/i.test(rawProds)) prods = "2 frascos de NAC600";
+      else if (/^3\s*x?\s+NAC/i.test(rawProds)) prods = "3 frascos de NAC600";
+      else if (/^1\s*x?\s+Termix/i.test(rawProds)) prods = "1 Tobillera Termix";
+      else if (/^2\s*x?\s+Termix/i.test(rawProds)) prods = "2 Tobilleras Termix";
+      else if (/^3\s*x?\s+Termix/i.test(rawProds)) prods = "3 Tobilleras Termix";
+
+      const tot = String(payload.total || payload.totalSoles || "119").replace(/[^\d.]/g, "");
       const ciudadDestino = String(payload.ciudad || "Provincia");
-      const saldoRestante = String(payload.saldo || "99");
+      const numTot = Number(tot) || 119;
+      const saldoRestante = String(payload.saldo || (numTot > 20 ? numTot - 20 : numTot)).replace(/[^\d.]/g, "");
+      const direccionCompleta = [payload.direccion, payload.distrito].filter(Boolean).join(", ") || "tu dirección registrada";
 
       if (payload.esProvincia === "true" || payload.esProvincia === true) {
+        renderedOrderText = `¡Hola, ${clienteNombre}! 👋 Te saluda Aliv Perú.\nRecibimos tu pedido #${ordenNum}: ${prods} por S/${tot} con envío gratis a ${ciudadDestino}.\n📦 Lo enviamos por agencia Shalom. ¿Qué agencia de Shalom te queda más cerca?\n🪪 Para la guía, Shalom nos pide tu nombre completo y DNI.\nPara despachar se necesita un adelanto de S/20 (Yape 951365418 – Gerardo Huaynalaya) y el saldo de S/${saldoRestante} lo pagas al recoger. Envíanos la captura del Yape por aquí.\n¡Gracias por tu confianza! 💚`;
+
         template = {
-          name: "aliv_pedido_provincia",
+          name: "aliv_confirmacion_provincia",
           language: "es",
-          params: [clienteNombre, ordenNum, prods, ciudadDestino, `S/ ${tot}`, `S/ ${saldoRestante}`],
-          previewText: text,
+          params: [clienteNombre, ordenNum, prods, tot, ciudadDestino, saldoRestante],
+          previewText: renderedOrderText,
         };
       } else {
+        renderedOrderText = `¡Hola, ${clienteNombre}! 👋 Te saluda Aliv Perú.\nRecibimos tu pedido #${ordenNum}: ${prods} por S/${tot} con envío gratis.\n📍 Dirección: ${direccionCompleta}.\n¿Nos confirmas tu pedido y el horario en que te encuentras para coordinar la entrega? Pagas al recibir.\n¡Gracias por tu confianza! 💚`;
+
         template = {
-          name: "aliv_pedido_lima",
+          name: "aliv_confirmacion_lima",
           language: "es",
-          params: [clienteNombre, ordenNum, prods, `S/ ${tot}`],
-          previewText: text,
+          params: [clienteNombre, ordenNum, prods, tot, direccionCompleta],
+          previewText: renderedOrderText,
         };
       }
     }
 
     const res = await deliverMessage(
       conversationId,
-      { text, template },
+      { text: renderedOrderText, template },
       "agent"
     );
     if (!res.ok) {

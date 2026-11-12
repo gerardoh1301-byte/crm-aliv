@@ -1,6 +1,6 @@
 import type OpenAI from "openai";
 import { db } from "@/db";
-import { contacts, conversations, messages } from "@/db/schema";
+import { activities, contacts, conversations, messages, notifications } from "@/db/schema";
 import { desc, eq } from "drizzle-orm";
 import { deliverMessage, getConversationRow } from "@/lib/channels/deliver";
 import { isChannel, type Channel } from "@/lib/channels/types";
@@ -10,7 +10,7 @@ import { getAgentConfig } from "./config";
 import { renderContexto, renderSystemPrompt } from "./prompt";
 import { esSaludoAutomatico, renderOrigenAnuncio } from "./origen-anuncio";
 import { executeTool, getEnabledToolDefinitions, type ToolContext } from "./tools";
-import { getOpenRouterClient, getAgentModel, hasOpenRouterKey } from "./openrouter";
+import { getOpenRouterClient, getAgentModel, hasOpenRouterKey, createChatCompletionWithFallback } from "./openrouter";
 
 const MAX_TOOL_ROUNDS = 6;
 const HISTORY_LIMIT = 30;
@@ -81,68 +81,111 @@ export async function runAgentForConversation(conversationId: string): Promise<R
     channel,
   };
 
-  const client = getOpenRouterClient();
   let toolCalls = 0;
 
-  for (let round = 0; round < MAX_TOOL_ROUNDS; round++) {
-    const completion = await client.chat.completions.create({
-      model: config.model,
-      messages: llmMessages,
-      tools: tools.length > 0 ? tools : undefined,
-      tool_choice: tools.length > 0 ? "auto" : undefined,
-      max_completion_tokens: 1024,
-    });
+  try {
+    for (let round = 0; round < MAX_TOOL_ROUNDS; round++) {
+      const completion = await createChatCompletionWithFallback({
+        model: config.model,
+        messages: llmMessages,
+        tools: tools.length > 0 ? tools : undefined,
+        tool_choice: tools.length > 0 ? "auto" : undefined,
+        max_completion_tokens: 1024,
+      });
 
-    const choice = completion.choices[0];
-    const assistantMsg = choice.message;
+      const choice = completion.choices[0];
+      const assistantMsg = choice.message;
 
-    if (choice.finish_reason === "tool_calls" && assistantMsg.tool_calls?.length) {
-      llmMessages.push(assistantMsg);
-      let detenido = false;
+      if (choice.finish_reason === "tool_calls" && assistantMsg.tool_calls?.length) {
+        llmMessages.push(assistantMsg);
+        let detenido = false;
 
-      for (const tc of assistantMsg.tool_calls) {
-        if (tc.type !== "function") continue;
-        toolCalls++;
+        for (const tc of assistantMsg.tool_calls) {
+          if (tc.type !== "function") continue;
+          toolCalls++;
 
-        let args: unknown = {};
-        try {
-          args = JSON.parse(tc.function.arguments);
-        } catch {
-          // si no parsea, la tool recibe {} y responde su propio error
+          let args: unknown = {};
+          try {
+            args = JSON.parse(tc.function.arguments);
+          } catch {
+            // si no parsea, la tool recibe {} y responde su propio error
+          }
+
+          const result = await executeTool(tc.function.name, args, ctx);
+          if (result.ok && result.stop) detenido = true;
+
+          llmMessages.push({ role: "tool", tool_call_id: tc.id, content: JSON.stringify(result) });
         }
 
-        const result = await executeTool(tc.function.name, args, ctx);
-        if (result.ok && result.stop) detenido = true;
-
-        llmMessages.push({ role: "tool", tool_call_id: tc.id, content: JSON.stringify(result) });
+        if (detenido) {
+          const mensaje = getConfig().agente.mensajeDerivacion;
+          const entrega = await deliverMessage(conversation.id, { text: mensaje }, "agent");
+          return {
+            ok: entrega.ok,
+            reply: mensaje,
+            reason: entrega.ok ? "handoff" : `send_failed: ${entrega.error ?? "unknown"}`,
+            toolCalls,
+          };
+        }
+        continue;
       }
 
-      if (detenido) {
-        const mensaje = getConfig().agente.mensajeDerivacion;
-        const entrega = await deliverMessage(conversation.id, { text: mensaje }, "agent");
-        return {
-          ok: entrega.ok,
-          reply: mensaje,
-          reason: entrega.ok ? "handoff" : `send_failed: ${entrega.error ?? "unknown"}`,
-          toolCalls,
-        };
+      const reply = assistantMsg.content?.trim() ?? "";
+      if (!reply) return { ok: false, reason: "empty_reply", toolCalls };
+
+      const entrega = await deliverMessage(conversation.id, { text: reply }, "agent");
+      if (!entrega.ok) {
+        return { ok: false, reason: `send_failed: ${entrega.error ?? "unknown"}`, toolCalls };
       }
-      continue;
+
+      await db.update(contacts).set({ updatedAt: new Date() }).where(eq(contacts.id, contact.id));
+      return { ok: true, reply, toolCalls };
     }
 
-    const reply = assistantMsg.content?.trim() ?? "";
-    if (!reply) return { ok: false, reason: "empty_reply", toolCalls };
+    return { ok: false, reason: "max_tool_rounds_exceeded", toolCalls };
+  } catch (err: unknown) {
+    const errorObj = err as { message?: string };
+    const errMessage = errorObj?.message || String(err);
+    console.error(`[agent] Error crítico en turno del bot para conversación ${conversation.id}:`, errMessage);
 
-    const entrega = await deliverMessage(conversation.id, { text: reply }, "agent");
-    if (!entrega.ok) {
-      return { ok: false, reason: `send_failed: ${entrega.error ?? "unknown"}`, toolCalls };
+    // 1. Activar bandera needsHuman para que el chat NO quede abandonado en silencio
+    await db
+      .update(conversations)
+      .set({
+        needsHuman: true,
+        needsHumanReason: `Error de IA (${errMessage.slice(0, 100)}). Requiere atención humana inmediata.`,
+        needsHumanAt: new Date(),
+        updatedAt: new Date(),
+      })
+      .where(eq(conversations.id, conversation.id));
+
+    // 2. Registrar nota de actividad visible en la ficha del contacto
+    await db.insert(activities).values({
+      type: "note",
+      description: `[ALERTA BOT] El bot falló por saturación de IA (${errMessage.slice(0, 140)}). El chat quedó marcado con atención humana para que un asesor responda.`,
+      contactId: contact.id,
+    });
+
+    // 3. Crear notificación interna para la campanita del equipo
+    try {
+      const miembros = await listMembers({ onlyActive: true });
+      const primerAdmin = miembros.find((m) => m.role === "admin") || miembros[0];
+      if (primerAdmin) {
+        await db.insert(notifications).values({
+          memberId: primerAdmin.id,
+          kind: "system",
+          title: `Alerta: Chat sin respuesta (${contact.name})`,
+          body: `El bot no pudo responder a ${contact.name} (${contact.phone || "sin teléfono"}) por error de IA. Requiere respuesta manual.`,
+          url: `/conversations/${conversation.id}`,
+          contactId: contact.id,
+        });
+      }
+    } catch (notifErr) {
+      console.warn("[agent] No se pudo crear notificación interna:", notifErr);
     }
 
-    await db.update(contacts).set({ updatedAt: new Date() }).where(eq(contacts.id, contact.id));
-    return { ok: true, reply, toolCalls };
+    return { ok: false, reason: `llm_failure: ${errMessage}`, toolCalls };
   }
-
-  return { ok: false, reason: "max_tool_rounds_exceeded", toolCalls };
 }
 
 /**
