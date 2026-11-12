@@ -3,6 +3,7 @@ import { contacts, crmSettings, deals, pipelineStages, pipelines } from "@/db/sc
 import { and, desc, eq } from "drizzle-orm";
 import { camposContacto, getConfig } from "@/lib/config";
 import { resumirCampos } from "@/lib/config/campos";
+import { pedidosOrdenes } from "../../../modules/pedidos/tabla";
 
 export const SYSTEM_PROMPT_SETTINGS_KEY = "agent.system_prompt";
 
@@ -158,6 +159,38 @@ export async function renderContexto(contactId: string): Promise<string> {
     if (abierta) etapaActual = abierta.name;
   }
 
+  // R5: Cargar historial de pedidos anteriores para que el bot reconozca a clientes que vuelven
+  let pedidosTxt = "";
+  try {
+    const prevOrders = await db
+      .select({
+        numeroOrden: pedidosOrdenes.numeroOrden,
+        total: pedidosOrdenes.total,
+        estado: pedidosOrdenes.estado,
+        items: pedidosOrdenes.items,
+        createdAt: pedidosOrdenes.createdAt,
+      })
+      .from(pedidosOrdenes)
+      .where(eq(pedidosOrdenes.contactId, contactId))
+      .orderBy(desc(pedidosOrdenes.createdAt))
+      .limit(3);
+
+    if (prevOrders.length > 0) {
+      const lineas = prevOrders.map((p) => {
+        const itemsStr = Array.isArray(p.items)
+          ? (p.items as Array<{ cantidad: number; titulo: string }>).map((i) => `${i.cantidad}x ${i.titulo}`).join(", ")
+          : "Productos Aliv";
+        return `- Pedido ${p.numeroOrden}: ${itemsStr} por S/ ${p.total} (estado: ${p.estado})`;
+      });
+      pedidosTxt =
+        "## Historial de pedidos anteriores (cliente recurrente - R5)\n" +
+        lineas.join("\n") +
+        "\nInstrucción: Reconoce al cliente como recurrente de forma cálida (ej. 'Hola Vidal, veo tu pedido previo #1051 de NAC600...').";
+    }
+  } catch (err) {
+    console.warn("[prompt] No se pudo cargar historial de pedidos:", err);
+  }
+
   const partes = [
     "\n\n# CONTEXTO",
     "## Cliente",
@@ -166,6 +199,7 @@ export async function renderContexto(contactId: string): Promise<string> {
     ...(contact.aiSummary ? [`- Resumen previo: ${contact.aiSummary}`] : []),
     `- Etapa actual: ${etapaActual}`,
   ];
+  if (pedidosTxt) partes.push(pedidosTxt);
   if (etapasTxt) partes.push("## Pipeline (clave: nombre)", etapasTxt);
   if (aAveriguar.length) partes.push("## Datos a averiguar", ...aAveriguar);
   return partes.join("\n");
