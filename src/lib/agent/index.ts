@@ -6,6 +6,7 @@ import { deliverMessage, getConversationRow } from "@/lib/channels/deliver";
 import { isChannel, type Channel } from "@/lib/channels/types";
 import { displayName, listMembers } from "@/lib/team";
 import { alertarEquipo } from "./alertas";
+import { limpiarFormatoWhatsApp } from "./formato";
 import { getConfig } from "@/lib/config";
 import { getAgentConfig } from "./config";
 import { renderContexto, renderSystemPrompt } from "./prompt";
@@ -88,6 +89,7 @@ export async function runAgentForConversation(
   };
 
   let toolCalls = 0;
+  let pedidoTextoExplicito = false;
 
   try {
     for (let round = 0; round < MAX_TOOL_ROUNDS; round++) {
@@ -105,6 +107,7 @@ export async function runAgentForConversation(
       if (choice.finish_reason === "tool_calls" && assistantMsg.tool_calls?.length) {
         llmMessages.push(assistantMsg);
         let detenido = false;
+        let mensajeFinal: string | undefined;
 
         for (const tc of assistantMsg.tool_calls) {
           if (tc.type !== "function") continue;
@@ -118,13 +121,16 @@ export async function runAgentForConversation(
           }
 
           const result = await executeTool(tc.function.name, args, ctx);
-          if (result.ok && result.stop) detenido = true;
+          if (result.ok && result.stop) {
+            detenido = true;
+            mensajeFinal ??= result.mensajeFinal;
+          }
 
           llmMessages.push({ role: "tool", tool_call_id: tc.id, content: JSON.stringify(result) });
         }
 
         if (detenido) {
-          const mensaje = getConfig().agente.mensajeDerivacion;
+          const mensaje = mensajeFinal ?? getConfig().agente.mensajeDerivacion;
           const entrega = await deliverMessage(conversation.id, { text: mensaje }, "agent");
           return {
             ok: entrega.ok,
@@ -136,8 +142,17 @@ export async function runAgentForConversation(
         continue;
       }
 
-      const reply = assistantMsg.content?.trim() ?? "";
-      if (!reply) return { ok: false, reason: "empty_reply", toolCalls };
+      const reply = limpiarFormatoWhatsApp(assistantMsg.content?.trim() ?? "");
+      if (!reply) {
+        // A1: a veces el modelo cierra el turno sin texto. Se le pide una vez que responda
+        // (las herramientas ya ejecutadas quedan en el historial, no se repiten).
+        if (!pedidoTextoExplicito) {
+          pedidoTextoExplicito = true;
+          llmMessages.push({ role: "system", content: PEDIDO_RESPUESTA_TEXTO });
+          continue;
+        }
+        return avisarSinRespuesta(conversation.id, contact, "Respuesta vacía del modelo", "empty_reply", toolCalls);
+      }
 
       const entrega = await deliverMessage(conversation.id, { text: reply }, "agent");
       if (!entrega.ok) {
@@ -148,7 +163,23 @@ export async function runAgentForConversation(
       return { ok: true, reply, toolCalls };
     }
 
-    return { ok: false, reason: "max_tool_rounds_exceeded", toolCalls };
+    // A1: se agotaron las rondas de herramientas. Ultimo intento sin herramientas para que
+    // el cliente reciba texto; si tampoco, cortesia y aviso al equipo.
+    llmMessages.push({ role: "system", content: PEDIDO_RESPUESTA_TEXTO });
+    const final = await createChatCompletionWithFallback({
+      model: config.model,
+      messages: llmMessages,
+      max_completion_tokens: 1024,
+    });
+    const textoFinal = limpiarFormatoWhatsApp(final.choices[0]?.message?.content?.trim() ?? "");
+    if (textoFinal) {
+      const entrega = await deliverMessage(conversation.id, { text: textoFinal }, "agent");
+      if (entrega.ok) {
+        await db.update(contacts).set({ updatedAt: new Date() }).where(eq(contacts.id, contact.id));
+        return { ok: true, reply: textoFinal, toolCalls };
+      }
+    }
+    return avisarSinRespuesta(conversation.id, contact, "El bot no llegó a una respuesta (demasiadas acciones seguidas)", "max_tool_rounds_exceeded", toolCalls);
   } catch (err: unknown) {
     const errorObj = err as { status?: number; code?: string | number; message?: string };
     const status = errorObj?.status;
@@ -179,50 +210,69 @@ export async function runAgentForConversation(
       return runAgentForConversation(conversationId, { reintento: false });
     }
 
-    // R9b: si tampoco hubo suerte, mensaje fijo y neutral (sin modelo) para que el cliente
-    // no quede en silencio. No se repite si ya fue el ultimo mensaje enviado.
-    const [ultimoOut] = await db
+    // R9b: si tampoco hubo suerte, cortesia + nota + aviso.
+    await avisarSinRespuesta(conversation.id, contact, categoriaError, `llm_failure: ${rawMsg}`, toolCalls, rawMsg);
+    return { ok: false, reason: `llm_failure: ${rawMsg}`, toolCalls };
+  }
+}
+
+const PEDIDO_RESPUESTA_TEXTO =
+  "Tu turno anterior terminó sin texto. Escribe ahora tu respuesta al último mensaje del cliente, en texto, siguiendo tus reglas.";
+
+
+/**
+ * El cliente no puede quedar en silencio: mensaje fijo de cortesia (sin repetirlo),
+ * nota en la ficha, insignia "requiere humano" y push al equipo.
+ */
+async function avisarSinRespuesta(
+  conversationId: string,
+  contact: { id: string; name: string; phone: string | null },
+  categoria: string,
+  reason: string,
+  toolCalls: number,
+  detalle?: string
+): Promise<RunAgentResult> {
+  try {
+    const [ultimo] = await db
       .select({ body: messages.body, direction: messages.direction })
       .from(messages)
-      .where(eq(messages.conversationId, conversation.id))
+      .where(eq(messages.conversationId, conversationId))
       .orderBy(desc(messages.createdAt))
       .limit(1);
-    if (!(ultimoOut?.direction === "out" && ultimoOut.body === MENSAJE_CORTESIA)) {
-      try {
-        await deliverMessage(conversation.id, { text: MENSAJE_CORTESIA }, "agent");
-      } catch (deliverErr) {
-        console.warn("[agent] No se pudo enviar mensaje fallback al cliente:", deliverErr);
-      }
+    if (!(ultimo?.direction === "out" && ultimo.body === MENSAJE_CORTESIA)) {
+      await deliverMessage(conversationId, { text: MENSAJE_CORTESIA }, "agent");
     }
+  } catch (deliverErr) {
+    console.warn("[agent] No se pudo enviar mensaje de cortesia:", deliverErr);
+  }
 
-    // 1. Registrar nota de actividad visible y precisa en la ficha del contacto
+  try {
     await db.insert(activities).values({
       type: "note",
-      description: `[ALERTA BOT] El bot no pudo responder (tras reintento): ${categoriaError}. Detalle: ${rawMsg.slice(0, 120)}. Se envió mensaje de cortesía y se avisó al equipo.`,
+      description: `[ALERTA BOT] El bot no pudo responder: ${categoria}.${detalle ? ` Detalle: ${detalle.slice(0, 120)}.` : ""} Se envió mensaje de cortesía y se avisó al equipo.`,
       contactId: contact.id,
     });
-
-    // 2. Marca "requiere humano" (ya no silencia al bot: solo es aviso y filtro de bandeja)
     await db
       .update(conversations)
       .set({
         needsHuman: true,
-        needsHumanReason: `El bot no pudo responder: ${categoriaError}`,
+        needsHumanReason: `El bot no pudo responder: ${categoria}`,
         needsHumanAt: new Date(),
         updatedAt: new Date(),
       })
-      .where(eq(conversations.id, conversation.id));
-
-    // 3. Aviso inmediato con push al celular (N2)
-    await alertarEquipo({
-      contactId: contact.id,
-      conversationId: conversation.id,
-      titulo: `Chat sin respuesta: ${contact.name}`,
-      cuerpo: `El bot no pudo responder a ${contact.name} (${contact.phone || "sin teléfono"}): ${categoriaError}. Responde a mano.`,
-    });
-
-    return { ok: false, reason: `llm_failure: ${rawMsg}`, toolCalls };
+      .where(eq(conversations.id, conversationId));
+  } catch (dbErr) {
+    console.warn("[agent] No se pudo registrar la alerta:", dbErr);
   }
+
+  await alertarEquipo({
+    contactId: contact.id,
+    conversationId,
+    titulo: `Chat sin respuesta: ${contact.name}`,
+    cuerpo: `El bot no pudo responder a ${contact.name} (${contact.phone || "sin teléfono"}): ${categoria}. Responde a mano.`,
+  });
+
+  return { ok: false, reason, toolCalls };
 }
 
 /**

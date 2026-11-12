@@ -7,17 +7,19 @@ import {
   conversations,
   crmSettings,
   deals,
+  messages,
   pipelineStages,
   pipelines,
 } from "@/db/schema";
-import { and, desc, eq } from "drizzle-orm";
+import { and, desc, eq, sql } from "drizzle-orm";
 import { assignContact } from "@/lib/contacts/assign";
 import { displayName, findMemberByName } from "@/lib/team";
 import { setDealStage } from "@/lib/deals/stage";
 import { camposContacto, getConfig } from "@/lib/config";
 import { validarCamposPersonalizados } from "@/lib/config/campos";
 import { toolsDeModulos } from "@/lib/modules";
-import { alertarEquipo, esMotivoDeBaja } from "./alertas";
+import { alertarEquipo } from "./alertas";
+import { esMotivoDeBaja, MENSAJE_BAJA, TAG_NO_REACTIVAR } from "./baja";
 import { pedidosOrdenes } from "../../../modules/pedidos/tabla";
 
 /**
@@ -49,6 +51,8 @@ export interface ToolResult {
    * derivacion y termina (derivar_asesor).
    */
   stop?: boolean;
+  /** Con `stop`: texto a enviar en lugar del mensaje de derivacion (p. ej. la despedida de una baja). */
+  mensajeFinal?: string;
 }
 
 export interface ToolAgente {
@@ -264,7 +268,27 @@ async function derivarAsesor(args: { motivo?: string; apagarAgente?: boolean }, 
 
   // "Avisar sin apagar": marca alerta para el equipo humano pero NO apaga aiEnabled
   // a menos que sea una baja ("no me escriban más").
-  const apagar = Boolean(args.apagarAgente) || esMotivoDeBaja(motivo);
+  // A2: se revisa el motivo que escribio el modelo y tambien el ultimo mensaje del cliente.
+  let ultimoCliente = "";
+  if (ctx.conversationId) {
+    const [m] = await db
+      .select({ body: messages.body })
+      .from(messages)
+      .where(and(eq(messages.conversationId, ctx.conversationId), eq(messages.direction, "in")))
+      .orderBy(desc(messages.createdAt))
+      .limit(1);
+    ultimoCliente = m?.body ?? "";
+  }
+  const esBaja = esMotivoDeBaja(motivo) || esMotivoDeBaja(ultimoCliente);
+  const apagar = Boolean(args.apagarAgente) || esBaja;
+
+  if (esBaja) {
+    // Que ningun proceso automatico (reactivacion por inactividad) le vuelva a escribir.
+    await db
+      .update(contacts)
+      .set({ tags: sql`array_append(array_remove(${contacts.tags}, ${TAG_NO_REACTIVAR}), ${TAG_NO_REACTIVAR})`, updatedAt: now })
+      .where(eq(contacts.id, ctx.contactId));
+  }
 
   if (ctx.conversationId) {
     await db
@@ -306,12 +330,13 @@ async function derivarAsesor(args: { motivo?: string; apagarAgente?: boolean }, 
     contactId: ctx.contactId,
     conversationId: ctx.conversationId,
     titulo: `Requiere humano: ${c?.name ?? "cliente"}`,
-    cuerpo: `${motivo}${apagar ? " (bot pausado por baja)" : " (el bot sigue activo)"}`,
+    cuerpo: `${motivo}${esBaja ? " (pidió no ser contactado: bot pausado y etiqueta no-reactivar)" : apagar ? " (bot pausado)" : " (el bot sigue activo)"}`,
   });
 
   return {
     ok: true,
     stop: apagar,
+    ...(esBaja ? { mensajeFinal: MENSAJE_BAJA } : {}),
     data: {
       derivado: true,
       motivo,
