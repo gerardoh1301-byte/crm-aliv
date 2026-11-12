@@ -46,7 +46,9 @@ export function ConversationsList({ conversations, selectedId }: Props) {
     // Mas de 2 dias sin respuesta ya no es "esperando": es un chat que quedo atras.
     return min >= MINUTOS_ESPERA && min <= 48 * 60 ? min : null;
   };
-  const requiereAtencion = (c: ConversationListItem) => c.needsHuman || minutosEsperando(c) !== null;
+  // Igual que el Dashboard: los chats del simulador no cuentan como pendientes reales.
+  const requiereAtencion = (c: ConversationListItem) =>
+    c.provider !== "simulador" && (c.needsHuman || minutosEsperando(c) !== null);
   const totalAtencion = conversations.filter(requiereAtencion).length;
 
   const counts = useMemo(() => {
