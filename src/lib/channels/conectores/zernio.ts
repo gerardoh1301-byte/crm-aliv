@@ -73,7 +73,19 @@ export const zernio: Conector = {
               template: {
                 name: msg.template.name,
                 language: msg.template.language ?? "es",
-                components: msg.template.components ?? [],
+                components:
+                  msg.template.components ??
+                  (msg.template.params?.length
+                    ? [
+                        {
+                          type: "body",
+                          parameters: msg.template.params.map((p) => ({
+                            type: "text",
+                            text: String(p),
+                          })),
+                        },
+                      ]
+                    : []),
               },
             }
           : text ? { message: text } : {}),

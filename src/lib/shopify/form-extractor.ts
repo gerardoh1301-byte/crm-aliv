@@ -42,6 +42,39 @@ function normalizarClave(clave: string): string {
     .trim();
 }
 
+const DISTRITOS_LIMA_CALLAO = [
+  "lima", "cercado de lima", "callao", "miraflores", "san isidro", "santiago de surco", "surco",
+  "san borja", "barranco", "la molina", "magdalena", "magdalena del mar", "san miguel",
+  "pueblo libre", "jesus maria", "lince", "brena", "rimac", "la victoria", "san luis",
+  "santa anita", "ate", "ate vitarte", "vitarte", "el agustino", "san juan de lurigancho",
+  "sjl", "los olivos", "san martin de porres", "smp", "independencia", "comas",
+  "carabayllo", "puente piedra", "ancon", "santa rosa", "san juan de miraflores",
+  "sjm", "villa maria del triunfo", "vmt", "villa el salvador", "ves", "chorrillos",
+  "lurin", "pachacamac", "pucusana", "punta hermosa", "punta negra", "san bartolo",
+  "santa maria del mar", "cieneguilla", "bellavista", "carmen de la legua", "la perla",
+  "la punta", "ventanilla", "mi peru", "manchay", "huachipa", "chosica", "chaclacayo",
+  "lurigancho"
+];
+
+function esUbicacionLimaOCallao(...textos: (string | null | undefined)[]): boolean {
+  for (const t of textos) {
+    if (!t) continue;
+    const clean = t
+      .toLowerCase()
+      .normalize("NFD")
+      .replace(/[\u0300-\u036f]/g, "")
+      .trim();
+    for (const dist of DISTRITOS_LIMA_CALLAO) {
+      // Coincidencia de palabra completa o subcadena clave
+      const regex = new RegExp(`\\b${dist}\\b`, "i");
+      if (clean === dist || regex.test(clean) || clean.includes(` ${dist}`) || clean.includes(`${dist} `)) {
+        return true;
+      }
+    }
+  }
+  return false;
+}
+
 /**
  * Extrae y sintetiza de forma exhaustiva los campos enviados desde formularios
  * COD de Shopify (como EasySell, Releasit, COD Monster, checkout nativo) y sus note_attributes.
@@ -196,16 +229,22 @@ export function extraerDatosFormularioShopify(payload: Record<string, any>): Ext
   }
 
   // 9. Flag Provincia vs Lima/Callao
-  const ciudadLower = ciudad.toLowerCase();
-  const esProvincia =
-    !ciudadLower.includes("lima") &&
-    !ciudadLower.includes("callao");
+  const esLima = esUbicacionLimaOCallao(ciudad, distrito, deptoAttr, direccionEnvio);
+  const esProvincia = !esLima;
+
+  // Si detectamos que es un distrito de Lima/Callao pero en ciudad pusieron el distrito:
+  let ciudadFinal = ciudad;
+  let distritoFinal = distrito;
+  if (esLima && ciudad.toLowerCase() !== "lima" && ciudad.toLowerCase() !== "callao") {
+    if (!distritoFinal) distritoFinal = ciudad;
+    ciudadFinal = "Lima";
+  }
 
   // 10. Resumen de destino deduplicado
   const partesDestino: string[] = [];
-  if (ciudad) partesDestino.push(ciudad);
-  if (distrito && distrito.toLowerCase() !== ciudadLower) {
-    partesDestino.push(distrito);
+  if (ciudadFinal) partesDestino.push(ciudadFinal);
+  if (distritoFinal && distritoFinal.toLowerCase() !== ciudadFinal.toLowerCase()) {
+    partesDestino.push(distritoFinal);
   }
   if (direccionEnvio) partesDestino.push(direccionEnvio);
 
@@ -217,8 +256,8 @@ export function extraerDatosFormularioShopify(payload: Record<string, any>): Ext
     email,
     dni,
     departamento: deptoAttr || null,
-    ciudad,
-    distrito,
+    ciudad: ciudadFinal,
+    distrito: distritoFinal,
     direccionEnvio,
     referencia,
     esProvincia,

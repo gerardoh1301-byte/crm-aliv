@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState, useCallback } from "react";
+import Link from "next/link";
 import {
   ShoppingBag,
   Truck,
@@ -18,6 +19,7 @@ import {
   RefreshCw,
   Globe,
   HelpCircle,
+  MessageCircle,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -357,9 +359,17 @@ export function PedidosPage() {
                 size="sm"
                 onClick={async () => {
                   setSyncingShopify(true);
-                  await cargarPedidos(false);
-                  setSyncingShopify(false);
-                  toast.success("Pedidos de Shopify actualizados");
+                  try {
+                    await fetch("/api/shopify/sync", {
+                      method: "POST",
+                      headers: { "Content-Type": "application/json" },
+                      body: JSON.stringify({ action: "sync_api" }),
+                    }).catch(() => {});
+                  } finally {
+                    await cargarPedidos(false);
+                    setSyncingShopify(false);
+                    toast.success("Pedidos sincronizados correctamente");
+                  }
                 }}
                 disabled={syncingShopify}
                 className="border-emerald-500/40 text-emerald-700 dark:text-emerald-300 hover:bg-emerald-50 dark:hover:bg-emerald-950/30"
@@ -610,6 +620,16 @@ export function PedidosPage() {
                     </TableCell>
                     <TableCell className="text-right">
                       <div className="inline-flex items-center gap-1.5">
+                        {p.contactId && (
+                          <Link
+                            href={`/conversations/${p.contactId}`}
+                            className="inline-flex items-center justify-center h-7 px-2.5 rounded-md border border-emerald-500/40 text-[11.5px] font-semibold text-emerald-700 bg-emerald-50/70 hover:bg-emerald-100 dark:bg-emerald-950/40 dark:text-emerald-300 dark:border-emerald-700 transition-colors shadow-2xs"
+                            title="Abrir chat del cliente en Conversaciones"
+                          >
+                            <MessageCircle className="h-3.5 w-3.5 mr-1 text-emerald-600" />
+                            Chat
+                          </Link>
+                        )}
                         {p.estado === "por_confirmar_cod" && (
                           <Button
                             size="sm"
