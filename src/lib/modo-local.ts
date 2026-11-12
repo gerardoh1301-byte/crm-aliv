@@ -19,5 +19,6 @@ export const COOKIE_SESION_LOCAL = "aliv_session_member_id";
 export const CARPETA_BASE_LOCAL = ".local/db";
 
 export function modoLocal(): boolean {
+  if (process.env.NODE_ENV === "production") return false;
   return process.env.MODO_LOCAL === "true";
 }

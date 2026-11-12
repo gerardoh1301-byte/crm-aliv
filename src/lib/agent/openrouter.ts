@@ -78,6 +78,11 @@ export function hasOpenRouterKey(): boolean {
  * Si el proveedor principal devuelve 429 (cuota), 503 (saturación), 404 (modelo inválido)
  * o 500, reintenta de inmediato probando la cadena de modelos garantizados.
  */
+const REQUEST_OPTIONS: OpenAI.RequestOptions = {
+  timeout: 10000, // 10 segundos tiempo máximo estricto
+  maxRetries: 0,  // Sin reintentos internos lentos
+};
+
 export async function createChatCompletionWithFallback(
   params: OpenAI.Chat.Completions.ChatCompletionCreateParamsNonStreaming
 ): Promise<OpenAI.Chat.Completions.ChatCompletion> {
@@ -86,10 +91,13 @@ export async function createChatCompletionWithFallback(
 
   // 1. Intento primario con el modelo configurado
   try {
-    return await primaryClient.chat.completions.create({
-      ...params,
-      model: requestedModel,
-    });
+    return await primaryClient.chat.completions.create(
+      {
+        ...params,
+        model: requestedModel,
+      },
+      REQUEST_OPTIONS
+    );
   } catch (err: unknown) {
     const error = err as { status?: number; code?: string | number; message?: string };
     const status = error?.status;
@@ -109,10 +117,13 @@ export async function createChatCompletionWithFallback(
         if (fallbackModel === requestedModel) continue;
         try {
           console.info(`[agent-llm] Intentando modelo Gemini de respaldo: ${fallbackModel}`);
-          return await gemini.chat.completions.create({
-            ...params,
-            model: fallbackModel,
-          });
+          return await gemini.chat.completions.create(
+            {
+              ...params,
+              model: fallbackModel,
+            },
+            REQUEST_OPTIONS
+          );
         } catch (fbErr: unknown) {
           const fbStatus = (fbErr as { status?: number })?.status;
           console.warn(`[agent-llm] Falló respaldo ${fallbackModel} con status ${fbStatus}`);
@@ -130,10 +141,13 @@ export async function createChatCompletionWithFallback(
       for (const orModel of openRouterCandidates) {
         try {
           console.info(`[agent-llm] Intentando failover OpenRouter con ${orModel}`);
-          return await openRouter.chat.completions.create({
-            ...params,
-            model: orModel,
-          });
+          return await openRouter.chat.completions.create(
+            {
+              ...params,
+              model: orModel,
+            },
+            REQUEST_OPTIONS
+          );
         } catch (orErr) {
           console.warn(`[agent-llm] Falló OpenRouter ${orModel}`);
         }

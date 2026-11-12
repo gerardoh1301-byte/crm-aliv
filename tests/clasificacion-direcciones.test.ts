@@ -159,4 +159,19 @@ describe("Clasificación de direcciones Lima vs Provincia (16 casos de auditorí
     });
     expect(res.esProvincia).toBe(true);
   });
+
+  it("22. San Martín de Porres con province 'San Martín' o genérica -> Lima (B2 auditoría)", () => {
+    const res = extraerDatosFormularioShopify({
+      shipping_address: { city: "San Martín de Porres", province: "San Martín", address1: "Av. Habich 123" },
+    });
+    expect(res.esProvincia).toBe(false);
+    expect(res.ciudad).toBe("Lima");
+  });
+
+  it("23. San Martín de Porres en dirección con city genérica 'Lima' -> Lima", () => {
+    const res = extraerDatosFormularioShopify({
+      shipping_address: { city: "Lima", address1: "Av. Perú 345, SMP" },
+    });
+    expect(res.esProvincia).toBe(false);
+  });
 });
