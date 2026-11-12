@@ -101,15 +101,21 @@ async function moverEtapa(args: { etapa?: string; motivo?: string }, ctx: ToolCo
     return { ok: false, error: `La etapa "${stage.name}" la mueve una persona del equipo. Usa avisar_asesor si hace falta.` };
   }
   if (stage.key === "pedido_confirmado") {
-    const [pendiente] = await db
-      .select({ numeroOrden: pedidosOrdenes.numeroOrden })
+    // Solo si ya existe un pedido confirmado (Lima registrado en el chat, pedido web
+    // confirmado o adelanto verificado por una persona). Sin pedido, o con el adelanto
+    // pendiente, el bot no puede dar la operacion por confirmada.
+    const pedidosDelContacto = await db
+      .select({ numeroOrden: pedidosOrdenes.numeroOrden, estado: pedidosOrdenes.estado })
       .from(pedidosOrdenes)
-      .where(and(eq(pedidosOrdenes.contactId, ctx.contactId), eq(pedidosOrdenes.estado, "por_confirmar_cod")))
-      .limit(1);
-    if (pendiente) {
+      .where(eq(pedidosOrdenes.contactId, ctx.contactId));
+    const pendiente = pedidosDelContacto.find((p) => p.estado === "por_confirmar_cod");
+    const confirmado = pedidosDelContacto.some((p) => p.estado === "confirmado");
+    if (pendiente || !confirmado) {
       return {
         ok: false,
-        error: `El pedido ${pendiente.numeroOrden} tiene el adelanto sin verificar. Solo una persona lo confirma con el boton "Adelanto confirmado". No muevas la etapa: usa avisar_asesor y dile al cliente que el equipo valida su pago.`,
+        error: pendiente
+          ? `El pedido ${pendiente.numeroOrden} tiene el adelanto sin verificar. Solo una persona lo confirma con el boton "Adelanto confirmado". No muevas la etapa: usa avisar_asesor y dile al cliente que el equipo valida su pago.`
+          : `No hay un pedido registrado. Si el cliente ya dio todos sus datos, primero usa crear_pedido_chat; la etapa "Pedido confirmado" la pone el sistema o una persona.`,
       };
     }
   }
