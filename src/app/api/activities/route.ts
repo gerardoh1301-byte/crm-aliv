@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/db";
 import { activities, contacts } from "@/db/schema";
-import { eq, desc, and, type SQL } from "drizzle-orm";
+import { eq, desc, and, isNotNull, type SQL } from "drizzle-orm";
 import { requireMember } from "@/lib/api-auth";
 import { ownerFilter } from "@/lib/team";
 
@@ -12,12 +12,14 @@ export async function GET(request: NextRequest) {
   const { searchParams } = new URL(request.url);
   const contactId = searchParams.get("contactId");
   const dealId = searchParams.get("dealId");
+  const scheduledOnly = searchParams.get("scheduledOnly") === "true";
 
   const conditions: SQL[] = [];
   const visibility = ownerFilter(auth.member);
   if (visibility) conditions.push(visibility);
   if (contactId) conditions.push(eq(activities.contactId, contactId));
   if (dealId) conditions.push(eq(activities.dealId, dealId));
+  if (scheduledOnly) conditions.push(isNotNull(activities.scheduledAt));
 
   const baseQuery = db
     .select({

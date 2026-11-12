@@ -124,9 +124,12 @@ export function GeneralCalendar({ initialActivities, onRefresh }: GeneralCalenda
   const [showForm, setShowForm] = useState<boolean>(false);
   const [markingId, setMarkingId] = useState<string | null>(null);
 
-  // Filtrar actividades con fecha programada o creadas
+  // Filtrar actividades con fecha programada
   const scheduledActivities = useMemo(() => {
     return activities.filter((a) => {
+      // Solo actividades con fecha de compromiso en el calendario
+      if (!a.scheduledAt) return false;
+
       // Filtro de tipo
       if (filtroTipo === "delivery" && a.type !== "delivery") return false;
       if (filtroTipo === "payment" && a.type !== "payment") return false;
@@ -148,13 +151,15 @@ export function GeneralCalendar({ initialActivities, onRefresh }: GeneralCalenda
     });
   }, [activities, filtroTipo, busqueda]);
 
-  // Contadores para chips rápidos
+  // Contadores para chips rápidos (solo actividades agendadas)
   const contadores = useMemo(() => {
-    const totalEntregas = activities.filter((a) => a.type === "delivery" && !a.completedAt).length;
-    const totalCobros = activities.filter((a) => a.type === "payment" && !a.completedAt).length;
-    const totalLlamadas = activities.filter((a) => (a.type === "call" || a.type === "follow_up") && !a.completedAt).length;
-    const totalCompletadas = activities.filter((a) => a.completedAt).length;
-    return { totalEntregas, totalCobros, totalLlamadas, totalCompletadas };
+    const programadas = activities.filter((a) => a.scheduledAt != null);
+    const totalProgramadas = programadas.length;
+    const totalEntregas = programadas.filter((a) => a.type === "delivery" && !a.completedAt).length;
+    const totalCobros = programadas.filter((a) => a.type === "payment" && !a.completedAt).length;
+    const totalLlamadas = programadas.filter((a) => (a.type === "call" || a.type === "follow_up") && !a.completedAt).length;
+    const totalCompletadas = programadas.filter((a) => a.completedAt).length;
+    return { totalProgramadas, totalEntregas, totalCobros, totalLlamadas, totalCompletadas };
   }, [activities]);
 
   // Cuadrícula del mes
@@ -332,7 +337,7 @@ export function GeneralCalendar({ initialActivities, onRefresh }: GeneralCalenda
                 : "bg-card text-muted-foreground border-border hover:bg-muted"
             )}
           >
-            Todos ({activities.length})
+            Todos ({contadores.totalProgramadas})
           </button>
           <button
             type="button"
@@ -636,6 +641,7 @@ export function GeneralCalendar({ initialActivities, onRefresh }: GeneralCalenda
       {/* Modal de Nueva Actividad */}
       <ActivityForm
         open={showForm}
+        defaultType="delivery"
         onClose={() => {
           setShowForm(false);
           onRefresh?.();

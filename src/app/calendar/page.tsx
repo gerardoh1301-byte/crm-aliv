@@ -10,7 +10,7 @@ export default function CalendarPage() {
 
   const loadActivities = useCallback(async () => {
     try {
-      const res = await fetch("/api/activities");
+      const res = await fetch("/api/activities?scheduledOnly=true");
       if (res.ok) {
         const data = await res.json();
         setActivities(data);

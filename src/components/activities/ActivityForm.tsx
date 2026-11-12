@@ -25,7 +25,7 @@ import { Label } from "@/components/ui/label";
 import { toast } from "sonner";
 
 const activitySchema = z.object({
-  type: z.enum(["call", "email", "meeting", "note", "follow_up"]),
+  type: z.enum(["delivery", "payment", "call", "email", "meeting", "note", "follow_up"]),
   description: z.string().min(1, "La descripcion es requerida"),
   contactId: z.string().min(1, "El contacto es requerido"),
   dealId: z.string(),
@@ -39,6 +39,7 @@ interface ActivityFormProps {
   onClose: () => void;
   preselectedContactId?: string;
   preselectedDealId?: string;
+  defaultType?: ActivityFormData["type"];
 }
 
 export function ActivityForm({
@@ -46,6 +47,7 @@ export function ActivityForm({
   onClose,
   preselectedContactId,
   preselectedDealId,
+  defaultType,
 }: ActivityFormProps) {
   const router = useRouter();
   const [contactsList, setContacts] = useState<Array<{ id: string; name: string }>>([]);
@@ -68,7 +70,7 @@ export function ActivityForm({
   } = useForm<ActivityFormData>({
     resolver: zodResolver(activitySchema),
     defaultValues: {
-      type: "note",
+      type: defaultType || "note",
       description: "",
       contactId: preselectedContactId || "",
       dealId: preselectedDealId || "",
@@ -105,12 +107,14 @@ export function ActivityForm({
     <Dialog open={open} onOpenChange={(v) => !v && onClose()}>
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
-          <DialogTitle>Registrar Actividad</DialogTitle>
+          <DialogTitle>
+            {defaultType ? "Agendar Compromiso en Calendario" : "Registrar Actividad"}
+          </DialogTitle>
         </DialogHeader>
 
         <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
           <div className="space-y-2">
-            <Label>Tipo</Label>
+            <Label>Tipo de Compromiso / Actividad</Label>
             <Select
               value={watch("type")}
               onValueChange={(v) =>
@@ -121,11 +125,13 @@ export function ActivityForm({
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="call">Llamada</SelectItem>
-                <SelectItem value="email">Email</SelectItem>
-                <SelectItem value="meeting">Reunion</SelectItem>
-                <SelectItem value="note">Nota</SelectItem>
-                <SelectItem value="follow_up">Seguimiento</SelectItem>
+                <SelectItem value="delivery">🚚 Entrega / Envío</SelectItem>
+                <SelectItem value="payment">💰 Cobro / Pago</SelectItem>
+                <SelectItem value="call">📞 Llamada</SelectItem>
+                <SelectItem value="meeting">🤝 Reunión</SelectItem>
+                <SelectItem value="follow_up">⏰ Seguimiento</SelectItem>
+                <SelectItem value="email">✉️ Email</SelectItem>
+                <SelectItem value="note">📝 Nota interna</SelectItem>
               </SelectContent>
             </Select>
           </div>
@@ -171,9 +177,9 @@ export function ActivityForm({
             </div>
           )}
 
-          {watch("type") === "follow_up" && (
+          {watch("type") !== "note" && (
             <div className="space-y-2">
-              <Label>Fecha programada</Label>
+              <Label>Fecha y hora programada *</Label>
               <Input type="datetime-local" {...register("scheduledAt")} />
             </div>
           )}

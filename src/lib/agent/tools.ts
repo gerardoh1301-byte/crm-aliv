@@ -20,6 +20,7 @@ import { validarCamposPersonalizados } from "@/lib/config/campos";
 import { toolsDeModulos } from "@/lib/modules";
 import { alertarEquipo } from "./alertas";
 import { esMotivoDeBaja, MENSAJE_BAJA, TAG_NO_REACTIVAR } from "./baja";
+import { agendarEventoCalendario } from "./scheduler";
 import { pedidosOrdenes } from "../../../modules/pedidos/tabla";
 
 /**
@@ -233,79 +234,31 @@ async function agendarEntrega(
   ctx: ToolContext
 ): Promise<ToolResult> {
   const tipoRaw = String(args.tipo ?? "entrega").toLowerCase();
-  const tipo = TIPOS_ACTIVIDAD[tipoRaw] ?? (tipoRaw === "cobro" ? "payment" : "delivery");
-  const horario = String(args.horario ?? "").trim();
-  const direccion = String(args.direccion ?? "").trim();
-  const monto = args.monto ? String(args.monto).trim() : null;
-  const descBase = String(args.descripcion ?? "").trim();
+  const tipo = (TIPOS_ACTIVIDAD[tipoRaw] ?? (tipoRaw === "cobro" ? "payment" : "delivery")) as "delivery" | "payment";
 
-  // Calcular la fecha/hora de agendamiento
-  let scheduledAt: Date | null = null;
-  if (args.fecha) {
-    const fechaLimpia = String(args.fecha).trim();
-    if (/^\d{4}-\d{2}-\d{2}$/.test(fechaLimpia)) {
-      let horaInicio = 9; // por defecto 9am hora Perú
-      const horaMatch = horario.match(/\b(\d{1,2})(?::(\d{2}))?\s*(am|pm)?\b/i);
-      if (horaMatch) {
-        let h = parseInt(horaMatch[1], 10);
-        const esPm = /pm/i.test(horaMatch[3] || "");
-        if (esPm && h < 12) h += 12;
-        if (!esPm && h === 12 && /am/i.test(horaMatch[3] || "")) h = 0;
-        if (h >= 0 && h <= 23) horaInicio = h;
-      }
-      scheduledAt = new Date(`${fechaLimpia}T${String(horaInicio).padStart(2, "0")}:00:00-05:00`);
-    } else {
-      const d = new Date(fechaLimpia);
-      if (!Number.isNaN(d.getTime())) scheduledAt = d;
-    }
-  }
-
-  let dealId: string | null = null;
-  try {
-    const [deal] = await db
-      .select({ id: deals.id })
-      .from(deals)
-      .where(eq(deals.contactId, ctx.contactId))
-      .orderBy(desc(deals.updatedAt))
-      .limit(1);
-    if (deal) dealId = deal.id;
-  } catch {
-    // ignorar
-  }
-
-  const partesDesc: string[] = [];
-  if (tipo === "delivery") partesDesc.push("🚚 [ENTREGA]");
-  else if (tipo === "payment") partesDesc.push("💰 [COBRO]");
-  else partesDesc.push("📅 [AGENDADO]");
-
-  if (descBase) partesDesc.push(descBase);
-  if (horario) partesDesc.push(`Horario: ${horario}`);
-  if (direccion) partesDesc.push(`Destino: ${direccion}`);
-  if (monto) partesDesc.push(`Total: S/ ${monto}`);
-
-  const descripcionFinal = partesDesc.join(" · ");
-
-  const [row] = await db
-    .insert(activities)
-    .values({
-      type: tipo,
-      description: descripcionFinal,
-      contactId: ctx.contactId,
-      dealId,
-      scheduledAt: scheduledAt ?? new Date(),
-    })
-    .returning({ id: activities.id });
+  const resultado = await agendarEventoCalendario({
+    contactId: ctx.contactId,
+    tipo,
+    fecha: args.fecha,
+    horario: args.horario,
+    descripcion: args.descripcion,
+    direccion: args.direccion,
+    monto: args.monto,
+  });
 
   return {
     ok: true,
     data: {
       agendado: true,
-      actividadId: row.id,
+      actividadId: resultado.principal.id,
+      cobroPrevioId: resultado.cobroPrevio?.id ?? null,
       tipo,
-      fecha: scheduledAt?.toISOString() ?? null,
-      horario,
-      descripcion: descripcionFinal,
-      message: "Actividad colocada con éxito en el Calendario oficial del CRM.",
+      fecha: resultado.principal.scheduledAt?.toISOString() ?? null,
+      horario: args.horario,
+      descripcion: resultado.principal.description,
+      message: resultado.cobroPrevio
+        ? "Entrega y Cobro/Confirmación previa agendados con éxito en el Calendario oficial."
+        : "Actividad colocada con éxito en el Calendario oficial del CRM.",
     },
   };
 }
