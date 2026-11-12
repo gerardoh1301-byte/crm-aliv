@@ -17,15 +17,19 @@ import {
   PanelRightClose,
   PanelRightOpen,
   Reply,
+  Tag,
 } from "lucide-react";
 import { CHANNEL_LABELS, type Channel } from "@/lib/channels/types";
 import { CHANNEL_COLORS, ChannelIcon } from "@/components/icons/channels";
 import { ConversationActions } from "./ConversationActions";
+import { ETIQUETAS_PRINCIPALES, getTagStyle } from "@/lib/tags";
+import { toast } from "sonner";
 
 interface Contact {
   id: string;
   name: string;
   phone: string | null;
+  tags?: string[];
 }
 
 interface ConversationHeaderInfo {
@@ -68,9 +72,51 @@ export function ChatPanel({
   onToggleDetails,
 }: Props) {
   const [replyingTo, setReplyingTo] = useState<ConversationMessage | null>(null);
+  const [localTags, setLocalTags] = useState<string[]>(contact.tags ?? []);
+  const [showTagMenu, setShowTagMenu] = useState(false);
+  const tagMenuRef = useRef<HTMLDivElement>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
   const prevContactIdRef = useRef<string | null>(null);
   const prevCountRef = useRef(messages.length);
+
+  useEffect(() => {
+    setLocalTags(contact.tags ?? []);
+  }, [contact.id, contact.tags]);
+
+  // Cerrar menú al hacer clic fuera
+  useEffect(() => {
+    if (!showTagMenu) return;
+    const handleClickOutside = (e: MouseEvent) => {
+      if (tagMenuRef.current && !tagMenuRef.current.contains(e.target as Node)) {
+        setShowTagMenu(false);
+      }
+    };
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, [showTagMenu]);
+
+  const toggleTag = async (tagName: string) => {
+    if (!contact.id) return;
+    const current = localTags;
+    const exists = current.some((t) => t.toLowerCase() === tagName.toLowerCase());
+    const next = exists
+      ? current.filter((t) => t.toLowerCase() !== tagName.toLowerCase())
+      : [...current, tagName];
+    setLocalTags(next);
+    try {
+      const res = await fetch(`/api/contacts/${contact.id}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ tags: next }),
+      });
+      if (!res.ok) throw new Error();
+      window.dispatchEvent(new Event("conversations:refresh"));
+      toast.success(exists ? `Etiqueta eliminada: ${tagName}` : `Etiquetado: ${tagName}`);
+    } catch {
+      setLocalTags(current);
+      toast.error("No se pudo actualizar la etiqueta");
+    }
+  };
 
   // Ultimo mensaje entrante del cliente: define la ventana de 24h para texto libre.
   // El servidor ya lo materializa en la conversacion; se recalcula desde los mensajes
@@ -144,9 +190,30 @@ export function ChatPanel({
           </span>
         </div>
         <div className="flex flex-col min-w-0">
-          <span className="text-[14px] font-semibold tracking-tight truncate">
-            {contact.name}
-          </span>
+          <div className="flex items-center gap-1.5 flex-wrap">
+            <span className="text-[14px] font-semibold tracking-tight truncate">
+              {contact.name}
+            </span>
+            {localTags
+              .filter((t) => ETIQUETAS_PRINCIPALES.some((p) => p.nombre.toLowerCase() === t.toLowerCase()))
+              .map((t) => {
+                const style = getTagStyle(t);
+                return (
+                  <span
+                    key={t}
+                    className={cn(
+                      "hidden sm:inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold border shadow-2xs leading-none",
+                      style.badge
+                    )}
+                  >
+                    {style.dot && (
+                      <span className={cn("h-1.5 w-1.5 rounded-full", style.dot)} />
+                    )}
+                    {style.label}
+                  </span>
+                );
+              })}
+          </div>
           <span className="text-[11px] text-muted-foreground truncate flex items-center gap-1.5">
             <span
               aria-hidden
@@ -155,7 +222,62 @@ export function ChatPanel({
             {conversation.handle ?? CHANNEL_LABELS[conversation.channel]}
           </span>
         </div>
-        <div className="ml-auto flex items-center gap-0.5 shrink-0">
+        <div className="ml-auto flex items-center gap-1.5 shrink-0">
+          {/* Selector Rápido de Etiquetas */}
+          {contact.id && (
+            <div className="relative" ref={tagMenuRef}>
+              <button
+                type="button"
+                onClick={() => setShowTagMenu((prev) => !prev)}
+                className={cn(
+                  "inline-flex items-center gap-1.5 h-8 px-2.5 rounded-md border text-xs font-medium transition-colors cursor-pointer shadow-2xs",
+                  localTags.some((t) => ETIQUETAS_PRINCIPALES.some((p) => p.nombre.toLowerCase() === t.toLowerCase()))
+                    ? "bg-primary/10 border-primary/30 text-primary font-semibold hover:bg-primary/15"
+                    : "bg-background border-border text-muted-foreground hover:text-foreground hover:bg-muted"
+                )}
+                title="Etiquetar conversación"
+              >
+                <Tag className="h-3.5 w-3.5" />
+                <span className="hidden md:inline">
+                  {localTags.find((t) => ETIQUETAS_PRINCIPALES.some((p) => p.nombre.toLowerCase() === t.toLowerCase())) ?? "Etiquetar"}
+                </span>
+              </button>
+
+              {showTagMenu && (
+                <div className="absolute right-0 top-full mt-1.5 w-60 rounded-lg border border-border bg-popover p-1.5 text-popover-foreground shadow-lg z-50 text-xs animate-in fade-in-0 zoom-in-95">
+                  <div className="px-2 py-1 text-[10px] font-bold uppercase tracking-wider text-muted-foreground border-b border-border/50 mb-1 flex items-center justify-between">
+                    <span>Etiquetar conversación</span>
+                  </div>
+                  <div className="space-y-0.5">
+                    {ETIQUETAS_PRINCIPALES.map((p) => {
+                      const active = localTags.some((t) => t.toLowerCase() === p.nombre.toLowerCase());
+                      return (
+                        <button
+                          key={p.nombre}
+                          type="button"
+                          onClick={() => {
+                            void toggleTag(p.nombre);
+                          }}
+                          className={cn(
+                            "w-full flex items-center justify-between px-2.5 py-1.5 rounded-md text-left transition-colors cursor-pointer",
+                            active
+                              ? `${p.color} font-semibold ring-1 ring-primary/30`
+                              : "hover:bg-muted text-foreground"
+                          )}
+                        >
+                          <span className="flex items-center gap-2">
+                            <span className={cn("h-2 w-2 rounded-full", p.dot ?? "bg-primary")} />
+                            {p.nombre}
+                          </span>
+                          {active && <Check className="h-3.5 w-3.5" />}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
         {onToggleDetails && (
           <button
             type="button"

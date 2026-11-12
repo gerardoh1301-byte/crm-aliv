@@ -10,6 +10,7 @@ interface Contact {
   id: string;
   name: string;
   phone: string | null;
+  tags?: string[];
 }
 
 interface ConversationHeaderInfo {

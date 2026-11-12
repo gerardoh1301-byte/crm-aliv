@@ -15,6 +15,11 @@ import { CHANNEL_COLORS, ChannelIcon } from "@/components/icons/channels";
 import { OwnerSelect } from "@/components/contacts/OwnerSelect";
 import { CamposPersonalizadosLista } from "@/components/contacts/CamposPersonalizados";
 import { camposContacto } from "@/lib/config";
+import {
+  ETIQUETAS_PRINCIPALES,
+  ETIQUETAS_SECUNDARIAS,
+  getTagStyle,
+} from "@/lib/tags";
 
 interface Contact {
   id: string;
@@ -50,17 +55,6 @@ interface Props {
 }
 
 type SaveState = "idle" | "saving" | "saved" | "error";
-
-const ETIQUETAS_PREDEFINIDAS = [
-  { nombre: "pendiente de courier", color: "bg-orange-500/10 text-orange-700 dark:text-orange-300 border-orange-500/30" },
-  { nombre: "pendiente de envío", color: "bg-amber-500/10 text-amber-700 dark:text-amber-300 border-amber-500/30" },
-  { nombre: "pendiente de cobro", color: "bg-purple-500/10 text-purple-700 dark:text-purple-300 border-purple-500/30" },
-  { nombre: "adelanto pagado", color: "bg-emerald-500/10 text-emerald-700 dark:text-emerald-300 border-emerald-500/30" },
-  { nombre: "pedido confirmado", color: "bg-blue-500/10 text-blue-700 dark:text-blue-300 border-blue-500/30" },
-  { nombre: "en agencia shalom", color: "bg-rose-500/10 text-rose-700 dark:text-rose-300 border-rose-500/30" },
-  { nombre: "motorizado lima", color: "bg-indigo-500/10 text-indigo-700 dark:text-indigo-300 border-indigo-500/30" },
-  { nombre: "esperando respuesta", color: "bg-slate-500/10 text-slate-700 dark:text-slate-300 border-slate-500/30" },
-];
 
 export function ContactDetailPanel({
   contact,
@@ -143,6 +137,7 @@ export function ContactDetailPanel({
         body: JSON.stringify({ tags: next }),
       });
       if (!res.ok) throw new Error("save_failed");
+      window.dispatchEvent(new Event("conversations:refresh"));
     } catch {
       setTags(previous);
       toast.error("No se pudo guardar la etiqueta");
@@ -398,22 +393,28 @@ export function ContactDetailPanel({
           </Label>
           {tags.length > 0 && (
             <div className="flex flex-wrap gap-1.5">
-              {tags.map((tag) => (
-                <span
-                  key={tag}
-                  className="inline-flex items-center gap-1 rounded-full bg-primary/10 text-primary border border-primary/20 px-2 py-0.5 text-[11px] font-medium"
-                >
-                  {tag}
-                  <button
-                    type="button"
-                    onClick={() => removeTag(tag)}
-                    aria-label={`Quitar ${tag}`}
-                    className="hover:text-destructive cursor-pointer"
+              {tags.map((tag) => {
+                const style = getTagStyle(tag);
+                return (
+                  <span
+                    key={tag}
+                    className={cn(
+                      "inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[11px] font-medium shadow-2xs",
+                      style.badge
+                    )}
                   >
-                    <X className="h-3 w-3" />
-                  </button>
-                </span>
-              ))}
+                    {tag}
+                    <button
+                      type="button"
+                      onClick={() => removeTag(tag)}
+                      aria-label={`Quitar ${tag}`}
+                      className="hover:text-destructive cursor-pointer opacity-70 hover:opacity-100"
+                    >
+                      <X className="h-3 w-3" />
+                    </button>
+                  </span>
+                );
+              })}
             </div>
           )}
           <div className="flex gap-2">
@@ -441,13 +442,48 @@ export function ContactDetailPanel({
             </Button>
           </div>
 
-          {/* Selector de etiquetas rápidas con un clic */}
-          <div className="space-y-1.5 pt-1">
+          {/* 5 Etiquetas Principales del Flujo de Venta y Despacho */}
+          <div className="space-y-1.5 pt-2">
+            <span className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground flex items-center gap-1">
+              🏷️ Estado de la conversación:
+            </span>
+            <div className="flex flex-wrap gap-1.5">
+              {ETIQUETAS_PRINCIPALES.map((p) => {
+                const yaTiene = tags.some((t) => t.toLowerCase() === p.nombre.toLowerCase());
+                return (
+                  <button
+                    key={p.nombre}
+                    type="button"
+                    onClick={() => {
+                      if (yaTiene) {
+                        const original = tags.find((t) => t.toLowerCase() === p.nombre.toLowerCase());
+                        if (original) removeTag(original);
+                      } else {
+                        void persistTags([...tags, p.nombre]);
+                      }
+                    }}
+                    className={cn(
+                      "text-[11px] px-2.5 py-1 rounded-full border font-medium transition-all cursor-pointer shadow-2xs",
+                      yaTiene
+                        ? `${p.color} ring-2 ring-primary/40 font-bold`
+                        : "bg-muted/40 text-muted-foreground border-border/70 hover:bg-muted hover:text-foreground"
+                    )}
+                  >
+                    {yaTiene ? "✓ " : "+ "}
+                    {p.nombre}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+
+          {/* Selector de etiquetas secundarias/logísticas */}
+          <div className="space-y-1 pt-2 border-t border-border/50">
             <span className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground/80">
-              Etiquetas rápidas:
+              Logística / Otras:
             </span>
             <div className="flex flex-wrap gap-1">
-              {ETIQUETAS_PREDEFINIDAS.map((p) => {
+              {ETIQUETAS_SECUNDARIAS.map((p) => {
                 const yaTiene = tags.some((t) => t.toLowerCase() === p.nombre.toLowerCase());
                 return (
                   <button

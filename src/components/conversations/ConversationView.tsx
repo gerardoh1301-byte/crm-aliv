@@ -64,6 +64,7 @@ export function ConversationView({
           id: contact?.id ?? "",
           name: contact?.name ?? conversation.participantName ?? "Sin nombre",
           phone: contact?.phone ?? null,
+          tags: contact?.tags ?? [],
         }}
         conversation={{
           conversationId: conversation.conversationId,

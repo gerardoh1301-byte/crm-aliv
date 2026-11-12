@@ -11,6 +11,7 @@ import { es } from "date-fns/locale";
 import type { Channel } from "@/lib/channels/types";
 import { CHANNEL_COLORS, ChannelIcon } from "@/components/icons/channels";
 import { ChannelFilter } from "./ChannelFilter";
+import { ETIQUETAS_PRINCIPALES, getTagStyle } from "@/lib/tags";
 
 interface Props {
   conversations: ConversationListItem[];
@@ -20,10 +21,24 @@ interface Props {
 export function ConversationsList({ conversations, selectedId }: Props) {
   const [search, setSearch] = useState("");
   const [channel, setChannel] = useState<Channel | "all">("all");
+  const [tagFilter, setTagFilter] = useState<string>("all");
 
   const counts = useMemo(() => {
     const acc: Record<string, number> = {};
     for (const c of conversations) acc[c.channel] = (acc[c.channel] ?? 0) + 1;
+    return acc;
+  }, [conversations]);
+
+  const tagCounts = useMemo(() => {
+    const acc: Record<string, number> = {};
+    for (const c of conversations) {
+      if (c.tags) {
+        for (const t of c.tags) {
+          const norm = t.toLowerCase();
+          acc[norm] = (acc[norm] ?? 0) + 1;
+        }
+      }
+    }
     return acc;
   }, [conversations]);
 
@@ -33,10 +48,17 @@ export function ConversationsList({ conversations, selectedId }: Props) {
         ? conversations
         : conversations.filter((c) => c.channel === channel);
 
+    const byTag =
+      tagFilter === "all"
+        ? byChannel
+        : byChannel.filter((c) =>
+            c.tags?.some((t) => t.toLowerCase() === tagFilter.toLowerCase())
+          );
+
     const q = search.trim().toLowerCase();
-    if (!q) return byChannel;
+    if (!q) return byTag;
     const digits = q.replace(/\D/g, "");
-    return byChannel.filter((c) => {
+    return byTag.filter((c) => {
       if (c.name?.toLowerCase().includes(q)) return true;
       if (c.lastBody?.toLowerCase().includes(q)) return true;
       if (c.handle?.toLowerCase().includes(q)) return true;
@@ -45,7 +67,7 @@ export function ConversationsList({ conversations, selectedId }: Props) {
       if (c.tags?.some((t) => t.toLowerCase().includes(q))) return true;
       return false;
     });
-  }, [conversations, search, channel]);
+  }, [conversations, search, channel, tagFilter]);
 
   return (
     <aside
@@ -92,6 +114,45 @@ export function ConversationsList({ conversations, selectedId }: Props) {
       </div>
 
       <ChannelFilter value={channel} onChange={setChannel} counts={counts} />
+
+      {/* Filtro rápido por Etiquetas Principales */}
+      <div className="px-2.5 py-1.5 border-b border-border/50 bg-muted/20 flex items-center gap-1 overflow-x-auto no-scrollbar">
+        <button
+          type="button"
+          onClick={() => setTagFilter("all")}
+          className={cn(
+            "shrink-0 px-2 py-0.5 rounded-full border text-[10px] transition-all cursor-pointer font-medium",
+            tagFilter === "all"
+              ? "bg-primary text-primary-foreground border-primary font-semibold shadow-2xs"
+              : "bg-background/80 text-muted-foreground border-border hover:bg-muted hover:text-foreground"
+          )}
+        >
+          Todas
+        </button>
+        {ETIQUETAS_PRINCIPALES.map((p) => {
+          const isSelected = tagFilter.toLowerCase() === p.nombre.toLowerCase();
+          const count = tagCounts[p.nombre.toLowerCase()] ?? 0;
+          return (
+            <button
+              key={p.nombre}
+              type="button"
+              onClick={() => setTagFilter(isSelected ? "all" : p.nombre)}
+              className={cn(
+                "shrink-0 inline-flex items-center gap-1 px-2 py-0.5 rounded-full border text-[10px] transition-all cursor-pointer font-medium whitespace-nowrap shadow-2xs",
+                isSelected
+                  ? `${p.color} ring-1.5 ring-primary/40 font-bold`
+                  : "bg-background/80 text-muted-foreground border-border/60 hover:bg-muted hover:text-foreground"
+              )}
+            >
+              <span className={cn("h-1.5 w-1.5 rounded-full shrink-0", p.dot ?? "bg-primary")} />
+              {p.nombre}
+              {count > 0 && (
+                <span className="text-[9px] opacity-80 font-mono font-semibold">({count})</span>
+              )}
+            </button>
+          );
+        })}
+      </div>
 
       <div className="flex-1 overflow-auto">
         {conversations.length === 0 ? (
@@ -216,21 +277,30 @@ export function ConversationsList({ conversations, selectedId }: Props) {
                         )}
                       </div>
                       {c.tags && c.tags.length > 0 && (
-                        <div className="flex flex-wrap gap-1 mt-1">
+                        <div className="flex flex-wrap gap-1 mt-1.5">
                           {c.tags
                             .filter((t) => !["shopify", "alivstore", "easysell_cod"].includes(t))
-                            .slice(0, 2)
-                            .map((t) => (
-                              <span
-                                key={t}
-                                className="inline-flex items-center px-1.5 py-0.2 rounded text-[9.5px] font-medium bg-muted/80 text-foreground/80 border border-border/50"
-                              >
-                                {t}
-                              </span>
-                            ))}
-                          {c.tags.filter((t) => !["shopify", "alivstore", "easysell_cod"].includes(t)).length > 2 && (
+                            .slice(0, 3)
+                            .map((t) => {
+                              const style = getTagStyle(t);
+                              return (
+                                <span
+                                  key={t}
+                                  className={cn(
+                                    "inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[9.5px] font-medium border shadow-2xs leading-none",
+                                    style.badge
+                                  )}
+                                >
+                                  {style.dot && (
+                                    <span className={cn("h-1.5 w-1.5 rounded-full mr-0.5", style.dot)} />
+                                  )}
+                                  {style.label}
+                                </span>
+                              );
+                            })}
+                          {c.tags.filter((t) => !["shopify", "alivstore", "easysell_cod"].includes(t)).length > 3 && (
                             <span className="text-[9px] text-muted-foreground self-center">
-                              +{c.tags.filter((t) => !["shopify", "alivstore", "easysell_cod"].includes(t)).length - 2}
+                              +{c.tags.filter((t) => !["shopify", "alivstore", "easysell_cod"].includes(t)).length - 3}
                             </span>
                           )}
                         </div>
