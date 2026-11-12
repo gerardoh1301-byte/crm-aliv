@@ -1,6 +1,6 @@
 import "server-only";
 import { NextResponse } from "next/server";
-import { and, desc, eq, ilike, inArray, or, sql, type SQL } from "drizzle-orm";
+import { and, desc, eq, gte, ilike, inArray, or, sql, type SQL } from "drizzle-orm";
 import { db } from "@/db";
 import {
   activities,
@@ -587,7 +587,7 @@ const tools: ToolModulo[] = [
           and(
             eq(pedidosOrdenes.contactId, ctx.contactId),
             inArray(pedidosOrdenes.estado, ["por_confirmar_cod", "confirmado"]),
-            sql`${pedidosOrdenes.createdAt} >= ${hace72h}`
+            gte(pedidosOrdenes.createdAt, hace72h)
           )
         )
         .orderBy(desc(pedidosOrdenes.createdAt))
