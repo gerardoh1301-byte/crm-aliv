@@ -59,9 +59,10 @@ const DISTRITOS_LIMA_CALLAO = [
 const REGIONES_PROVINCIA = [
   "amazonas", "ancash", "apurimac", "arequipa", "ayacucho", "cajamarca", "cusco", "cuzco",
   "huancavelica", "huanuco", "ica", "junin", "la libertad", "lambayeque", "loreto",
-  "madre de dios", "moquegua", "pasco", "piura", "puno", "san martin", "tacna", "tumbes", "ucayali",
+  "madre de dios", "moquegua", "pasco", "piura", "puno", "tacna", "tumbes", "ucayali",
   "trujillo", "chiclayo", "huancayo", "chimbote", "iquitos", "pucallpa", "juliaca", "tarapoto",
-  "sullana", "chincha", "pisco", "huacho", "barranca", "canete", "talara", "ilo", "huaraz", "paita"
+  "moyobamba", "rioja", "juanjui", "sullana", "chincha", "pisco", "huacho", "barranca",
+  "canete", "talara", "ilo", "huaraz", "paita"
 ];
 
 function esRegionProvincia(...textos: (string | null | undefined)[]): boolean {
@@ -255,16 +256,21 @@ export function extraerDatosFormularioShopify(payload: Record<string, any>): Ext
   }
 
   // 9. Flag Provincia vs Lima/Callao
-  // Regla segura: Solo evaluar campos de localidad (ciudad, distrito, departamento).
-  // NUNCA evaluar el texto libre de direccionEnvio porque una calle como "Av. Lima 123" en Arequipa generaba falsos positivos.
+  // Regla segura:
+  // 1. Si el distrito o ciudad es un distrito reconocido de Lima o Callao (ej. San Martín de Porres, SMP, Miraflores, Surco), es LIMA.
+  // 2. Si el departamento o ciudad es una región/provincia reconocida (ej. Arequipa, Cusco, Trujillo), es PROVINCIA.
+  // 3. NUNCA evaluar el texto libre de direccionEnvio para evitar falsos positivos con nombres de avenidas ("Av. Lima").
+  const esDistritoLimaOCallao = esUbicacionLimaOCallao(distrito, ciudad);
   const esProvinciaExplicita = esRegionProvincia(deptoAttr, ciudad, distrito);
-  let esLima = false;
 
-  if (esProvinciaExplicita) {
+  let esLima = false;
+  if (esDistritoLimaOCallao) {
+    esLima = true;
+  } else if (esProvinciaExplicita) {
     esLima = false;
   } else {
-    // Si no es provincia explícita, verificar si ciudad, distrito o departamento corresponden a Lima/Callao
-    esLima = esUbicacionLimaOCallao(ciudad, distrito, deptoAttr);
+    // Si no coincide con ninguno, verificar deptoAttr
+    esLima = esUbicacionLimaOCallao(deptoAttr);
   }
 
   const esProvincia = !esLima;

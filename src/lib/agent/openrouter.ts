@@ -22,6 +22,8 @@ function getGeminiClient(): OpenAI | null {
     geminiClient = new OpenAI({
       apiKey,
       baseURL: GEMINI_BASE_URL,
+      timeout: 12000, // 12s tiempo máximo para no demorar la respuesta
+      maxRetries: 0,  // Sin reintentos internos del SDK para que nuestro failover actúe de inmediato
     });
   }
   return geminiClient;
@@ -34,6 +36,8 @@ function getOpenRouterClientOnly(): OpenAI | null {
     openRouterClient = new OpenAI({
       apiKey,
       baseURL: OPENROUTER_BASE_URL,
+      timeout: 12000,
+      maxRetries: 0,
       defaultHeaders: {
         "HTTP-Referer": process.env.APP_BASE_URL || "https://crm-aliv.onrender.com",
         "X-Title": marca().nombre,
