@@ -321,7 +321,7 @@ async function enviarImagenReferencia(
   if (!img) {
     return {
       ok: false,
-      error: `Imagen no encontrada para clave '${args.clave}'. Claves válidas: nac600_frasco, nac600_beneficios, termix_tobillera, termix_caracteristicas, termix_promocion, yape_adelanto.`,
+      error: `Imagen no encontrada para clave '${args.clave}'. Claves válidas: termix_tobillera, termix_promocion, termix_foto_real, termix_contenido_caja, termix_caracteristicas, termix_comparativa, nac600_frasco, nac600_beneficios, yape_adelanto.`,
     };
   }
 
@@ -487,14 +487,14 @@ function toolsGenericas(): ToolAgente[] {
     {
       definicion: definir(
         "enviar_imagen_referencia",
-        "Envía una imagen o infografía de referencia oficial al cliente por WhatsApp (ficha oficial de tobillera Termix con características y calor/vibración, foto del frasco NAC600, ficha de beneficios/ingredientes o comprobante/QR de Yape). " +
-          "Claves válidas: 'termix_tobillera', 'termix_caracteristicas', 'termix_promocion', 'nac600_frasco', 'nac600_beneficios', 'yape_adelanto'.",
+        "Envía una imagen o infografía de referencia oficial al cliente por WhatsApp hospedada en Google Drive CDN (sin recargar el servidor del CRM). " +
+          "Claves válidas: 'termix_tobillera' (foto en pie), 'termix_promocion' (banner precios), 'termix_foto_real' (en mano encendida), 'termix_contenido_caja' (unboxing), 'termix_caracteristicas' (grafeno/masaje), 'termix_comparativa' (vs comunes), 'nac600_frasco', 'nac600_beneficios', 'yape_adelanto'.",
         {
           type: "object",
           properties: {
             clave: {
               type: "string",
-              description: "Identificador de la imagen: 'termix_tobillera', 'termix_caracteristicas', 'termix_promocion', 'nac600_frasco', 'nac600_beneficios' o 'yape_adelanto'.",
+              description: "Identificador de la imagen: 'termix_tobillera', 'termix_promocion', 'termix_foto_real', 'termix_contenido_caja', 'termix_caracteristicas', 'termix_comparativa', 'nac600_frasco', 'nac600_beneficios' o 'yape_adelanto'.",
             },
             motivo: {
               type: "string",
@@ -505,7 +505,7 @@ function toolsGenericas(): ToolAgente[] {
           additionalProperties: false,
         }
       ),
-      descripcionUI: "Permite al agente enviar fotos oficiales de productos, infografías de beneficios y datos de pago directamente por WhatsApp.",
+      descripcionUI: "Permite al agente enviar fotos oficiales de productos, infografías de beneficios y datos de pago directamente por WhatsApp desde Google Drive CDN.",
       ejecutar: (a, ctx) => enviarImagenReferencia(a as { clave?: string; motivo?: string }, ctx),
     },
   ];

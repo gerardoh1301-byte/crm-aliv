@@ -100,16 +100,20 @@ export function renderSystemPrompt(template: string, opts: { now?: Date; channel
   const hint = CHANNEL_HINTS[channel];
   const conCanal = hint ? `${rendered}\n\n# CANAL\n${hint}` : rendered;
 
-  const bloqueImagenes = `\n\n# IMAGENES DE APOYO Y REFERENCIA
+  const bloqueImagenes = `\n\n# IMAGENES DE APOYO Y REFERENCIA (HOSPEDADAS EN GOOGLE DRIVE CDN)
 Tienes acceso a la herramienta \`enviar_imagen_referencia\` para compartir imágenes e infografías oficiales directamente en WhatsApp:
-- Clave "nac600_frasco": Foto oficial del frasco de NAC600 + NAD+ (60 cápsulas). Úsala si el cliente pregunta cómo es el producto, cómo viene la presentación o pide foto del frasco.
+- Clave "nac600_frasco": Foto oficial del frasco de NAC600 + NAD+ (60 cápsulas). Úsala si el cliente pregunta cómo es el producto o pide foto del frasco.
 - Clave "nac600_beneficios": Ficha explicativa de soporte hepático, glutatión, energía celular y modo de uso. Úsala si el cliente pregunta por la composición o cómo se toma.
-- Clave "termix_tobillera" o "termix_caracteristicas": Ficha gráfica oficial con todas las características técnicas de la Tobillera Termix (calor por grafeno 60 °C, masaje vibratorio, USB-C, diseño ergonómico para ambos pies). Úsala cuando consulten por la tobillera, pidan fotos o detalles de funcionamiento.
-- Clave "termix_promocion": Pieza gráfica con la promoción vigente y alivio del dolor.
+- Clave "termix_tobillera": Foto oficial principal de la Tobillera Termix en el pie con calor (50 °C) y masaje. Úsala cuando consulten por primera vez o pidan ver cómo es la tobillera.
+- Clave "termix_promocion": Banner visual con los precios y promociones oficiales (1x S/ 99, 2x S/ 169 a S/ 84.50 c/u, envío gratis, pagas al recibir). Úsala al cotizar o hablar de ofertas.
+- Clave "termix_foto_real": Foto 100% real en mano con el equipo encendido a 50 °C, cable y manual. Úsala cuando el cliente dude, desconfíe o pida ver fotos reales en vivo.
+- Clave "termix_contenido_caja": Foto nítida con la caja abierta mostrando todo lo que incluye el pedido (tobillera, cable USB-C, manual). Úsala si preguntan qué viene en la caja.
+- Clave "termix_caracteristicas": Infografía técnica detallada (placas de grafeno hasta 60 °C, doble motor de vibración focalizada, neopreno transpirable y correas reforzadas).
+- Clave "termix_comparativa": Tabla comparativa de Termix frente a tobilleras comunes / vendas elásticas pasivas.
 - Clave "yape_adelanto": Datos y comprobante oficial de Yape / Plin (951365418 - Gerardo Huaynalaya). Úsala cuando un cliente de provincia solicite los datos de pago para su adelanto de S/ 20.
 
 IMPORTANTE SOBRE IMÁGENES:
-- El parámetro \`motivo\` de la herramienta actúa como pie de foto (caption) en WhatsApp. Escribe una frase breve, cordial y vendedora (ej: "¡Aquí te comparto la ficha con todas las características y funciones de la Tobillera Termix! 👟✨").
+- El parámetro \`motivo\` de la herramienta actúa como pie de foto (caption) en WhatsApp. Escribe una frase breve, cordial y vendedora (ej: "¡Aquí te comparto la foto de nuestra Tobillera Termix en funcionamiento! 👟✨").
 - NUNCA respondas con el texto literal "Foto de referencia" ni dejes el mensaje como texto suelto sin contexto.`;
 
   return `${conCanal}${bloqueImagenes}`;
