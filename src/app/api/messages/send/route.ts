@@ -17,6 +17,9 @@ export const dynamic = "force-dynamic";
 interface SendBody {
   conversationId?: string;
   text?: string;
+  replyTo?: string;
+  quotedText?: string;
+  quotedSender?: string;
   template?: {
     name: string;
     language?: string;
@@ -66,7 +69,14 @@ export async function POST(request: NextRequest) {
 
   const result = await deliverMessage(
     body.conversationId,
-    body.template ? { template: body.template } : { text: body.text },
+    body.template
+      ? { template: body.template }
+      : {
+          text: body.text,
+          replyTo: body.replyTo,
+          quotedText: body.quotedText,
+          quotedSender: body.quotedSender,
+        },
     body.template ? "template" : "human"
   );
 

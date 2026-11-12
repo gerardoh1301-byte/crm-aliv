@@ -54,6 +54,9 @@ export default async function PipelinePage() {
       ordenCodigoRastreo: pedidosOrdenes.codigoRastreo,
       ordenClaveRecojo: pedidosOrdenes.claveRecojo,
       ordenEstado: pedidosOrdenes.estado,
+      ordenItems: pedidosOrdenes.items,
+      ordenTotal: pedidosOrdenes.total,
+      ordenModalidadPago: pedidosOrdenes.modalidadPago,
     })
     .from(deals)
     .leftJoin(contacts, eq(deals.contactId, contacts.id))
@@ -109,6 +112,9 @@ export default async function PipelinePage() {
       codigoRastreo: d.ordenCodigoRastreo || null,
       claveRecojo: d.ordenClaveRecojo || null,
       estadoPedido: d.ordenEstado || null,
+      ordenItems: d.ordenItems || null,
+      ordenTotal: d.ordenTotal || null,
+      ordenModalidadPago: d.ordenModalidadPago || null,
       ownerId: d.contactOwnerId || null,
       ownerName: d.contactOwnerName || null,
       tags: (d.contactTags || []) as string[],

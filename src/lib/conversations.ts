@@ -48,6 +48,7 @@ export interface ConversationMessage {
   sentAt: Date | null;
   deliveredAt: Date | null;
   readAt: Date | null;
+  rawPayload?: unknown;
   createdAt: Date;
 }
 
@@ -200,6 +201,7 @@ export async function getConversation(conversationId: string): Promise<{
       sentAt: messages.sentAt,
       deliveredAt: messages.deliveredAt,
       readAt: messages.readAt,
+      rawPayload: messages.rawPayload,
       createdAt: messages.createdAt,
     })
     .from(messages)

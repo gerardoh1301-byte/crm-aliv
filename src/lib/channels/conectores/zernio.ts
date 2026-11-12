@@ -59,6 +59,7 @@ export const zernio: Conector = {
       const firstAtt = attachments?.[0];
       result = await sendMessage(ctx.conversation.externalId, {
         accountId,
+        ...(msg.replyTo ? { replyTo: msg.replyTo } : {}),
         ...(firstAtt?.url
           ? {
               attachmentUrl: firstAtt.url,

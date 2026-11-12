@@ -190,6 +190,9 @@ export function KanbanBoard({ initialColumns, filters, sort }: KanbanBoardProps)
             direccion={activeDeal.direccion}
             numeroOrden={activeDeal.numeroOrden}
             codigoRastreo={activeDeal.codigoRastreo}
+            ordenItems={activeDeal.ordenItems}
+            ordenTotal={activeDeal.ordenTotal}
+            ordenModalidadPago={activeDeal.ordenModalidadPago}
             ownerId={activeDeal.ownerId}
             ownerName={activeDeal.ownerName}
             tags={activeDeal.tags}

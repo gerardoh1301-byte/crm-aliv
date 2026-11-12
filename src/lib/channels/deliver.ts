@@ -71,7 +71,11 @@ export async function deliverMessage(
       origin,
       type: msg.attachments?.length ? "image" : msg.template ? "template" : "text",
       body,
-      rawPayload: msg.attachments?.length ? { attachments: msg.attachments } : null,
+      rawPayload: (msg.attachments?.length || msg.replyTo || msg.quotedText) ? {
+        ...(msg.attachments?.length ? { attachments: msg.attachments } : {}),
+        ...(msg.replyTo ? { replyTo: msg.replyTo } : {}),
+        ...(msg.quotedText ? { quotedText: msg.quotedText, quotedSender: msg.quotedSender } : {}),
+      } : null,
       templateName: msg.template?.name ?? null,
       status: "pending",
       tenantId: conversation.tenantId,

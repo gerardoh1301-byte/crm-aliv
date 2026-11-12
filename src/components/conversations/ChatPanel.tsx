@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useLayoutEffect, useMemo, useRef } from "react";
+import { useState, useEffect, useLayoutEffect, useMemo, useRef } from "react";
 import Link from "next/link";
 import { ConversationMessage } from "@/lib/conversations";
 import { ChatInput } from "./ChatInput";
@@ -16,6 +16,7 @@ import {
   Clock,
   PanelRightClose,
   PanelRightOpen,
+  Reply,
 } from "lucide-react";
 import { CHANNEL_LABELS, type Channel } from "@/lib/channels/types";
 import { CHANNEL_COLORS, ChannelIcon } from "@/components/icons/channels";
@@ -66,6 +67,7 @@ export function ChatPanel({
   detailsOpen,
   onToggleDetails,
 }: Props) {
+  const [replyingTo, setReplyingTo] = useState<ConversationMessage | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
   const prevContactIdRef = useRef<string | null>(null);
   const prevCountRef = useRef(messages.length);
@@ -218,47 +220,94 @@ export function ChatPanel({
                   )}
                   <div
                     className={cn(
-                      "max-w-[85%] md:max-w-[70%] rounded-2xl px-3.5 py-2 text-[13px] leading-relaxed break-words border",
-                      isOut
-                        ? "bg-primary text-primary-foreground border-transparent shadow-sm rounded-br-md"
-                        : "bg-card text-foreground border-border shadow-xs rounded-bl-md",
+                      "group/bubble flex items-center gap-1.5 max-w-[85%] md:max-w-[70%]",
+                      isOut ? "flex-row-reverse" : "flex-row"
                     )}
                   >
-                    {(() => {
-                      const imgMatch = m.body?.match(/https?:\/\/[^\s)]+\.(?:jpg|jpeg|png|webp|gif)/i);
-                      const imgUrl = imgMatch ? imgMatch[0] : null;
-                      const textoLimpio = imgUrl ? m.body?.replace(imgUrl, "").replace(/\[imagen\]/i, "").trim() : m.body;
+                    <div
+                      className={cn(
+                        "rounded-2xl px-3.5 py-2 text-[13px] leading-relaxed break-words border",
+                        isOut
+                          ? "bg-primary text-primary-foreground border-transparent shadow-sm rounded-br-md"
+                          : "bg-card text-foreground border-border shadow-xs rounded-bl-md",
+                      )}
+                    >
+                      {/* Mensaje Citado (Respuesta a otro mensaje estilo WhatsApp) */}
+                      {(() => {
+                        const rp = (m.rawPayload ?? {}) as Record<string, any>;
+                        const quotedText = rp?.quotedText as string | undefined;
+                        const quotedSender = rp?.quotedSender as string | undefined;
+                        const targetMsg = rp?.replyTo ? messages.find((x) => x.externalId === rp.replyTo || x.id === rp.replyTo) : null;
+                        const finalQuotedText = quotedText || targetMsg?.body;
+                        const finalQuotedSender = quotedSender || (targetMsg ? (targetMsg.direction === "out" ? "Tú" : contact.name) : null);
 
-                      return (
-                        <div className="space-y-1.5">
-                          {imgUrl && (
-                            <div className="overflow-hidden rounded-lg border border-border/50 max-w-[280px]">
-                              {/* eslint-disable-next-line @next/next/no-img-element */}
-                              <img
-                                src={imgUrl}
-                                alt="Imagen"
-                                className="w-full h-auto object-cover max-h-[220px] rounded"
-                                loading="lazy"
-                              />
-                            </div>
-                          )}
-                          {(textoLimpio || !imgUrl) && (
-                            <p>
-                              {textoLimpio || (
-                                <span className="italic text-current/60">
-                                  ({m.type})
-                                </span>
-                              )}
+                        if (!finalQuotedText) return null;
+
+                        return (
+                          <div
+                            className={cn(
+                              "mb-2 p-2 rounded-md text-[11.5px] border-l-4 leading-tight select-none",
+                              isOut
+                                ? "bg-black/15 border-primary-foreground/70 text-primary-foreground/90"
+                                : "bg-muted/70 border-primary text-foreground/90"
+                            )}
+                          >
+                            <p className="font-bold text-[10px] mb-0.5 opacity-90">
+                              {finalQuotedSender || "Mensaje citado"}
                             </p>
-                          )}
+                            <p className="line-clamp-2 italic text-[11px] opacity-80">
+                              {finalQuotedText}
+                            </p>
+                          </div>
+                        );
+                      })()}
+
+                      {(() => {
+                        const imgMatch = m.body?.match(/https?:\/\/[^\s)]+\.(?:jpg|jpeg|png|webp|gif)/i);
+                        const imgUrl = imgMatch ? imgMatch[0] : null;
+                        const textoLimpio = imgUrl ? m.body?.replace(imgUrl, "").replace(/\[imagen\]/i, "").trim() : m.body;
+
+                        return (
+                          <div className="space-y-1.5">
+                            {imgUrl && (
+                              <div className="overflow-hidden rounded-lg border border-border/50 max-w-[280px]">
+                                {/* eslint-disable-next-line @next/next/no-img-element */}
+                                <img
+                                  src={imgUrl}
+                                  alt="Imagen"
+                                  className="w-full h-auto object-cover max-h-[220px] rounded"
+                                  loading="lazy"
+                                />
+                              </div>
+                            )}
+                            {(textoLimpio || !imgUrl) && (
+                              <p>
+                                {textoLimpio || (
+                                  <span className="italic text-current/60">
+                                    ({m.type})
+                                  </span>
+                                )}
+                              </p>
+                            )}
+                          </div>
+                        );
+                      })()}
+                      {m.templateName && (
+                        <div className="mt-1 text-[10px] font-mono opacity-70">
+                          plantilla: {m.templateName}
                         </div>
-                      );
-                    })()}
-                    {m.templateName && (
-                      <div className="mt-1 text-[10px] font-mono opacity-70">
-                        plantilla: {m.templateName}
-                      </div>
-                    )}
+                      )}
+                    </div>
+
+                    {/* Botón flotante para responder/citar este mensaje */}
+                    <button
+                      type="button"
+                      onClick={() => setReplyingTo(m)}
+                      className="opacity-0 group-hover/bubble:opacity-100 transition-opacity p-1.5 rounded-full hover:bg-muted text-muted-foreground hover:text-foreground cursor-pointer shrink-0 shadow-2xs"
+                      title="Responder a este mensaje"
+                    >
+                      <Reply className="h-3.5 w-3.5" />
+                    </button>
                   </div>
                   <div
                     className={cn(
@@ -287,7 +336,10 @@ export function ChatPanel({
         channel={conversation.channel}
         contactId={contact.id}
         contactPhone={contact.phone ?? ""}
+        contactName={contact.name}
         lastInboundAt={lastInboundAt}
+        replyingTo={replyingTo}
+        onClearReply={() => setReplyingTo(null)}
       />
     </section>
   );

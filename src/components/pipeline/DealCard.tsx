@@ -20,6 +20,7 @@ import {
   UserCheck,
   Clock,
   X,
+  Package,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { avatarBg, getInitials } from "@/lib/avatar";
@@ -58,6 +59,9 @@ export interface DealCardProps {
   codigoRastreo?: string | null;
   claveRecojo?: string | null;
   estadoPedido?: string | null;
+  ordenItems?: Array<{ sku?: string; titulo: string; cantidad: number; precioUnitario?: number }> | string | null;
+  ordenTotal?: string | null;
+  ordenModalidadPago?: string | null;
   ownerId?: string | null;
   ownerName?: string | null;
   tags?: string[];
@@ -87,6 +91,9 @@ export function DealCard({
   codigoRastreo,
   claveRecojo,
   estadoPedido,
+  ordenItems,
+  ordenTotal,
+  ordenModalidadPago,
   ownerId,
   ownerName,
   tags = [],
@@ -297,6 +304,85 @@ export function DealCard({
         <p className="text-base font-bold tabular-nums text-foreground">
           {formatCurrency(value)}
         </p>
+
+        {/* Cantidad y productos comprados en el pedido */}
+        {(() => {
+          let itemsList: Array<{ titulo: string; cantidad: number; precioUnitario?: number }> = [];
+          if (Array.isArray(ordenItems) && ordenItems.length > 0) {
+            itemsList = ordenItems.map((it: any) => ({
+              titulo: it.titulo ?? it.title ?? "Producto",
+              cantidad: Number(it.cantidad ?? it.quantity ?? 1),
+              precioUnitario: it.precioUnitario ? Number(it.precioUnitario) : undefined,
+            }));
+          } else if (typeof ordenItems === "string" && ordenItems.trim()) {
+            try {
+              const parsed = JSON.parse(ordenItems);
+              if (Array.isArray(parsed) && parsed.length > 0) {
+                itemsList = parsed.map((it: any) => ({
+                  titulo: it.titulo ?? it.title ?? "Producto",
+                  cantidad: Number(it.cantidad ?? it.quantity ?? 1),
+                  precioUnitario: it.precioUnitario ? Number(it.precioUnitario) : undefined,
+                }));
+              }
+            } catch {
+              // ignore
+            }
+          }
+
+          // Fallback por titulo o valor si no hay items registrados
+          if (itemsList.length === 0) {
+            const matchQty = title.match(/(\d+)\s*x/i);
+            if (matchQty) {
+              const qty = parseInt(matchQty[1], 10);
+              const cleanTitle = title.replace(/^#\w+\s*·\s*/, "").replace(/^\d+x\s*/i, "").trim();
+              itemsList = [{ titulo: cleanTitle || "Producto", cantidad: qty }];
+            } else if (value > 0) {
+              const soles = Math.round(value / 100);
+              const cleanTitle = title.replace(/^#\w+\s*·\s*/, "").trim();
+              let inferredQty = 1;
+              if (soles === 199 || soles === 219) inferredQty = 3;
+              else if (soles === 169 || soles === 179 || soles === 189) inferredQty = 2;
+              else if (soles === 119 || soles === 99) inferredQty = 1;
+              itemsList = [{ titulo: cleanTitle || "Producto", cantidad: inferredQty }];
+            }
+          }
+
+          if (itemsList.length === 0) return null;
+
+          const totalCant = itemsList.reduce((acc, it) => acc + (it.cantidad || 1), 0);
+
+          return (
+            <div className="rounded-md border border-amber-200/90 bg-amber-50/70 dark:border-amber-900/40 dark:bg-amber-950/20 px-2.5 py-1.5 space-y-1">
+              <div className="flex items-center justify-between text-[11px] font-semibold text-amber-950 dark:text-amber-200">
+                <span className="flex items-center gap-1.5">
+                  <Package className="h-3.5 w-3.5 text-amber-600 dark:text-amber-400 shrink-0" />
+                  <span>
+                    Pedido: <strong className="text-amber-900 dark:text-amber-100 font-bold">{totalCant} {totalCant === 1 ? "unidad" : "unidades"}</strong>
+                  </span>
+                </span>
+                {ordenModalidadPago && (
+                  <span className="text-[9px] font-medium text-muted-foreground uppercase px-1 py-0.2 rounded bg-background/70 border border-border/50">
+                    {ordenModalidadPago.replace(/_/g, " ")}
+                  </span>
+                )}
+              </div>
+              <div className="space-y-0.5 pt-1 border-t border-amber-200/60 dark:border-amber-900/40">
+                {itemsList.map((it, idx) => (
+                  <div key={idx} className="text-[11.5px] leading-tight text-foreground font-medium flex items-center justify-between gap-1">
+                    <span className="truncate">
+                      <span className="font-bold text-amber-700 dark:text-amber-400">{it.cantidad}x</span> {it.titulo}
+                    </span>
+                    {it.precioUnitario ? (
+                      <span className="text-[10px] text-muted-foreground tabular-nums shrink-0">
+                        S/ {(it.precioUnitario * it.cantidad).toFixed(2)}
+                      </span>
+                    ) : null}
+                  </div>
+                ))}
+              </div>
+            </div>
+          );
+        })()}
 
         {/* Fila 1: Cliente con avatar e initials y NOMBRE COMPLETO en 1 o 2 lineas sin truncar */}
         <div

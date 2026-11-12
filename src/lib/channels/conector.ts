@@ -39,6 +39,9 @@ export interface OutboundMessage {
   text?: string;
   template?: OutboundTemplate;
   attachments?: OutboundAttachment[];
+  replyTo?: string;
+  quotedText?: string;
+  quotedSender?: string;
 }
 
 export interface SendOutcome {

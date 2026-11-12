@@ -1,9 +1,10 @@
 "use client";
 
-import { useState, useRef, KeyboardEvent, FormEvent } from "react";
-import { Send, Loader2, FileText, Clock } from "lucide-react";
+import { useState, useRef, KeyboardEvent, FormEvent, useEffect } from "react";
+import { Send, Loader2, FileText, Clock, Reply, X } from "lucide-react";
 import { toast } from "sonner";
 import { TemplatePicker } from "./TemplatePicker";
+import type { ConversationMessage } from "@/lib/conversations";
 import {
   capabilitiesFor,
   isOutsideFreeFormWindow,
@@ -15,8 +16,11 @@ interface Props {
   channel: Channel;
   contactId: string;
   contactPhone: string;
+  contactName?: string;
   /** Fecha del ultimo mensaje entrante del cliente (para la ventana de 24h). */
   lastInboundAt?: Date | string | null;
+  replyingTo?: ConversationMessage | null;
+  onClearReply?: () => void;
 }
 
 function notifyRefresh() {
@@ -30,12 +34,21 @@ export function ChatInput({
   channel,
   contactId,
   contactPhone,
+  contactName = "Cliente",
   lastInboundAt,
+  replyingTo,
+  onClearReply,
 }: Props) {
   const [text, setText] = useState("");
   const [sending, setSending] = useState(false);
   const [pickerOpen, setPickerOpen] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+
+  useEffect(() => {
+    if (replyingTo) {
+      textareaRef.current?.focus();
+    }
+  }, [replyingTo]);
 
   const caps = capabilitiesFor(channel);
   const outsideWindow = isOutsideFreeFormWindow(channel, lastInboundAt);
@@ -52,7 +65,17 @@ export function ChatInput({
       const res = await fetch("/api/messages/send", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ conversationId, text: body }),
+        body: JSON.stringify({
+          conversationId,
+          text: body,
+          ...(replyingTo
+            ? {
+                replyTo: replyingTo.externalId || replyingTo.id,
+                quotedText: replyingTo.body?.slice(0, 300) || "[Mensaje]",
+                quotedSender: replyingTo.direction === "out" ? "Asesor" : contactName,
+              }
+            : {}),
+        }),
       });
       const json = await res.json();
 
@@ -68,6 +91,7 @@ export function ChatInput({
 
       toast.success("Enviado", { id: "sending-msg", duration: 2000 });
       setText("");
+      onClearReply?.();
       notifyRefresh();
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Network error", {
@@ -116,6 +140,29 @@ export function ChatInput({
           )}
         </div>
       )}
+      {/* Barra de respuesta citada (estilo WhatsApp) */}
+      {replyingTo && (
+        <div className="max-w-2xl mx-auto mb-2 flex items-center justify-between gap-3 px-3 py-2 rounded-xl bg-muted/80 border-l-4 border-primary shadow-2xs animate-in fade-in slide-in-from-bottom-1 duration-150">
+          <div className="flex-1 min-w-0">
+            <p className="text-[11.5px] font-bold text-primary flex items-center gap-1.5">
+              <Reply className="h-3.5 w-3.5 shrink-0" />
+              <span>Respondiendo a {replyingTo.direction === "out" ? "ti mismo" : contactName}</span>
+            </p>
+            <p className="text-[12px] text-foreground/85 truncate mt-0.5 font-normal">
+              {replyingTo.body || "(Archivo o imagen)"}
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={onClearReply}
+            className="h-6 w-6 inline-flex items-center justify-center rounded-full hover:bg-background/80 text-muted-foreground hover:text-foreground cursor-pointer transition-colors"
+            title="Cancelar respuesta"
+          >
+            <X className="h-3.5 w-3.5" />
+          </button>
+        </div>
+      )}
+
       <form
         onSubmit={handleSubmit}
         className="max-w-2xl mx-auto flex items-end gap-2.5"

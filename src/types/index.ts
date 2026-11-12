@@ -108,6 +108,10 @@ export interface DealWithContact extends Deal {
   codigoRastreo?: string | null;
   claveRecojo?: string | null;
   estadoPedido?: string | null;
+  /** Productos, cantidades y precios del pedido COD */
+  ordenItems?: Array<{ sku?: string; titulo: string; cantidad: number; precioUnitario?: number }> | string | null;
+  ordenTotal?: string | null;
+  ordenModalidadPago?: string | null;
   /** Vendedor / asesor a cargo (team_members.id). */
   ownerId?: string | null;
   /** Nombre del vendedor / asesor asignado para mostrar en cartilla. */

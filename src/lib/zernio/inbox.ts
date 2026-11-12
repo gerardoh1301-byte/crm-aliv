@@ -137,6 +137,8 @@ export interface SendMessageInput {
   attachmentUrl?: string;
   attachmentType?: "image" | "video" | "audio" | "file";
   attachmentName?: string;
+  /** Platform message ID para citar / responder (wamid en WhatsApp) */
+  replyTo?: string;
   /** WhatsApp: plantilla aprobada dentro de un hilo que ya existe. */
   template?: ZernioTemplateRef;
   /**
@@ -194,6 +196,7 @@ export async function sendMessage(
       body: {
         accountId: input.accountId,
         ...(input.message ? { message: input.message } : {}),
+        ...(input.replyTo ? { replyTo: input.replyTo } : {}),
         ...(input.messageTag ? { messageTag: input.messageTag } : {}),
         ...(input.messagingType ? { messagingType: input.messagingType } : {}),
         ...(attachmentUrl ? { attachmentUrl, attachmentType: attachmentType || "image" } : {}),
