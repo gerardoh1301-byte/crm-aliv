@@ -40,10 +40,10 @@ export async function runAgentForConversation(conversationId: string): Promise<R
   if (!contact) return { ok: false, reason: "contact_not_found" };
 
   // El contacto es el kill-switch global; la conversacion pausa solo este hilo.
+  // "Avisar sin apagar": needsHuman sirve como insignia y filtro de bandeja para asesores,
+  // pero NO silencia al bot. Solo aiEnabled = false detiene la atención automática.
   if (!contact.aiEnabled) return { ok: false, reason: "ai_disabled" };
-  if (contact.needsHuman) return { ok: false, reason: "needs_human" };
   if (!conversation.aiEnabled) return { ok: false, reason: "ai_disabled_conversation" };
-  if (conversation.needsHuman) return { ok: false, reason: "needs_human_conversation" };
 
   const channel: Channel = isChannel(conversation.channel) ? conversation.channel : "whatsapp";
 
@@ -151,7 +151,9 @@ export async function runAgentForConversation(conversationId: string): Promise<R
 
     // Clasificar el error real para no confundir con "saturación" (N3)
     let categoriaError = "Error inesperado de IA";
-    if (status === 429) {
+    if (/timeout|timed out/i.test(rawMsg)) {
+      categoriaError = "Límite de tiempo agotado (Timeout de IA)";
+    } else if (status === 429) {
       categoriaError = "Límite de cuota de IA alcanzado (429 Rate Limit)";
     } else if (status === 404) {
       categoriaError = "Modelo de IA no encontrado (404 Not Found)";
@@ -161,18 +163,32 @@ export async function runAgentForConversation(conversationId: string): Promise<R
       categoriaError = "Error de autenticación de IA (401 Unauthorized)";
     }
 
+    // R9: Si el cliente estaba esperando respuesta (ej. dio sus datos), enviar mensaje de cortesía fijo
+    // en lugar de dejar el chat en silencio absoluto.
+    try {
+      await deliverMessage(
+        conversation.id,
+        { text: "Ya tomé tus datos, en unos minutos te confirmo 🙌" },
+        "agent"
+      );
+    } catch (deliverErr) {
+      console.warn("[agent] No se pudo enviar mensaje fallback al cliente:", deliverErr);
+    }
+
     // 1. Registrar nota de actividad visible y precisa en la ficha del contacto
     await db.insert(activities).values({
       type: "note",
-      description: `[ALERTA BOT] El bot no pudo responder: ${categoriaError}. Detalle: ${rawMsg.slice(0, 120)}.`,
+      description: `[ALERTA BOT] El bot tuvo contingencia: ${categoriaError}. Detalle: ${rawMsg.slice(0, 120)}. Se envió mensaje de cortesía y se alertó a asesores.`,
       contactId: contact.id,
     });
 
-    // 2. Registrar el motivo de alerta en la conversación sin bloquear permanentemente el bot (N1)
+    // 2. Registrar el motivo de alerta en la conversación (marca needsHuman para revisión humana)
     await db
       .update(conversations)
       .set({
-        needsHumanReason: `Alerta temporal: ${categoriaError}`,
+        needsHuman: true,
+        needsHumanReason: `Revisión requerida: ${categoriaError}`,
+        needsHumanAt: new Date(),
         updatedAt: new Date(),
       })
       .where(eq(conversations.id, conversation.id));

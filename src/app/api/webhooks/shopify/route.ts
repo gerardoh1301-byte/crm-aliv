@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { createHmac, timingSafeEqual } from "node:crypto";
 import { db } from "@/db";
 import { activities, contacts, crmSettings, webhookEvents } from "@/db/schema";
-import { eq, or } from "drizzle-orm";
+import { and, eq, gte, or } from "drizzle-orm";
 import { resolveDefaultTenantId } from "@/lib/tenants";
 import { sincronizarConGoogleDrive } from "@/lib/drive-sync";
 import { pedidosOrdenes, type ItemPedido } from "../../../../../modules/pedidos/tabla";
@@ -278,32 +278,65 @@ export async function POST(req: NextRequest) {
         `Pedido web ${numeroOrden} desde ${shopDomain} (Canal: ${payload.gateway || "EasySell COD Form"})`,
     });
 
-    const esProv = datosForm.esProvincia;
-    const totalNum = Number(payload.total_price) || 0;
-    const saldoNum = Math.max(0, totalNum - 20);
+    // R1: Detección de pedidos duplicados en las últimas 72 horas para el mismo cliente
+    const hace72Horas = new Date(Date.now() - 72 * 60 * 60 * 1000);
+    const [pedidoPrevioReciente] = await db
+      .select({ id: pedidosOrdenes.id, numeroOrden: pedidosOrdenes.numeroOrden, total: pedidosOrdenes.total })
+      .from(pedidosOrdenes)
+      .where(
+        and(
+          eq(pedidosOrdenes.contactId, contactId),
+          gte(pedidosOrdenes.createdAt, hace72Horas)
+        )
+      )
+      .limit(1);
 
-    await emitAutomationEvent({
-      trigger: "order.created",
-      contactId,
-      payload: {
-        orderId: numeroOrden,
-        numeroOrden,
-        contactName: nombre,
-        phone: telefono,
-        total: totalNum.toFixed(2),
-        totalSoles: totalNum,
-        ciudad,
-        distrito: distrito || "",
-        direccion: direccion || "",
-        productos: items.map((i) => `${i.cantidad}x ${i.titulo}`).join(", "),
-        esProvincia: String(esProv),
-        adelanto: "20.00",
-        saldo: saldoNum.toFixed(2),
-        modalidadPago: "contraentrega",
-        canal: "shopify",
-        origen: "shopify",
-      },
-    }).catch((err) => console.error("[shopify-webhook] error disparando automatizaciones:", err));
+    const esPosibleDuplicado = Boolean(pedidoPrevioReciente);
+
+    if (esPosibleDuplicado && pedidoPrevioReciente) {
+      await db.insert(activities).values({
+        type: "note",
+        description: `⚠️ [POSIBLE DUPLICADO] El cliente ya tiene el pedido ${pedidoPrevioReciente.numeroOrden} registrado en las últimas 72h. Se bloqueó el envío de plantilla automática para evitar confusión con montos distintos. Asesor debe confirmar con cliente cuál pedido es válido.`,
+        contactId,
+      });
+
+      await db
+        .update(contacts)
+        .set({
+          needsHuman: true,
+          needsHumanReason: `Posible pedido duplicado (${numeroOrden} vs ${pedidoPrevioReciente.numeroOrden})`,
+          needsHumanAt: new Date(),
+          updatedAt: new Date(),
+        })
+        .where(eq(contacts.id, contactId));
+    } else {
+      const esProv = datosForm.esProvincia;
+      const totalNum = Number(payload.total_price) || 0;
+      const saldoNum = Math.max(0, totalNum - 20);
+
+      await emitAutomationEvent({
+        trigger: "order.created",
+        contactId,
+        payload: {
+          orderId: numeroOrden,
+          numeroOrden,
+          contactName: nombre,
+          phone: telefono,
+          total: totalNum.toFixed(2),
+          totalSoles: totalNum,
+          ciudad,
+          distrito: distrito || "",
+          direccion: direccion || "",
+          productos: items.map((i) => `${i.cantidad}x ${i.titulo}`).join(", "),
+          esProvincia: String(esProv),
+          adelanto: "20.00",
+          saldo: saldoNum.toFixed(2),
+          modalidadPago: "contraentrega",
+          canal: "shopify",
+          origen: "shopify",
+        },
+      }).catch((err) => console.error("[shopify-webhook] error disparando automatizaciones:", err));
+    }
 
     await db.insert(activities).values({
       type: "note",

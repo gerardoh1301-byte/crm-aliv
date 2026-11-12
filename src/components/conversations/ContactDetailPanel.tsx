@@ -298,12 +298,12 @@ export function ContactDetailPanel({
             <span
               className={cn(
                 "inline-flex items-center gap-1 h-5 px-1.5 rounded-sm text-[10px] font-semibold uppercase tracking-wide",
-                aiEnabled && !needsHuman
+                aiEnabled
                   ? "bg-emerald-100 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-300"
                   : "bg-muted text-muted-foreground",
               )}
             >
-              {aiEnabled && !needsHuman ? "ON" : "OFF"}
+              {aiEnabled ? "ON" : "OFF"}
             </span>
           </div>
 

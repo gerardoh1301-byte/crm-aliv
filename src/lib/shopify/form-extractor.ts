@@ -264,31 +264,32 @@ export function extraerDatosFormularioShopify(payload: Record<string, any>): Ext
   }
 
   // 9. Flag Provincia vs Lima/Callao
-  // Jerarquía estricta para resolver B2, B2b y B2c:
-  // 1. Revisar San Martín de Porres (SMP): siempre es Lima Metropolitana sin excepción.
-  // 2. Si el departamento (deptoAttr, shipping.province, billing.province) indica Lima o Callao -> LIMA.
-  // 3. Si el departamento indica una región de provincia (Arequipa, Lambayeque, Áncash, etc.) -> PROVINCIA.
-  //    (Evita que Miraflores/Arequipa o La Victoria/Lambayeque salgan como Lima).
-  // 4. Si no hay departamento especificado o es genérico ("Peru"):
-  //    a) Revisar primero los distritos de Lima y Callao (DISTRITOS_LIMA_CALLAO) -> LIMA.
-  //    b) Si no coincide con ningún distrito de Lima/Callao (ej. Marcona, Abancay, Jaén, Nazca, Tingo María) -> PROVINCIA.
+  // Jerarquía estricta según auditoría (B2, B2b, B2c, B6):
+  // 1. El departamento manda (Regla B2b / B6):
+  //    a) Si el departamento indica Lima o Callao -> LIMA.
+  //    b) Si el departamento indica una región de provincia (Arequipa, Lambayeque, Piura, San Martín, etc.) -> PROVINCIA.
+  //       (Evita que calles "San Martín de Porres" en Tarapoto, Chiclayo, Arequipa o Piura salgan como Lima - Regresión B6).
+  // 2. Si no hay departamento concluyente (vacío o genérico "Peru"):
+  //    a) Buscar "San Martín de Porres" o "SMP" SOLO en distrito o ciudad (NUNCA en la calle/direccionEnvio) -> LIMA.
+  //    b) Evaluar distritos y ciudades reconocidos de Lima y Callao (DISTRITOS_LIMA_CALLAO) -> LIMA.
+  //    c) Si no coincide con ninguno (ej. Marcona, Abancay, Jaén, Nazca, Tingo María) -> PROVINCIA (B2c).
   const deptoRaw = [deptoAttr, shipping.province, billing.province].filter(Boolean).join(" ");
   const deptoLimpio = deptoRaw.toLowerCase().replace(/per[uú]/g, "").trim();
 
-  // Detección directa de San Martín de Porres / SMP
-  const esSMP = [distrito, ciudad, deptoLimpio, direccionEnvio].some(t => {
+  // Detección directa de San Martín de Porres / SMP SOLO en distrito o ciudad (NUNCA en direccionEnvio)
+  const esSMP = [distrito, ciudad].some(t => {
     if (!t) return false;
     const cl = t.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").trim();
     return cl.includes("san martin de porres") || /\bsmp\b/i.test(cl);
   });
 
   let esLima = false;
-  if (esSMP) {
-    esLima = true;
-  } else if (deptoLimpio && esUbicacionLimaOCallao(deptoLimpio)) {
+  if (deptoLimpio && esUbicacionLimaOCallao(deptoLimpio)) {
     esLima = true;
   } else if (deptoLimpio && esRegionProvincia(deptoLimpio)) {
     esLima = false;
+  } else if (esSMP) {
+    esLima = true;
   } else {
     // Sin departamento concluyente: evaluar primero distritos y ciudades reconocidos de Lima y Callao
     if (esUbicacionLimaOCallao(distrito, ciudad)) {

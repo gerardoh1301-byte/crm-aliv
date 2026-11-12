@@ -84,10 +84,18 @@ const REQUEST_OPTIONS: OpenAI.RequestOptions = {
 };
 
 export async function createChatCompletionWithFallback(
-  params: OpenAI.Chat.Completions.ChatCompletionCreateParamsNonStreaming
+  params: OpenAI.Chat.Completions.ChatCompletionCreateParamsNonStreaming,
+  options?: { timeout?: number }
 ): Promise<OpenAI.Chat.Completions.ChatCompletion> {
   const primaryClient = getOpenRouterClient();
   const requestedModel = params.model || getAgentModel();
+
+  // R9: 20s para rondas finales de texto, 12s para llamadas a herramientas
+  const timeoutMs = options?.timeout ?? (params.tools && params.tools.length > 0 ? 12000 : 20000);
+  const reqOptions: OpenAI.RequestOptions = {
+    timeout: timeoutMs,
+    maxRetries: 0,
+  };
 
   // 1. Intento primario con el modelo configurado
   try {
@@ -96,7 +104,7 @@ export async function createChatCompletionWithFallback(
         ...params,
         model: requestedModel,
       },
-      REQUEST_OPTIONS
+      reqOptions
     );
   } catch (err: unknown) {
     const error = err as { status?: number; code?: string | number; message?: string };
@@ -122,7 +130,7 @@ export async function createChatCompletionWithFallback(
               ...params,
               model: fallbackModel,
             },
-            REQUEST_OPTIONS
+            reqOptions
           );
         } catch (fbErr: unknown) {
           const fbStatus = (fbErr as { status?: number })?.status;
@@ -146,7 +154,7 @@ export async function createChatCompletionWithFallback(
               ...params,
               model: orModel,
             },
-            REQUEST_OPTIONS
+            reqOptions
           );
         } catch (orErr) {
           console.warn(`[agent-llm] Falló OpenRouter ${orModel}`);

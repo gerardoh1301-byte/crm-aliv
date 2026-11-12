@@ -231,36 +231,59 @@ async function resumenLead(
   return { ok: true, data: { guardado: true } };
 }
 
-async function derivarAsesor(args: { motivo?: string }, ctx: ToolContext): Promise<ToolResult> {
+async function derivarAsesor(args: { motivo?: string; apagarAgente?: boolean }, ctx: ToolContext): Promise<ToolResult> {
   const motivo = String(args.motivo ?? "derivado por el agente").slice(0, 300);
   const now = new Date();
 
-  // Se apaga el agente en ESTA conversacion, no en el contacto entero: derivar una
-  // consulta que entro por Instagram no deberia callar al agente en WhatsApp. El
-  // kill-switch global del contacto sigue existiendo desde la ficha.
+  // "Avisar sin apagar": marca alerta para el equipo humano pero NO apaga aiEnabled
+  // a menos que sea una baja ("no me escriban más").
+  const apagar = Boolean(args.apagarAgente) || /no (me )?escriban|baja|no contactar/i.test(motivo);
+
   if (ctx.conversationId) {
     await db
       .update(conversations)
-      .set({ aiEnabled: false, needsHuman: true, needsHumanReason: motivo, needsHumanAt: now, updatedAt: now })
+      .set({
+        ...(apagar ? { aiEnabled: false } : {}),
+        needsHuman: true,
+        needsHumanReason: motivo,
+        needsHumanAt: now,
+        updatedAt: now,
+      })
       .where(eq(conversations.id, ctx.conversationId));
   } else {
     await db
       .update(contacts)
-      .set({ aiEnabled: false, needsHuman: true, needsHumanReason: motivo, needsHumanAt: now, updatedAt: now })
+      .set({
+        ...(apagar ? { aiEnabled: false } : {}),
+        needsHuman: true,
+        needsHumanReason: motivo,
+        needsHumanAt: now,
+        updatedAt: now,
+      })
       .where(eq(contacts.id, ctx.contactId));
   }
 
   await db.insert(activities).values({
     type: "note",
-    description: `Agente IA derivo a humano. Motivo: ${motivo}`,
+    description: `Agente IA notificó a asesor. Motivo: ${motivo}${apagar ? " (Agente pausado)" : " (Agente sigue activo)"}`,
     contactId: ctx.contactId,
   });
 
   return {
     ok: true,
-    stop: true,
-    data: { derivado: true, motivo, message: "Agente pausado en esta conversacion. Una persona del equipo sigue." },
+    stop: apagar,
+    data: {
+      derivado: true,
+      motivo,
+      message: apagar
+        ? "Agente pausado en esta conversacion por baja o solicitud expresa."
+        : "Asesor alertado en el CRM. El agente sigue activo respondiendo dudas simples sin confirmar pagos.",
+    },
   };
+}
+
+async function avisarAsesor(args: { motivo?: string }, ctx: ToolContext): Promise<ToolResult> {
+  return derivarAsesor({ motivo: args.motivo ?? "aviso a asesor", apagarAgente: false }, ctx);
 }
 
 async function asignarAsesor(args: { asesor?: string; motivo?: string }, ctx: ToolContext): Promise<ToolResult> {
@@ -454,17 +477,34 @@ function toolsGenericas(): ToolAgente[] {
     {
       definicion: definir(
         "derivar_asesor",
-        "Pasa la conversacion a una persona del equipo y PAUSA al agente en este hilo. " +
-          "Usar cuando la consulta excede lo que sabes, una herramienta falla, o el cliente pide hablar con alguien.",
+        "Pasa la conversación al equipo humano marcando una alerta en el CRM. " +
+          "Usar ante consultas de salud delicadas, reclamos o cuando el cliente solicita un asesor humano. " +
+          "El bot sigue activo respondiendo dudas simples mientras el asesor toma el chat.",
         {
           type: "object",
-          properties: { motivo: { type: "string", description: "Razon corta de la derivacion." } },
+          properties: { motivo: { type: "string", description: "Razón detallada de la derivación o alerta." } },
           required: ["motivo"],
           additionalProperties: false,
         }
       ),
-      descripcionUI: "Permite al agente derivar a un humano (pausa el agente solo en esa conversacion). Recomendado dejar activa.",
+      descripcionUI: "Permite al agente alertar a un asesor en el CRM sin apagar al bot (avisa sin apagar).",
       ejecutar: (a, ctx) => derivarAsesor(a as { motivo?: string }, ctx),
+    },
+    {
+      definicion: definir(
+        "avisar_asesor",
+        "Avisa inmediatamente al equipo humano en el CRM marcando la conversación como 'requiere humano'. " +
+          "El bot SIGUE ACTIVO en el chat. Usar ante capturas de pago enviadas, pedido con datos completos, " +
+          "o cambios solicitados por el cliente.",
+        {
+          type: "object",
+          properties: { motivo: { type: "string", description: "Motivo del aviso (ej. 'Captura de pago recibida para validar despacho')" } },
+          required: ["motivo"],
+          additionalProperties: false,
+        }
+      ),
+      descripcionUI: "Alerta al equipo humano en el CRM de inmediato mientras el bot sigue atendiendo (avisar sin apagar).",
+      ejecutar: (a, ctx) => avisarAsesor(a as { motivo?: string }, ctx),
     },
     {
       definicion: definir(

@@ -104,12 +104,12 @@ export async function claimAgentJob(jobId: string): Promise<
     return { ok: false, reason: "contact_not_found" };
   }
 
-  if (!contact.aiEnabled || contact.needsHuman) {
+  if (!contact.aiEnabled) {
     await db
       .update(agentJobs)
       .set({
         status: "done",
-        error: !contact.aiEnabled ? "ai_disabled" : "needs_human",
+        error: "ai_disabled",
         updatedAt: new Date(),
       })
       .where(eq(agentJobs.id, jobId));
@@ -129,12 +129,12 @@ export async function claimAgentJob(jobId: string): Promise<
       .where(eq(conversations.id, job.conversationId))
       .limit(1);
 
-    if (conv && (!conv.aiEnabled || conv.needsHuman)) {
+    if (conv && !conv.aiEnabled) {
       await db
         .update(agentJobs)
         .set({
           status: "done",
-          error: !conv.aiEnabled ? "ai_disabled_conversation" : "needs_human_conversation",
+          error: "ai_disabled_conversation",
           updatedAt: new Date(),
         })
         .where(eq(agentJobs.id, jobId));

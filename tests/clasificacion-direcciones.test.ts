@@ -160,18 +160,50 @@ describe("Clasificación de direcciones Lima vs Provincia (16 casos de auditorí
     expect(res.esProvincia).toBe(true);
   });
 
-  it("22. San Martín de Porres con province 'San Martín' o genérica -> Lima (B2 auditoría)", () => {
+  it("22. SMP real, departamento Lima -> Lima (B2)", () => {
     const res = extraerDatosFormularioShopify({
-      shipping_address: { city: "San Martín de Porres", province: "San Martín", address1: "Av. Habich 123" },
+      shipping_address: { city: "San Martín de Porres", province: "Lima", address1: "Av. Habich 123" },
     });
     expect(res.esProvincia).toBe(false);
     expect(res.ciudad).toBe("Lima");
   });
 
-  it("23. San Martín de Porres en dirección con city genérica 'Lima' -> Lima", () => {
+  it("23. SMP sin departamento (genérico) -> Lima", () => {
     const res = extraerDatosFormularioShopify({
-      shipping_address: { city: "Lima", address1: "Av. Perú 345, SMP" },
+      shipping_address: { city: "San Martín de Porres", address1: "Av. Habich 123" },
     });
     expect(res.esProvincia).toBe(false);
+    expect(res.ciudad).toBe("Lima");
+  });
+
+  // B6: Regresión de calles / AAHH 'San Martín de Porres' en provincia deben ser PROVINCIA
+  it("24. Tarapoto, depto San Martín, Jr. San Martín de Porres 245 -> Provincia (B6)", () => {
+    const res = extraerDatosFormularioShopify({
+      shipping_address: { city: "Tarapoto", province: "San Martín", address1: "Jr. San Martín de Porres 245" },
+    });
+    expect(res.esProvincia).toBe(true);
+  });
+
+  it("25. Chiclayo, Lambayeque, Calle San Martín de Porres 110 -> Provincia (B6)", () => {
+    const res = extraerDatosFormularioShopify({
+      shipping_address: { city: "Chiclayo", province: "Lambayeque", address1: "Calle San Martín de Porres 110" },
+    });
+    expect(res.esProvincia).toBe(true);
+  });
+
+  it("26. Arequipa por EasySell, Av. San Martín de Porres 300 -> Provincia (B6)", () => {
+    const res = extraerDatosFormularioShopify({
+      shipping_address: { city: "Arequipa", address1: "Av. San Martín de Porres 300" },
+      note_attributes: [{ name: "departamento", value: "Arequipa" }],
+    });
+    expect(res.esProvincia).toBe(true);
+  });
+
+  it("27. Piura por EasySell, AAHH San Martin de Porres Mz B lt 4 -> Provincia (B6)", () => {
+    const res = extraerDatosFormularioShopify({
+      shipping_address: { city: "Piura", address1: "AAHH San Martin de Porres Mz B lt 4" },
+      note_attributes: [{ name: "departamento", value: "Piura" }],
+    });
+    expect(res.esProvincia).toBe(true);
   });
 });
