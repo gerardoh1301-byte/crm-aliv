@@ -239,10 +239,10 @@ export function DealCard({
 
   // Botón Rótulo Motorizado: Si es Lima y tiene datos de envío
   const mostrarBotonRotulo = esLima && tieneDatosEnvio;
-  // Botón Rótulo Shalom: Si es Provincia, o indica Shalom, o tiene datos de envío
+  // Botón de Seguimiento Shalom: Si es Provincia o Shalom (siempre disponible para registrar/ver datos)
+  const mostrarBotonShalom = esShalom || esProvincia || !esLima || Boolean(currentNumeroGuia);
+  // Botón Rótulo Shalom (Imagen): Siempre disponible como opción adicional
   const mostrarBotonShalomRotulo = (esShalom || esProvincia || !esLima) && tieneDatosEnvio;
-  // Botón Seguimiento Shalom: Si ya tiene guía o está en despacho
-  const mostrarBotonShalomSeguimiento = esShalom && (esConfirmadoODespacho || Boolean(currentNumeroGuia));
 
   const numeroOrdenLimpio =
     numeroOrden ||
@@ -261,8 +261,13 @@ export function DealCard({
   };
 
   const rotuloShalomData: RotuloShalomData = {
-    numeroOrden: numeroOrdenLimpio,
+    pedidoId: pedidoId || null,
+    dealId: id,
+    numeroOrden: currentNumeroGuia || numeroOrdenLimpio,
     codigo: currentCodigoRastreo || currentClaveRecojo || null,
+    numeroGuia: currentNumeroGuia || null,
+    codigoRastreo: currentCodigoRastreo || null,
+    claveRecojo: currentClaveRecojo || null,
     destinatario: contactName || "Cliente Aliv",
     dni: dniCliente || null,
     departamento: ciudad || null,
@@ -544,7 +549,38 @@ export function DealCard({
           </div>
         )}
 
-        {/* Botón de Rótulo Shalom (Imagen oficial para provincia y agencia Shalom) */}
+        {/* Botón de Seguimiento Shalom: Registro y gestión de Guía, N° Orden y Código (función original) */}
+        {mostrarBotonShalom && (
+          <Button
+            type="button"
+            size="sm"
+            variant="outline"
+            onClick={(e) => {
+              e.stopPropagation();
+              setShalomOpen(true);
+            }}
+            title={
+              currentNumeroGuia
+                ? `Guía Shalom: ${currentNumeroGuia}${currentCodigoRastreo ? ` (Cód: ${currentCodigoRastreo})` : ""}${currentClaveRecojo ? ` (Clave: ${currentClaveRecojo})` : ""}`
+                : "Registrar datos y guía de Shalom (N° orden, código y clave)"
+            }
+            className={cn(
+              "w-full h-7 text-[11px] font-bold flex items-center justify-center gap-1.5 shadow-none transition-all cursor-pointer",
+              currentNumeroGuia
+                ? "bg-red-500/10 hover:bg-red-500/20 text-red-700 dark:text-red-400 border border-red-500/30"
+                : "bg-amber-500/10 hover:bg-amber-500/20 text-amber-700 dark:text-amber-400 border border-amber-500/30"
+            )}
+          >
+            <Truck className="h-3.5 w-3.5 shrink-0 text-red-600" />
+            <span className="truncate">
+              {currentNumeroGuia
+                ? `Shalom: #${currentNumeroGuia}${currentCodigoRastreo ? ` · Cód: ${currentCodigoRastreo}` : ""}${currentClaveRecojo ? ` · ${currentClaveRecojo}` : ""}`
+                : "Registrar Guía Shalom"}
+            </span>
+          </Button>
+        )}
+
+        {/* Botón Adicional de Rótulo Shalom (Generar imagen oficial de etiqueta para paquete) */}
         {mostrarBotonShalomRotulo && (
           <Button
             type="button"
@@ -554,8 +590,8 @@ export function DealCard({
               e.stopPropagation();
               setRotuloShalomOpen(true);
             }}
-            title="Generar imagen oficial de rótulo / etiqueta Shalom para el paquete"
-            className="w-full h-7 text-[11px] font-bold bg-red-500/10 hover:bg-red-500/20 text-red-700 dark:text-red-400 border border-red-500/30 flex items-center justify-center gap-1.5 shadow-none transition-all cursor-pointer"
+            title="Generar e imprimir imagen oficial de rótulo / etiqueta Shalom para el paquete"
+            className="w-full h-7 text-[11px] font-bold bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-800 dark:text-slate-200 border border-slate-300 dark:border-slate-700 flex items-center justify-center gap-1.5 shadow-none transition-all cursor-pointer"
           >
             <FileImage className="h-3.5 w-3.5 text-red-600 shrink-0" />
             <span className="truncate">Rótulo Shalom (Imagen)</span>
@@ -577,37 +613,6 @@ export function DealCard({
           >
             <Printer className="h-3.5 w-3.5 shrink-0" />
             <span>Rótulo Motorizado (10.5×9 cm)</span>
-          </Button>
-        )}
-
-        {/* Botón de Seguimiento Shalom (Cuando ya cuenta con número de guía o despacho registrado) */}
-        {mostrarBotonShalomSeguimiento && (
-          <Button
-            type="button"
-            size="sm"
-            variant="outline"
-            onClick={(e) => {
-              e.stopPropagation();
-              setShalomOpen(true);
-            }}
-            title={
-              currentNumeroGuia
-                ? `Guía Shalom: ${currentNumeroGuia}${currentCodigoRastreo ? ` (Cód: ${currentCodigoRastreo})` : ""}${currentClaveRecojo ? ` (Clave: ${currentClaveRecojo})` : ""}`
-                : "Registrar seguimiento y guía de Shalom"
-            }
-            className={cn(
-              "w-full h-7 text-[11px] font-bold flex items-center justify-center gap-1.5 shadow-none transition-all cursor-pointer",
-              currentNumeroGuia
-                ? "bg-red-500/10 hover:bg-red-500/20 text-red-700 dark:text-red-400 border border-red-500/30"
-                : "bg-amber-500/10 hover:bg-amber-500/20 text-amber-700 dark:text-amber-400 border border-amber-500/30"
-            )}
-          >
-            <Truck className="h-3.5 w-3.5 shrink-0 text-red-600" />
-            <span className="truncate">
-              {currentNumeroGuia
-                ? `Shalom: #${currentNumeroGuia}${currentCodigoRastreo ? ` · Cód: ${currentCodigoRastreo}` : ""}${currentClaveRecojo ? ` · ${currentClaveRecojo}` : ""}`
-                : "Registrar Guía Shalom"}
-            </span>
           </Button>
         )}
 
@@ -758,10 +763,16 @@ export function DealCard({
           open={rotuloShalomOpen}
           onOpenChange={setRotuloShalomOpen}
           data={rotuloShalomData}
+          onUpdated={(guia, codigo, clave) => {
+            setCurrentNumeroGuia(guia || null);
+            setCurrentCodigoRastreo(codigo || null);
+            setCurrentClaveRecojo(clave || null);
+          }}
+          onAbrirSeguimientoCompleto={() => setShalomOpen(true)}
         />
       )}
 
-      {mostrarBotonShalomSeguimiento && (
+      {mostrarBotonShalom && (
         <SeguimientoShalomModal
           open={shalomOpen}
           onOpenChange={setShalomOpen}
@@ -771,6 +782,7 @@ export function DealCard({
             setCurrentCodigoRastreo(codigo || null);
             setCurrentClaveRecojo(clave || null);
           }}
+          onAbrirRotulo={() => setRotuloShalomOpen(true)}
         />
       )}
 

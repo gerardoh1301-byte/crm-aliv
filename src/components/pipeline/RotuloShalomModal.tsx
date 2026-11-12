@@ -9,12 +9,29 @@ import {
   DialogDescription,
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
-import { Download, Copy, Check, Printer, Truck, FileImage } from "lucide-react";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import {
+  Download,
+  Copy,
+  Check,
+  Printer,
+  Truck,
+  FileImage,
+  Save,
+  ExternalLink,
+} from "lucide-react";
 import { toast } from "sonner";
+import { useRouter } from "next/navigation";
 
 export interface RotuloShalomData {
+  pedidoId?: string | null;
+  dealId?: string | null;
   numeroOrden: string;
   codigo?: string | null;
+  numeroGuia?: string | null;
+  codigoRastreo?: string | null;
+  claveRecojo?: string | null;
   destinatario: string;
   dni?: string | null;
   departamento?: string | null;
@@ -34,16 +51,44 @@ interface RotuloShalomModalProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   data: RotuloShalomData;
+  onUpdated?: (numeroGuia: string, codigoRastreo: string, claveRecojo: string) => void;
+  onAbrirSeguimientoCompleto?: () => void;
 }
 
 export function RotuloShalomModal({
   open,
   onOpenChange,
   data,
+  onUpdated,
+  onAbrirSeguimientoCompleto,
 }: RotuloShalomModalProps) {
+  const router = useRouter();
   const [copied, setCopied] = useState(false);
   const [downloading, setDownloading] = useState(false);
+  const [guardando, setGuardando] = useState(false);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
+
+  // Campos editables para registrar o cambiar N° de Orden y Código de Shalom
+  const defaultOrden =
+    data.numeroGuia ||
+    data.numeroOrden?.replace(/[^0-9]/g, "") ||
+    "1000";
+  const defaultCodigo =
+    data.codigoRastreo ||
+    data.codigo ||
+    `SH${defaultOrden.slice(-3)}`;
+
+  const [numOrdenInput, setNumOrdenInput] = useState(defaultOrden);
+  const [codigoInput, setCodigoInput] = useState(defaultCodigo);
+  const [claveRecojoInput, setClaveRecojoInput] = useState(data.claveRecojo || "");
+
+  // Sincronizar si cambian los datos de entrada
+  useEffect(() => {
+    const orden = data.numeroGuia || data.numeroOrden?.replace(/[^0-9]/g, "") || "1000";
+    setNumOrdenInput(orden);
+    setCodigoInput(data.codigoRastreo || data.codigo || `SH${orden.slice(-3)}`);
+    setClaveRecojoInput(data.claveRecojo || "");
+  }, [data.numeroGuia, data.numeroOrden, data.codigoRastreo, data.codigo, data.claveRecojo]);
 
   // Formato de fecha para el rótulo: ej. "NOVEMBER 12-2026 / 09:15 AM/ 2026"
   const now = new Date();
@@ -59,13 +104,6 @@ export function RotuloShalomModal({
   horas = horas % 12 || 12;
   const minutos = String(now.getMinutes()).padStart(2, "0");
   const fechaRótulo = `${mesNombre} ${dia}-${anio} / ${String(horas).padStart(2, "0")}:${minutos} ${ampm}/ ${anio}`;
-
-  // Número de orden limpio
-  const numOrdenLimpio = (data.numeroOrden || "1000").replace(/[^0-9]/g, "") || "1000";
-  // Código corto para el rótulo (ej. CDT9 o derivado del destino)
-  const codigoRótulo =
-    data.codigo?.toUpperCase() ||
-    `SH${numOrdenLimpio.slice(-3)}`;
 
   // Destino jerárquico: ej. "Junin - Satipo - Mazamari"
   const partesDestino = [
@@ -160,7 +198,6 @@ export function RotuloShalomModal({
     ctx.fillRect(450, 67, 10, 8);
 
     // Logo Shalom en la cabecera (Derecha)
-    // S estilizada
     ctx.save();
     ctx.fillStyle = "#FFFFFF";
     ctx.beginPath();
@@ -187,10 +224,10 @@ export function RotuloShalomModal({
 
     ctx.fillStyle = "#1E293B";
     ctx.font = "700 34px sans-serif";
-    ctx.fillText("N° de Orden: " + numOrdenLimpio, colLeftX + 35, box1Y + 62);
+    ctx.fillText("N° de Orden: " + numOrdenInput, colLeftX + 35, box1Y + 62);
 
     ctx.font = "900 36px sans-serif";
-    ctx.fillText("Código: " + codigoRótulo, colLeftX + 35, box1Y + 118);
+    ctx.fillText("Código: " + codigoInput, colLeftX + 35, box1Y + 118);
 
     // Caja 2: Destinatario y Destino (Bottom)
     const box2Y = 300;
@@ -231,7 +268,6 @@ export function RotuloShalomModal({
     curY += 38;
     ctx.fillStyle = "#475569";
     ctx.font = "500 20px sans-serif";
-    // Si la dirección es larga, dividirla en 2 líneas
     const dirTexto = direccionCompleta || "Entrega en Agencia Shalom";
     if (dirTexto.length > 55) {
       ctx.fillText(dirTexto.slice(0, 55), colLeftX + 35, curY);
@@ -252,7 +288,6 @@ export function RotuloShalomModal({
     const box3H = 270;
     roundRect(colRightX, box3Y, colRightW, box3H, 18, "#0A1D33");
 
-    // Dibujo del isotipo de Aliv (Hoja verde con pulso blanco)
     const logoCenterX = colRightX + colRightW / 2;
     const logoCenterY = box3Y + box3H / 2;
 
@@ -308,15 +343,13 @@ export function RotuloShalomModal({
     const agY = box4Y + 30;
     ctx.strokeStyle = "#DE1C24";
     ctx.lineWidth = 3.5;
-    ctx.strokeRect(agX, agY + 16, 60, 48); // Fachada
-    // Marquesina / techo
+    ctx.strokeRect(agX, agY + 16, 60, 48);
     ctx.beginPath();
     ctx.moveTo(agX - 6, agY + 16);
     ctx.lineTo(agX + 30, agY - 2);
     ctx.lineTo(agX + 66, agY + 16);
     ctx.closePath();
     ctx.stroke();
-    // Puertas
     ctx.strokeRect(agX + 14, agY + 30, 32, 34);
     ctx.beginPath();
     ctx.moveTo(agX + 30, agY + 30);
@@ -333,7 +366,6 @@ export function RotuloShalomModal({
     ctx.font = "800 17px sans-serif";
     ctx.fillText(fechaRótulo, colRightX + colRightW / 2, 680);
 
-    // Línea subrayada fina
     ctx.strokeStyle = "#475569";
     ctx.lineWidth = 1.5;
     ctx.beginPath();
@@ -342,8 +374,8 @@ export function RotuloShalomModal({
     ctx.stroke();
     ctx.textAlign = "left";
   }, [
-    numOrdenLimpio,
-    codigoRótulo,
+    numOrdenInput,
+    codigoInput,
     data.destinatario,
     data.dni,
     textoDestinoRuta,
@@ -359,6 +391,40 @@ export function RotuloShalomModal({
     }
   }, [open, dibujarEnCanvas]);
 
+  // Guardar datos de Shalom (N° orden, código y clave) en la base de datos
+  const handleGuardarDatosShalom = async () => {
+    setGuardando(true);
+    try {
+      const res = await fetch("/api/pedidos/seguimiento", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          pedidoId: data.pedidoId,
+          dealId: data.dealId,
+          numeroOrden: data.numeroOrden,
+          transportadora: "Shalom",
+          numeroGuia: numOrdenInput.trim(),
+          codigoRastreo: codigoInput.trim(),
+          claveRecojo: claveRecojoInput.trim(),
+          estado: "enviado",
+        }),
+      });
+
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.error || "No se pudo guardar los datos de Shalom");
+      }
+
+      onUpdated?.(numOrdenInput.trim(), codigoInput.trim(), claveRecojoInput.trim());
+      toast.success("¡Datos de Shalom guardados exitosamente!");
+      router.refresh();
+    } catch (e: any) {
+      toast.error(e.message || "Error al guardar datos de Shalom");
+    } finally {
+      setGuardando(false);
+    }
+  };
+
   // Acción: Descargar Imagen PNG
   const handleDescargarPNG = () => {
     const canvas = canvasRef.current;
@@ -369,7 +435,7 @@ export function RotuloShalomModal({
       const dataUrl = canvas.toDataURL("image/png");
       const a = document.createElement("a");
       a.href = dataUrl;
-      a.download = `rotulo-shalom-${numOrdenLimpio}.png`;
+      a.download = `rotulo-shalom-${numOrdenInput}.png`;
       document.body.appendChild(a);
       a.click();
       document.body.removeChild(a);
@@ -382,7 +448,7 @@ export function RotuloShalomModal({
     }
   };
 
-  // Acción: Copiar Imagen al Portapapeles (para pegar directo en WhatsApp Web)
+  // Acción: Copiar Imagen al Portapapeles
   const handleCopiarImagen = async () => {
     const canvas = canvasRef.current;
     if (!canvas) return;
@@ -394,7 +460,6 @@ export function RotuloShalomModal({
           return;
         }
         try {
-          // Escribir imagen en el portapapeles del sistema
           await navigator.clipboard.write([
             new ClipboardItem({ "image/png": blob }),
           ]);
@@ -428,7 +493,7 @@ export function RotuloShalomModal({
       <!DOCTYPE html>
       <html>
         <head>
-          <title>Rótulo Shalom #${numOrdenLimpio} - Aliv Perú</title>
+          <title>Rótulo Shalom #${numOrdenInput} - Aliv Perú</title>
           <style>
             @page { size: landscape; margin: 0; }
             body { margin: 0; padding: 0; display: flex; align-items: center; justify-content: center; height: 100vh; background: #fff; }
@@ -445,7 +510,7 @@ export function RotuloShalomModal({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-[760px] p-4 sm:p-6 overflow-hidden">
+      <DialogContent className="max-w-[780px] p-4 sm:p-5 overflow-hidden">
         <DialogHeader className="pb-2 border-b border-border/50">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2">
@@ -456,19 +521,84 @@ export function RotuloShalomModal({
                 <DialogTitle className="text-base font-bold flex items-center gap-2">
                   <span>Rótulo de Envío Shalom</span>
                   <span className="text-xs font-semibold px-2 py-0.5 rounded-full bg-red-100 text-red-700 dark:bg-red-950/50 dark:text-red-400">
-                    #{numOrdenLimpio}
+                    #{numOrdenInput}
                   </span>
                 </DialogTitle>
                 <DialogDescription className="text-xs text-muted-foreground">
-                  Etiqueta oficial para paquetes de agencia Shalom. Genera imagen PNG lista para enviar o imprimir.
+                  Etiqueta oficial para paquetes de agencia Shalom. Registra los datos y genera imagen PNG lista para enviar o imprimir.
                 </DialogDescription>
               </div>
             </div>
           </div>
         </DialogHeader>
 
+        {/* Panel de registro y edición de datos Shalom en vivo */}
+        <div className="bg-slate-50 dark:bg-slate-900/60 p-2.5 rounded-xl border border-border/60 my-1 flex flex-wrap items-end gap-2.5">
+          <div className="flex-1 min-w-[130px]">
+            <Label className="text-[11px] font-semibold text-slate-600 dark:text-slate-400">
+              N° Orden / Guía Shalom
+            </Label>
+            <Input
+              value={numOrdenInput}
+              onChange={(e) => setNumOrdenInput(e.target.value)}
+              placeholder="Ej: 103386961"
+              className="h-8 text-xs font-bold bg-white dark:bg-slate-950"
+            />
+          </div>
+          <div className="w-[120px]">
+            <Label className="text-[11px] font-semibold text-slate-600 dark:text-slate-400">
+              Código Shalom
+            </Label>
+            <Input
+              value={codigoInput}
+              onChange={(e) => setCodigoInput(e.target.value.toUpperCase())}
+              placeholder="Ej: CDT9"
+              className="h-8 text-xs font-bold uppercase bg-white dark:bg-slate-950"
+            />
+          </div>
+          <div className="w-[110px]">
+            <Label className="text-[11px] font-semibold text-slate-600 dark:text-slate-400">
+              Clave Recojo
+            </Label>
+            <Input
+              value={claveRecojoInput}
+              onChange={(e) => setClaveRecojoInput(e.target.value)}
+              placeholder="Ej: 1234"
+              className="h-8 text-xs font-bold bg-white dark:bg-slate-950"
+            />
+          </div>
+          <Button
+            type="button"
+            size="sm"
+            onClick={handleGuardarDatosShalom}
+            disabled={guardando}
+            className="h-8 text-xs font-bold bg-emerald-600 hover:bg-emerald-700 text-white gap-1.5 cursor-pointer shadow-xs"
+            title="Guardar estos números en la base de datos del pedido"
+          >
+            <Save className="h-3.5 w-3.5" />
+            <span>{guardando ? "Guardando..." : "Guardar en Pedido"}</span>
+          </Button>
+
+          {onAbrirSeguimientoCompleto && (
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={() => {
+                onOpenChange(false);
+                onAbrirSeguimientoCompleto();
+              }}
+              className="h-8 text-xs font-semibold text-slate-700 dark:text-slate-300 gap-1"
+              title="Abrir formulario completo con opciones de WhatsApp y tracking"
+            >
+              <ExternalLink className="h-3 w-3" />
+              <span>Gestión Completa</span>
+            </Button>
+          )}
+        </div>
+
         {/* Vista previa visual interactiva idéntica a la imagen de referencia */}
-        <div className="my-2 flex flex-col items-center">
+        <div className="my-1 flex flex-col items-center">
           <div className="w-full max-w-[680px] rounded-2xl overflow-hidden border border-slate-300 shadow-md bg-[#EAF4F9] select-none">
             {/* Cabecera Roja */}
             <div className="bg-[#DE1C24] text-white px-4 py-2.5 flex items-center justify-between m-2.5 rounded-xl shadow-sm">
@@ -493,11 +623,11 @@ export function RotuloShalomModal({
                   <p className="text-sm font-bold text-slate-800">
                     N° de Orden:{" "}
                     <span className="text-base font-black text-slate-900">
-                      {numOrdenLimpio}
+                      {numOrdenInput}
                     </span>
                   </p>
                   <p className="text-base font-black text-slate-900 mt-1">
-                    Código: <span>{codigoRótulo}</span>
+                    Código: <span>{codigoInput}</span>
                   </p>
                 </div>
 
@@ -613,7 +743,7 @@ export function RotuloShalomModal({
               variant="outline"
               size="sm"
               onClick={handleCopiarImagen}
-              className="gap-1.5 text-xs font-semibold"
+              className="gap-1.5 text-xs font-semibold cursor-pointer"
             >
               {copied ? (
                 <>
@@ -634,7 +764,7 @@ export function RotuloShalomModal({
               variant="outline"
               size="sm"
               onClick={handleImprimir}
-              className="gap-1.5 text-xs font-semibold"
+              className="gap-1.5 text-xs font-semibold cursor-pointer"
             >
               <Printer className="h-3.5 w-3.5" />
               <span>Imprimir</span>
@@ -646,7 +776,7 @@ export function RotuloShalomModal({
               size="sm"
               onClick={handleDescargarPNG}
               disabled={downloading}
-              className="gap-1.5 text-xs font-bold bg-red-600 hover:bg-red-700 text-white shadow-sm"
+              className="gap-1.5 text-xs font-bold bg-red-600 hover:bg-red-700 text-white shadow-sm cursor-pointer"
             >
               <Download className="h-3.5 w-3.5" />
               <span>Descargar Imagen PNG</span>

@@ -22,6 +22,7 @@ import {
   Loader2,
   Sparkles,
   Lock,
+  FileImage,
 } from "lucide-react";
 import { toast } from "sonner";
 import { useRouter } from "next/navigation";
@@ -51,6 +52,7 @@ interface SeguimientoShalomModalProps {
   onOpenChange: (open: boolean) => void;
   data: SeguimientoShalomData;
   onUpdated?: (numeroGuia: string, codigoRastreo: string, claveRecojo: string) => void;
+  onAbrirRotulo?: () => void;
 }
 
 export function SeguimientoShalomModal({
@@ -58,6 +60,7 @@ export function SeguimientoShalomModal({
   onOpenChange,
   data,
   onUpdated,
+  onAbrirRotulo,
 }: SeguimientoShalomModalProps) {
   const router = useRouter();
 
@@ -496,27 +499,46 @@ Recuerda acudir con tu DNI físico original para el retiro. ¡Que disfrutes tus 
             )}
           </div>
 
-          <div className="flex items-center justify-end gap-2 pt-1 border-t border-border/30">
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              onClick={() => onOpenChange(false)}
-              className="text-xs h-8"
-            >
-              Cancelar
-            </Button>
-            <Button
-              type="button"
-              variant="default"
-              size="sm"
-              disabled={saving || sendingAuto}
-              onClick={handleGuardar}
-              className="text-xs h-8 bg-red-600 hover:bg-red-700 text-white font-semibold"
-            >
-              <Save className="h-3.5 w-3.5 mr-1.5" />
-              {saving ? "Guardando..." : "Guardar sin Enviar"}
-            </Button>
+          <div className="flex items-center justify-between gap-2 pt-1 border-t border-border/30">
+            {onAbrirRotulo && (
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={() => {
+                  onOpenChange(false);
+                  onAbrirRotulo();
+                }}
+                className="text-xs h-8 text-red-600 border-red-200 hover:bg-red-50 dark:hover:bg-red-950/30 font-semibold gap-1.5 cursor-pointer"
+                title="Generar la imagen oficial del rótulo Shalom para este paquete"
+              >
+                <FileImage className="h-3.5 w-3.5" />
+                <span>Ver Rótulo (Imagen)</span>
+              </Button>
+            )}
+
+            <div className="flex items-center gap-2 ml-auto">
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={() => onOpenChange(false)}
+                className="text-xs h-8"
+              >
+                Cancelar
+              </Button>
+              <Button
+                type="button"
+                variant="default"
+                size="sm"
+                disabled={saving || sendingAuto}
+                onClick={handleGuardar}
+                className="text-xs h-8 bg-red-600 hover:bg-red-700 text-white font-semibold cursor-pointer"
+              >
+                <Save className="h-3.5 w-3.5 mr-1.5" />
+                {saving ? "Guardando..." : "Guardar sin Enviar"}
+              </Button>
+            </div>
           </div>
         </div>
       </DialogContent>
