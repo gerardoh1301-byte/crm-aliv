@@ -21,12 +21,14 @@ import {
   Clock,
   X,
   Package,
+  FileImage,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { avatarBg, getInitials } from "@/lib/avatar";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { RotuloMotorizadoModal, type RotuloData } from "./RotuloMotorizadoModal";
+import { RotuloShalomModal, type RotuloShalomData } from "./RotuloShalomModal";
 import {
   SeguimientoShalomModal,
   type SeguimientoShalomData,
@@ -100,6 +102,7 @@ export function DealCard({
 }: DealCardProps) {
   const router = useRouter();
   const [rotuloOpen, setRotuloOpen] = useState(false);
+  const [rotuloShalomOpen, setRotuloShalomOpen] = useState(false);
   const [shalomOpen, setShalomOpen] = useState(false);
   const [assignOpen, setAssignOpen] = useState(false);
   const [currentOwnerId, setCurrentOwnerId] = useState<string | null>(ownerId ?? null);
@@ -232,8 +235,14 @@ export function DealCard({
     stageNameLower.includes("camino") ||
     stageNameLower.includes("despachad");
 
-  const mostrarBotonRotulo = esLima && esConfirmadoODespacho;
-  const mostrarBotonShalom = esShalom && esConfirmadoODespacho;
+  const tieneDatosEnvio = Boolean(direccion || ciudad || distrito || numeroOrden);
+
+  // Botón Rótulo Motorizado: Si es Lima y tiene datos de envío
+  const mostrarBotonRotulo = esLima && tieneDatosEnvio;
+  // Botón Rótulo Shalom: Si es Provincia, o indica Shalom, o tiene datos de envío
+  const mostrarBotonShalomRotulo = (esShalom || esProvincia || !esLima) && tieneDatosEnvio;
+  // Botón Seguimiento Shalom: Si ya tiene guía o está en despacho
+  const mostrarBotonShalomSeguimiento = esShalom && (esConfirmadoODespacho || Boolean(currentNumeroGuia));
 
   const numeroOrdenLimpio =
     numeroOrden ||
@@ -249,6 +258,26 @@ export function DealCard({
     direccion: direccion || "",
     referencia: referencia || null,
     total: value || 0,
+  };
+
+  const rotuloShalomData: RotuloShalomData = {
+    numeroOrden: numeroOrdenLimpio,
+    codigo: currentCodigoRastreo || currentClaveRecojo || null,
+    destinatario: contactName || "Cliente Aliv",
+    dni: dniCliente || null,
+    departamento: ciudad || null,
+    provincia: ciudad || null,
+    distrito: distrito || null,
+    ciudad: ciudad || "Provincia",
+    direccion: direccion || "",
+    referencia: referencia || null,
+    modalidad: "TERRESTRE",
+    tipoEntrega: "En agencia",
+    telefono: contactPhone || null,
+    total: value || 0,
+    productosResumen: Array.isArray(ordenItems)
+      ? ordenItems.map((it: any) => `${it.cantidad ?? 1}x ${it.titulo ?? it.title ?? "Producto"}`).join(", ")
+      : title,
   };
 
   const shalomData: SeguimientoShalomData = {
@@ -515,7 +544,25 @@ export function DealCard({
           </div>
         )}
 
-        {/* Botón de Rótulo Motorizado (Solo para órdenes de Lima/Callao confirmadas o en despacho) */}
+        {/* Botón de Rótulo Shalom (Imagen oficial para provincia y agencia Shalom) */}
+        {mostrarBotonShalomRotulo && (
+          <Button
+            type="button"
+            size="sm"
+            variant="outline"
+            onClick={(e) => {
+              e.stopPropagation();
+              setRotuloShalomOpen(true);
+            }}
+            title="Generar imagen oficial de rótulo / etiqueta Shalom para el paquete"
+            className="w-full h-7 text-[11px] font-bold bg-red-500/10 hover:bg-red-500/20 text-red-700 dark:text-red-400 border border-red-500/30 flex items-center justify-center gap-1.5 shadow-none transition-all cursor-pointer"
+          >
+            <FileImage className="h-3.5 w-3.5 text-red-600 shrink-0" />
+            <span className="truncate">Rótulo Shalom (Imagen)</span>
+          </Button>
+        )}
+
+        {/* Botón de Rótulo Motorizado (Para órdenes de Lima/Callao) */}
         {mostrarBotonRotulo && (
           <Button
             type="button"
@@ -528,13 +575,13 @@ export function DealCard({
             title="Generar e imprimir rótulo 10.5 × 9.0 cm para motorizado"
             className="w-full h-7 text-[11px] font-bold bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-700 dark:text-emerald-400 border border-emerald-500/30 flex items-center justify-center gap-1.5 shadow-none transition-all cursor-pointer"
           >
-            <Printer className="h-3.5 w-3.5" />
+            <Printer className="h-3.5 w-3.5 shrink-0" />
             <span>Rótulo Motorizado (10.5×9 cm)</span>
           </Button>
         )}
 
-        {/* Botón de Seguimiento Shalom (Para órdenes de Provincia / Shalom confirmadas o en despacho) */}
-        {mostrarBotonShalom && (
+        {/* Botón de Seguimiento Shalom (Cuando ya cuenta con número de guía o despacho registrado) */}
+        {mostrarBotonShalomSeguimiento && (
           <Button
             type="button"
             size="sm"
@@ -706,7 +753,15 @@ export function DealCard({
         />
       )}
 
-      {mostrarBotonShalom && (
+      {mostrarBotonShalomRotulo && (
+        <RotuloShalomModal
+          open={rotuloShalomOpen}
+          onOpenChange={setRotuloShalomOpen}
+          data={rotuloShalomData}
+        />
+      )}
+
+      {mostrarBotonShalomSeguimiento && (
         <SeguimientoShalomModal
           open={shalomOpen}
           onOpenChange={setShalomOpen}
