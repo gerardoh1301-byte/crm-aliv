@@ -48,6 +48,10 @@ export function aplicarGuardasDeVenta(texto: string): string {
   t = t.replace(/,?\s+hoy mismo\b/gi, "");
   // "para enviártela hoy" / "lo despachamos hoy" -> sin "hoy".
   t = t.replace(/((?:envi|despach|mand)\p{L}*)\s+hoy(?!\p{L})/giu, "$1");
+  // "Es un complemento seguro" tambien promete: queda "Es un complemento".
+  t = t.replace(/\b(complemento|suplemento|producto)( 100%)? segur[oa]\b/gi, "$1");
+  // Subida mal calculada: de 1 a 3 frascos son S/80, no S/70 (S/70 es de 1 a 2).
+  t = t.replace(/S\/\s?70(?=[^.?!\n]{0,60}(?:pack de 3|3 frascos|tres frascos|el de 3))/gi, "S/80");
   // "No causa efectos secundarios" es una promesa de salud: se quita esa frase.
   // La letra que sigue a lo quitado pasa a mayuscula (inicio de la oracion siguiente).
   t = t.replace(

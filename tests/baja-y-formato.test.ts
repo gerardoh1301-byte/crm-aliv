@@ -119,3 +119,20 @@ describe("guardas de venta, ronda 8", () => {
     expect(limpiarFormatoWhatsApp(t)).toBe(t);
   });
 });
+
+describe("guardas de venta, ronda 9", () => {
+  it("corrige la subida de 1 a 3 frascos (S/80, no S/70)", () => {
+    expect(limpiarFormatoWhatsApp("Por S/70 más que el frasco suelto, el pack de 3 frascos te da 90 días.")).toBe(
+      "Por S/80 más que el frasco suelto, el pack de 3 frascos te da 90 días.",
+    );
+  });
+  it("deja la subida correcta de 1 a 2", () => {
+    const t = "Un dato: por S/70 más te llevas 2 frascos y tienes 60 días de uso.";
+    expect(limpiarFormatoWhatsApp(t)).toBe(t);
+  });
+  it("quita 'seguro' de 'es un complemento seguro'", () => {
+    expect(limpiarFormatoWhatsApp("Es un complemento seguro; si tomas medicación, consúltalo.")).toBe(
+      "Es un complemento; si tomas medicación, consúltalo.",
+    );
+  });
+});
