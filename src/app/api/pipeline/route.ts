@@ -2,7 +2,8 @@ import { NextRequest, NextResponse } from "next/server";
 import { setDealStage } from "@/lib/deals/stage";
 import { db } from "@/db";
 import { pipelineStages, pipelines, deals, contacts, teamMembers } from "@/db/schema";
-import { eq, asc } from "drizzle-orm";
+import { pedidosOrdenes } from "../../../../modules/pedidos/tabla";
+import { eq, asc, or } from "drizzle-orm";
 import { requireMember } from "@/lib/api-auth";
 import { ownerFilter, canAccessContactId } from "@/lib/team";
 import { countDocumentsByContact } from "@/lib/documents";
@@ -29,12 +30,29 @@ export async function GET() {
       createdAt: deals.createdAt,
       updatedAt: deals.updatedAt,
       contactName: contacts.name,
+      contactPhone: contacts.phone,
+      contactTags: contacts.tags,
+      contactCustomFields: contacts.customFields,
       ownerId: contacts.ownerId,
       ownerName: teamMembers.name,
+      ordenId: pedidosOrdenes.id,
+      ordenNumero: pedidosOrdenes.numeroOrden,
+      ordenItems: pedidosOrdenes.items,
+      ordenTotal: pedidosOrdenes.total,
+      ordenCiudad: pedidosOrdenes.ciudad,
+      ordenDistrito: pedidosOrdenes.distrito,
+      ordenDireccion: pedidosOrdenes.direccionEnvio,
+      ordenTransportadora: pedidosOrdenes.transportadora,
+      ordenNumeroGuia: pedidosOrdenes.numeroGuia,
+      ordenCodigoRastreo: pedidosOrdenes.codigoRastreo,
+      ordenClaveRecojo: pedidosOrdenes.claveRecojo,
+      ordenModalidadPago: pedidosOrdenes.modalidadPago,
+      ordenEstado: pedidosOrdenes.estado,
     })
     .from(deals)
     .leftJoin(contacts, eq(deals.contactId, contacts.id))
     .leftJoin(teamMembers, eq(contacts.ownerId, teamMembers.id))
+    .leftJoin(pedidosOrdenes, or(eq(deals.id, pedidosOrdenes.dealId), eq(deals.contactId, pedidosOrdenes.contactId)))
     .where(ownerFilter(auth.member));
 
   const docCounts = await countDocumentsByContact([...new Set(allDeals.map((d) => d.contactId))]);
