@@ -5,6 +5,7 @@ import { getAllGeminiKeys, getNextGeminiKey, markGeminiKeyRateLimited } from "@/
 const DEFAULT_MODEL = "gemini-3.1-flash-lite";
 const OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1";
 const GEMINI_BASE_URL = "https://generativelanguage.googleapis.com/v1beta/openai/";
+const GROQ_BASE_URL = "https://api.groq.com/openai/v1";
 
 // Modelos activos y comprobados en la API de Google
 const GEMINI_FALLBACK_MODELS = [
@@ -15,7 +16,22 @@ const GEMINI_FALLBACK_MODELS = [
 ];
 
 const geminiClients = new Map<string, OpenAI>();
+let groqClient: OpenAI | null = null;
 let openRouterClient: OpenAI | null = null;
+
+function getGroqClient(): OpenAI | null {
+  const apiKey = process.env.GROQ_API_KEY;
+  if (!apiKey) return null;
+  if (!groqClient) {
+    groqClient = new OpenAI({
+      apiKey,
+      baseURL: GROQ_BASE_URL,
+      timeout: 10000,
+      maxRetries: 0,
+    });
+  }
+  return groqClient;
+}
 
 export function getGeminiClient(specificKey?: string): OpenAI | null {
   const apiKey = specificKey || getNextGeminiKey();
@@ -61,10 +77,13 @@ export function getOpenRouterClient(): OpenAI {
   const gemini = getGeminiClient();
   if (gemini) return gemini;
 
+  const groq = getGroqClient();
+  if (groq) return groq;
+
   const openRouter = getOpenRouterClientOnly();
   if (openRouter) return openRouter;
 
-  throw new Error("Ni GEMINI_API_KEYS ni OPENROUTER_API_KEY configuradas");
+  throw new Error("Ni GEMINI_API_KEYS ni GROQ_API_KEY ni OPENROUTER_API_KEY configuradas");
 }
 
 export function getAgentModel(): string {
@@ -75,7 +94,11 @@ export function getAgentModel(): string {
 }
 
 export function hasOpenRouterKey(): boolean {
-  return getAllGeminiKeys().length > 0 || Boolean(process.env.OPENROUTER_API_KEY);
+  return (
+    getAllGeminiKeys().length > 0 ||
+    Boolean(process.env.GROQ_API_KEY) ||
+    Boolean(process.env.OPENROUTER_API_KEY)
+  );
 }
 
 /**
@@ -164,7 +187,27 @@ export async function createChatCompletionWithFallback(
     }
   }
 
-  // 2. Si todas las claves de Gemini fallaron o están agotadas, conmutar a OpenRouter si está configurado
+  // 2. Si todas las claves de Gemini fallaron o están agotadas, conmutar a Groq Cloud (Ultra-rápido)
+  const groq = getGroqClient();
+  if (groq) {
+    const groqModels = ["qwen/qwen3.8-27b", "openai/gpt-oss-120b"];
+    for (const gModel of groqModels) {
+      try {
+        console.info(`[agent-llm] Intentando failover Groq con ${gModel}...`);
+        return await groq.chat.completions.create(
+          {
+            ...params,
+            model: gModel,
+          },
+          reqOptions
+        );
+      } catch (gErr) {
+        console.warn(`[agent-llm] Falló Groq ${gModel}:`, gErr instanceof Error ? gErr.message : gErr);
+      }
+    }
+  }
+
+  // 3. Si Gemini y Groq fallaron o no están, conmutar a OpenRouter si está configurado
   const openRouter = getOpenRouterClientOnly();
   if (openRouter) {
     const openRouterCandidates = [
