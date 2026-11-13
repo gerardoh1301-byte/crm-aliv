@@ -105,6 +105,22 @@ async function moverEtapa(args: { etapa?: string; motivo?: string }, ctx: ToolCo
   if (stage.key === "en_reparto" || stage.key === "entregado") {
     return { ok: false, error: `La etapa "${stage.name}" la mueve una persona del equipo. Usa avisar_asesor si hace falta.` };
   }
+  if (stage.key === "por_confirmar_cod") {
+    // "Por confirmar COD" significa que hay un pedido registrado. Sin pedido, la operacion
+    // aparecia en esa columna sin orden detras (paso en simulaciones antes de tener la direccion).
+    const [conOrden] = await db
+      .select({ id: pedidosOrdenes.id })
+      .from(pedidosOrdenes)
+      .where(eq(pedidosOrdenes.contactId, ctx.contactId))
+      .limit(1);
+    if (!conOrden) {
+      return {
+        ok: false,
+        error:
+          'Todavia no hay pedido registrado. Usa "carrito_armado" mientras faltan datos y crear_pedido_chat cuando los tengas; no le digas al cliente que su pedido quedo registrado.',
+      };
+    }
+  }
   if (stage.key === "pedido_confirmado") {
     // Solo si ya existe un pedido confirmado (Lima registrado en el chat, pedido web
     // confirmado o adelanto verificado por una persona). Sin pedido, o con el adelanto

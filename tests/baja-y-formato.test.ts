@@ -136,3 +136,11 @@ describe("guardas de venta, ronda 9", () => {
     );
   });
 });
+
+describe("guardas de venta, ronda 10", () => {
+  it("corrige S/70 aunque el pack de 3 aparezca mas lejos en la frase", () => {
+    expect(
+      limpiarFormatoWhatsApp("Un dato: por S/70 más te llevas 2 frascos más y tienes 90 días de uso continuo con el pack de 3."),
+    ).toContain("S/80");
+  });
+});
