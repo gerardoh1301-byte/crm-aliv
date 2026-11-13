@@ -139,6 +139,23 @@ export async function createChatCompletionWithFallback(
       }
     }
 
+    // 2b. 429 = cuota por minuto de la clave: los modelos de respaldo comparten la misma
+    // cuota, asi que fallan igual si se prueban al instante. Esperar unos segundos y
+    // reintentar rescata la respuesta en vez de dejar al cliente sin contestar.
+    if (gemini && (status === 429 || status === 503)) {
+      for (const esperaMs of [2500, 6000]) {
+        await new Promise((r) => setTimeout(r, esperaMs));
+        try {
+          console.info(`[agent-llm] Reintento tras ${status} con ${requestedModel} (espera ${esperaMs} ms)`);
+          return await gemini.chat.completions.create({ ...params, model: requestedModel }, reqOptions);
+        } catch (retryErr: unknown) {
+          const retryStatus = (retryErr as { status?: number })?.status;
+          console.warn(`[agent-llm] Reintento falló con status ${retryStatus}`);
+          if (retryStatus !== 429 && retryStatus !== 503) break;
+        }
+      }
+    }
+
     // 3. Si Gemini falló o no está, intentar con OpenRouter si está configurado
     const openRouter = getOpenRouterClientOnly();
     if (openRouter) {
