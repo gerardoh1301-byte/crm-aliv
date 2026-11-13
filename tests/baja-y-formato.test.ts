@@ -69,3 +69,13 @@ describe("guardas de venta, ronda 2", () => {
     expect(limpiarFormatoWhatsApp("Excelente decisión, Martha.")).toBe("Perfecto, Martha.");
   });
 });
+
+describe("guardas de venta, ronda 3", () => {
+  it("no toca 'excelente eleccion' en medio de una oracion", () => {
+    const t = "Hola, Carmen. Es una excelente elección para complementar su rutina.";
+    expect(limpiarFormatoWhatsApp(t)).toBe(t);
+  });
+  it("cambia al inicio de linea despues de un saludo", () => {
+    expect(limpiarFormatoWhatsApp("Hola Ana. Excelente elección, vamos con 2.")).toBe("Hola Ana. Perfecto, vamos con 2.");
+  });
+});

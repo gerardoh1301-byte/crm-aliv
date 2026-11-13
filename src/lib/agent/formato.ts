@@ -20,8 +20,11 @@ export function limpiarFormatoWhatsApp(texto: string): string {
  * - "Excelente elección/decisión" suena a plantilla: se cambia por "Perfecto".
  */
 export function aplicarGuardasDeVenta(texto: string): string {
-  let t = texto.replace(/(¡?)\s*Excelente (?:elecci[oó]n|decisi[oó]n)\s*(!|,)?/gi, (_m, abre: string, p: string | undefined) =>
-    p === "!" ? "¡Perfecto!" : `${abre}Perfecto,`,
+  // Solo al inicio de una oracion ("Es una excelente elección para..." se deja como esta).
+  let t = texto.replace(
+    /(^|[.!?]\s+|\n)(¡?)Excelente (?:elecci[oó]n|decisi[oó]n)(!|,)?/g,
+    (_m, antes: string, abre: string, p: string | undefined) =>
+      `${antes}${p === "!" ? "¡Perfecto!" : `${abre}Perfecto${p ?? ""}`}`,
   );
   const mencionaAdelanto = /S\/\s?20\b/.test(t) && /adelant|separ|reserv/i.test(t);
   if (mencionaAdelanto && !/951\s?365\s?418/.test(t)) {
