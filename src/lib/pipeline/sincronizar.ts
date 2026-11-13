@@ -3,7 +3,7 @@ import { db } from "@/db";
 import { contacts, pipelines, pipelineStages, deals } from "@/db/schema";
 import { and, asc, desc, eq, inArray, sql } from "drizzle-orm";
 import { getConfig } from "@/lib/config";
-import { esEtiquetaDeEtapa, obtenerEtiquetaDeEtapa } from "@/lib/tags";
+import { cleanStr, esEtiquetaDeEtapa, obtenerEtiquetaDeEtapa } from "@/lib/tags";
 
 /**
  * Lleva el pipeline por defecto al estado que describe config/cliente.ts.
@@ -121,9 +121,6 @@ export async function sincronizarPipeline(opts?: { borrarSobrantes?: boolean }) 
       .then(() => db.update(pipelines).set({ isDefault: true }).where(eq(pipelines.id, principal.id)));
   }
 
-  // Sincronizar etiquetas de todos los contactos según su etapa en el pipeline
-  await sincronizarEtiquetasDesdePipeline();
-
   return { pipelineId: principal.id, creadas, actualizadas, conservadas, borradas };
 }
 
@@ -176,6 +173,14 @@ export async function sincronizarEtiquetasDesdePipeline(): Promise<{ actualizado
     if (!contacto) continue;
 
     const tagsActuales: string[] = contacto.tags ?? [];
+
+    // Si ya tiene "Agendar entrega" y la nueva etapa mapeada es "Pendiente de adelanto",
+    // proteger y conservar "Agendar entrega" (la entrega ya fue agendada/coordinada).
+    const tieneAgendarEntrega = tagsActuales.some((t) => cleanStr(t) === "agendar entrega");
+    if (tieneAgendarEntrega && cleanStr(nuevaEtiqueta) === "pendiente de adelanto") {
+      continue;
+    }
+
     const sinEtapas = tagsActuales.filter((t) => !esEtiquetaDeEtapa(t));
     const tieneEtiqueta = tagsActuales.some((t) => t.toLowerCase() === nuevaEtiqueta.toLowerCase());
     const tieneOtrasEtapas = tagsActuales.some(

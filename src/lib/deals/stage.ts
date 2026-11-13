@@ -5,7 +5,7 @@ import { pedidosOrdenes } from "../../../modules/pedidos/tabla";
 import { eq } from "drizzle-orm";
 import { emitAutomationEvent } from "@/lib/automations";
 import type { DealStageChangedPayload } from "@/lib/automations/triggers";
-import { esEtiquetaDeEtapa, obtenerEtiquetaDeEtapa } from "@/lib/tags";
+import { cleanStr, esEtiquetaDeEtapa, obtenerEtiquetaDeEtapa } from "@/lib/tags";
 
 /**
  * Mueve una operacion de etapa y emite `deal.stage_changed`.
@@ -81,12 +81,20 @@ export async function setDealStage(input: {
 
       if (contactoFila) {
         const tagsActuales: string[] = contactoFila.tags ?? [];
-        const sinEtapas = tagsActuales.filter((t) => !esEtiquetaDeEtapa(t));
-        const actualizadas = [...sinEtapas, nuevaEtiqueta];
-        await db
-          .update(contacts)
-          .set({ tags: actualizadas, updatedAt: new Date() })
-          .where(eq(contacts.id, contactoFila.id));
+
+        // Si ya tiene "Agendar entrega" y la nueva etapa mapeada es "Pendiente de adelanto",
+        // no sobreescribir ni degradar "Agendar entrega"
+        const tieneAgendarEntrega = tagsActuales.some((t) => cleanStr(t) === "agendar entrega");
+        if (tieneAgendarEntrega && cleanStr(nuevaEtiqueta) === "pendiente de adelanto") {
+          // Mantener "Agendar entrega" intacta
+        } else {
+          const sinEtapas = tagsActuales.filter((t) => !esEtiquetaDeEtapa(t));
+          const actualizadas = [...sinEtapas, nuevaEtiqueta];
+          await db
+            .update(contacts)
+            .set({ tags: actualizadas, updatedAt: new Date() })
+            .where(eq(contacts.id, contactoFila.id));
+        }
       }
     }
   }
