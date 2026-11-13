@@ -451,6 +451,19 @@ export async function agendarEventoCalendario(params: AgendarParams) {
     eventoCobro = cobroRow;
   }
 
+  // Asegurar que el contacto tenga la etiqueta "Agendar entrega" en el CRM
+  try {
+    const { aplicarEtiquetaAContacto } = await import("./etiquetado");
+    await aplicarEtiquetaAContacto({
+      contactId,
+      etiqueta: "Agendar entrega",
+      accion: "establecer_estado",
+      motivo: "Entrega registrada en el Calendario oficial",
+    });
+  } catch (err) {
+    console.warn("[scheduler] Error asignando etiqueta Agendar entrega:", err);
+  }
+
   return {
     principal: eventoPrincipal,
     cobroPrevio: eventoCobro,

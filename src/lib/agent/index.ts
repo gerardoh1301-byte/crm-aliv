@@ -169,11 +169,22 @@ export async function runAgentForConversation(
         const lastUser = Array.isArray(collapsed) ? collapsed[collapsed.length - 1]?.content : "";
         autoDetectarYAgendarHorario({
           contactId: contact.id,
-          mensajeUsuario: lastUser,
+          mensajeUsuario: typeof lastUser === "string" ? lastUser : "",
           respuestaBot: reply,
           conversationId: conversation.id,
         }).catch((err) => console.warn("[scheduler] Error en auto-detección:", err));
       }
+
+      // Auto-clasificación y análisis de conversación para colocar o actualizar etiquetas
+      const { autoClasificarYEtiquetarConversacion } = await import("./etiquetado");
+      const lastUserParaEtiqueta = Array.isArray(collapsed) ? collapsed[collapsed.length - 1]?.content : "";
+      autoClasificarYEtiquetarConversacion({
+        contactId: contact.id,
+        conversationId: conversation.id,
+        mensajeUsuario: typeof lastUserParaEtiqueta === "string" ? lastUserParaEtiqueta : "",
+        respuestaBot: reply,
+        toolsEjecutadas: executedTools,
+      }).catch((err) => console.warn("[etiquetado] Error en auto-clasificación:", err));
 
       return { ok: true, reply, toolCalls };
     }
@@ -196,11 +207,22 @@ export async function runAgentForConversation(
           const lastUser = Array.isArray(collapsed) ? collapsed[collapsed.length - 1]?.content : "";
           autoDetectarYAgendarHorario({
             contactId: contact.id,
-            mensajeUsuario: lastUser,
+            mensajeUsuario: typeof lastUser === "string" ? lastUser : "",
             respuestaBot: textoFinal,
             conversationId: conversation.id,
           }).catch((err) => console.warn("[scheduler] Error en auto-detección:", err));
         }
+
+        // Auto-clasificación y análisis de conversación para colocar o actualizar etiquetas
+        const { autoClasificarYEtiquetarConversacion } = await import("./etiquetado");
+        const lastUserParaEtiquetaFinal = Array.isArray(collapsed) ? collapsed[collapsed.length - 1]?.content : "";
+        autoClasificarYEtiquetarConversacion({
+          contactId: contact.id,
+          conversationId: conversation.id,
+          mensajeUsuario: typeof lastUserParaEtiquetaFinal === "string" ? lastUserParaEtiquetaFinal : "",
+          respuestaBot: textoFinal,
+          toolsEjecutadas: executedTools,
+        }).catch((err) => console.warn("[etiquetado] Error en auto-clasificación:", err));
 
         return { ok: true, reply: textoFinal, toolCalls };
       }

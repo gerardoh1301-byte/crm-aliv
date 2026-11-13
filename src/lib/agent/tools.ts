@@ -21,6 +21,7 @@ import { toolsDeModulos } from "@/lib/modules";
 import { alertarEquipo } from "./alertas";
 import { esMotivoDeBaja, MENSAJE_BAJA, TAG_NO_REACTIVAR } from "./baja";
 import { agendarEventoCalendario } from "./scheduler";
+import { aplicarEtiquetaAContacto } from "./etiquetado";
 import { pedidosOrdenes } from "../../../modules/pedidos/tabla";
 
 /**
@@ -273,6 +274,14 @@ async function agendarEntrega(
     monto: args.monto,
   });
 
+  // Asegurar que el contacto quede marcado con "Agendar entrega"
+  await aplicarEtiquetaAContacto({
+    contactId: ctx.contactId,
+    etiqueta: "Agendar entrega",
+    accion: "establecer_estado",
+    motivo: `Entrega agendada para ${args.fecha ?? "próxima fecha"} (${args.horario ?? ""})`,
+  });
+
   return {
     ok: true,
     data: {
@@ -523,6 +532,32 @@ async function enviarImagenReferencia(
   };
 }
 
+async function asignarEtiquetaTool(
+  args: { etiqueta?: string; accion?: "establecer_estado" | "agregar" | "quitar"; motivo?: string },
+  ctx: ToolContext
+): Promise<ToolResult> {
+  const etiqueta = String(args.etiqueta ?? "").trim();
+  if (!etiqueta) return { ok: false, error: "Etiqueta vacía" };
+
+  const res = await aplicarEtiquetaAContacto({
+    contactId: ctx.contactId,
+    etiqueta,
+    accion: args.accion,
+    motivo: args.motivo,
+  });
+
+  if (!res.ok) return { ok: false, error: res.error ?? "No se pudo asignar la etiqueta" };
+
+  return {
+    ok: true,
+    data: {
+      etiqueta: res.etiquetaNormalizada,
+      tags: res.tags,
+      message: `Etiqueta "${res.etiquetaNormalizada}" actualizada con éxito.`,
+    },
+  };
+}
+
 function toolsGenericas(): ToolAgente[] {
   const campos = camposContacto();
   const etiquetaAsesor = getConfig().roles.etiquetaAsesor.toLowerCase();
@@ -728,6 +763,40 @@ function toolsGenericas(): ToolAgente[] {
       descripcionUI: "Permite al agente enviar fotos oficiales de productos, infografías de beneficios y datos de pago directamente por WhatsApp desde Google Drive CDN.",
       ejecutar: (a, ctx) => enviarImagenReferencia(a as { clave?: string; motivo?: string }, ctx),
     },
+    {
+      definicion: definir(
+        "asignar_etiqueta",
+        "Analiza la conversación y asigna o actualiza la etiqueta de estado del contacto en el CRM. " +
+          "Etiquetas principales: 'Informativo' (consultas generales sin pedido), 'Pendiente de adelanto' (pedido en provincia que debe adelantar S/20), 'Agendar entrega' (coordinando día/hora de entrega o confirmando horario), 'adelanto pagado' (cliente envió comprobante/Yape), 'pedido confirmado' (pedido completado con datos), 'Cancelado' (cliente rechaza o cancela). " +
+          "También puedes agregar etiquetas secundarias de interés como 'interes:nac600' o 'interes:termix', o 'esperando respuesta'.",
+        {
+          type: "object",
+          properties: {
+            etiqueta: {
+              type: "string",
+              description: "Nombre de la etiqueta: 'Informativo', 'Pendiente de adelanto', 'Agendar entrega', 'adelanto pagado', 'pedido confirmado', 'Cancelado', 'esperando respuesta', 'interes:nac600', 'interes:termix'.",
+            },
+            accion: {
+              type: "string",
+              enum: ["establecer_estado", "agregar", "quitar"],
+              description: "'establecer_estado' (reemplaza el estado principal anterior), 'agregar' (añade etiqueta sin borrar otras) o 'quitar'.",
+            },
+            motivo: {
+              type: "string",
+              description: "Explicación breve de por qué corresponde esta etiqueta según lo analizado en la conversación.",
+            },
+          },
+          required: ["etiqueta"],
+          additionalProperties: false,
+        }
+      ),
+      descripcionUI: "Permite al agente analizar la conversación y colocar o cambiar la etiqueta del contacto en el CRM.",
+      ejecutar: (a, ctx) =>
+        asignarEtiquetaTool(
+          a as { etiqueta?: string; accion?: "establecer_estado" | "agregar" | "quitar"; motivo?: string },
+          ctx
+        ),
+    },
   ];
 }
 
@@ -785,6 +854,7 @@ export async function getEnabledToolNames(): Promise<string[]> {
 /** Definiciones para el LLM, filtradas a las habilitadas. */
 export async function getEnabledToolDefinitions(names?: string[]): Promise<OpenAI.Chat.Completions.ChatCompletionTool[]> {
   const enabled = new Set(names ?? (await getEnabledToolNames()));
+  enabled.add("asignar_etiqueta");
   return listarTools()
     .filter((t) => enabled.has(t.definicion.function.name))
     .map((t) => t.definicion);
