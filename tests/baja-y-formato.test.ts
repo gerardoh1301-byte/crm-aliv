@@ -39,3 +39,22 @@ describe("formato WhatsApp", () => {
     );
   });
 });
+
+describe("guardas de venta", () => {
+  it("agrega el Yape si menciona el adelanto sin el numero", () => {
+    const r = limpiarFormatoWhatsApp("Se coordina un adelanto de S/ 20 y el resto al recoger.");
+    expect(r).toContain("951365418");
+  });
+  it("no duplica el Yape si ya esta", () => {
+    const t = "Adelanto de *S/20* por Yape al *951365418* (Gerardo Huaynalaya).";
+    expect(limpiarFormatoWhatsApp(t)).toBe(t);
+  });
+  it("no confunde S/2,20 al dia con el adelanto", () => {
+    const t = "Te sale a S/2,20 al día.";
+    expect(limpiarFormatoWhatsApp(t)).toBe(t);
+  });
+  it("cambia 'Excelente eleccion' por 'Perfecto'", () => {
+    expect(limpiarFormatoWhatsApp("Excelente elección, Rosa. Vamos con 1 frasco")).toBe("Perfecto, Rosa. Vamos con 1 frasco");
+    expect(limpiarFormatoWhatsApp("¡Excelente elección, Carlos! Le va a encantar")).toBe("¡Perfecto, Carlos! Le va a encantar");
+  });
+});
