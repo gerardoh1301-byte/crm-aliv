@@ -6,12 +6,30 @@ const YAPE_ADELANTO = "951365418";
  * guiones sueltos, asi que se cambian por "• ". Ademas aplica las guardas de venta.
  */
 export function limpiarFormatoWhatsApp(texto: string): string {
-  const limpio = texto
+  const limpio = quitarLlamadasEscritas(texto)
     .replace(/\*\*(.+?)\*\*/g, "*$1*")
     .replace(/__(.+?)__/g, "_$1_")
     .replace(/^#{1,6}\s+(.+)$/gm, "*$1*")
     .replace(/^[ \t]*[*-][ \t]+/gm, "• ");
   return aplicarGuardasDeVenta(limpio);
+}
+
+const HERRAMIENTAS =
+  "enviar_imagen_referencia|registrar_actividad|actualizar_contacto|mover_etapa|crear_pedido_chat|avisar_asesor|derivar_asesor|agendar_entrega|resumen_lead|confirmar_pedido|consultar_pedido|solicitar_soporte_pedido";
+
+/**
+ * A veces el modelo escribe la llamada a una herramienta como texto
+ * (`registrar_actividad(descripcion='...')`) en vez de ejecutarla: eso no puede llegar
+ * al cliente. Se quita la llamada (con o sin comillas invertidas) y las lineas vacias que deja.
+ */
+export function quitarLlamadasEscritas(texto: string): string {
+  const llamada = new RegExp("`?\\b(?:" + HERRAMIENTAS + ")\\s*\\([^)]*\\)`?", "g");
+  return texto
+    .replace(llamada, "")
+    .replace(/`[a-z]+(?:_[a-z]+)+\([^`]*\)`/g, "")
+    .replace(/[ \t]+\n/g, "\n")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
 }
 
 /**

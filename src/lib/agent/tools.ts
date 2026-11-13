@@ -145,6 +145,16 @@ async function moverEtapa(args: { etapa?: string; motivo?: string }, ctx: ToolCo
     if (abierta.stageId === stage.id) {
       return { ok: true, data: { etapa: stage.name, sin_cambio: true, message: `Ya estaba en ${stage.name}.` } };
     }
+    // El bot no retrocede una operacion ya confirmada (en simulaciones movia un pedido de
+    // Lima recien registrado a "Por confirmar COD" y lo mandaba a la cola de adelantos).
+    const actual = stages.find((s) => s.id === abierta.stageId);
+    const confirmada = stages.find((s) => s.key === "pedido_confirmado");
+    if (actual && confirmada && actual.order >= confirmada.order && stage.order < actual.order) {
+      return {
+        ok: true,
+        data: { etapa: actual.name, sin_cambio: true, message: `La operacion ya esta en "${actual.name}"; no se retrocede.` },
+      };
+    }
     const r = await setDealStage({ dealId: abierta.id, stageId: stage.id });
     if (!r.ok) return { ok: false, error: r.error ?? "No se pudo mover la etapa" };
     await db.insert(activities).values({

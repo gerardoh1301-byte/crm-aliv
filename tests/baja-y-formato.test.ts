@@ -97,3 +97,11 @@ describe("guardas de venta, ronda 6", () => {
     expect(limpiarFormatoWhatsApp(t)).toBe(t);
   });
 });
+
+describe("guardas de venta, ronda 7", () => {
+  it("no deja pasar llamadas a herramientas escritas como texto", () => {
+    const t =
+      "Entendido, Carmen.\n\n`enviar_imagen_referencia(clave='nac600_beneficios', motivo='Aquí tienes')`\n\n¿Te escribo mañana a las 11?\n\n`registrar_actividad(descripcion='Seguimiento', fecha='2026-11-14', tipo='tarea')`";
+    expect(limpiarFormatoWhatsApp(t)).toBe("Entendido, Carmen.\n\n¿Te escribo mañana a las 11?");
+  });
+});
