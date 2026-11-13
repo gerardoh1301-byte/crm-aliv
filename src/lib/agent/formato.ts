@@ -17,15 +17,16 @@ export function limpiarFormatoWhatsApp(texto: string): string {
 /**
  * Reglas que el modelo a veces olvida y que no pueden fallar:
  * - Si menciona el adelanto de S/20, el mensaje lleva el Yape (regla 5 del prompt).
- * - "Excelente elección" suena a plantilla: se cambia por "Perfecto".
+ * - "Excelente elección/decisión" suena a plantilla: se cambia por "Perfecto".
  */
 export function aplicarGuardasDeVenta(texto: string): string {
-  let t = texto.replace(/(¡?)\s*Excelente elecci[oó]n\s*(!|,)?/gi, (_m, abre: string, p: string | undefined) =>
+  let t = texto.replace(/(¡?)\s*Excelente (?:elecci[oó]n|decisi[oó]n)\s*(!|,)?/gi, (_m, abre: string, p: string | undefined) =>
     p === "!" ? "¡Perfecto!" : `${abre}Perfecto,`,
   );
   const mencionaAdelanto = /S\/\s?20\b/.test(t) && /adelant|separ|reserv/i.test(t);
   if (mencionaAdelanto && !/951\s?365\s?418/.test(t)) {
-    t = `${t}\n\nEl adelanto lo haces por Yape al *${YAPE_ADELANTO}* (Gerardo Huaynalaya).`;
+    // En linea, junto al monto: agregado al final quedaba despues de la pregunta de cierre.
+    t = t.replace(/\*?S\/\s?20\b\*?/, (m) => `${m} por Yape al *${YAPE_ADELANTO}* (Gerardo Huaynalaya)`);
   }
   return t;
 }

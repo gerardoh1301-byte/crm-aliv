@@ -640,6 +640,17 @@ const tools: ToolModulo[] = [
         typeof args.modalidad_pago === "string" ? args.modalidad_pago : "contraentrega";
       const notas = args.notas ? String(args.notas).trim() : null;
 
+      // Sin calle y numero (Lima) o sin agencia (provincia) el motorizado no puede entregar:
+      // el bot debe pedir la direccion antes de registrar (paso en simulaciones: pedido con
+      // direccion "San Juan de Lurigancho").
+      if (!/\d/.test(direccionEnvio) && !/shalom|agencia/i.test(direccionEnvio)) {
+        return {
+          ok: false,
+          error:
+            "Falta la direccion exacta (calle y numero con referencia en Lima, o la agencia Shalom en provincia). Pidela al cliente y vuelve a registrar el pedido.",
+        };
+      }
+
       const numeroOrden = await generarNumeroOrden();
       // Provincia (adelanto por Yape): el pedido queda "por confirmar" hasta que una PERSONA
       // verifique el adelanto con el boton "Adelanto confirmado". El bot nunca da por

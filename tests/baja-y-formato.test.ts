@@ -58,3 +58,14 @@ describe("guardas de venta", () => {
     expect(limpiarFormatoWhatsApp("¡Excelente elección, Carlos! Le va a encantar")).toBe("¡Perfecto, Carlos! Le va a encantar");
   });
 });
+
+describe("guardas de venta, ronda 2", () => {
+  it("pone el Yape junto al monto del adelanto, antes de la pregunta", () => {
+    expect(limpiarFormatoWhatsApp("Solo adelantas *S/20* y el resto al recoger. ¿Qué producto te interesa?")).toBe(
+      "Solo adelantas *S/20* por Yape al *951365418* (Gerardo Huaynalaya) y el resto al recoger. ¿Qué producto te interesa?",
+    );
+  });
+  it("cambia 'Excelente decision'", () => {
+    expect(limpiarFormatoWhatsApp("Excelente decisión, Martha.")).toBe("Perfecto, Martha.");
+  });
+});
