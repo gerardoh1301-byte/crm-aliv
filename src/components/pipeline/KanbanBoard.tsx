@@ -135,6 +135,9 @@ export function KanbanBoard({ initialColumns, filters, sort }: KanbanBoardProps)
         if (!res.ok) {
           throw new Error("API error");
         }
+        if (typeof window !== "undefined") {
+          window.dispatchEvent(new Event("conversations:refresh"));
+        }
       } catch {
         setColumns(columnsSnapshot.current);
         toast.error("Error al mover el deal. Se revirtio el cambio.");

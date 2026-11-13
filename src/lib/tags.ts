@@ -105,6 +105,13 @@ export const ETIQUETAS_SECUNDARIAS: EtiquetaConfig[] = [
     badge: "bg-slate-50 text-slate-700 dark:bg-slate-950/50 dark:text-slate-300 border-slate-300/60",
     dot: "bg-slate-500",
   },
+  {
+    id: "cancelado",
+    nombre: "Cancelado",
+    color: "bg-red-500/10 text-red-700 dark:text-red-300 border-red-500/30 hover:bg-red-500/20",
+    badge: "bg-red-50 text-red-700 dark:bg-red-950/50 dark:text-red-300 border-red-300/60 font-semibold",
+    dot: "bg-red-500",
+  },
 ];
 
 export const TODAS_LAS_ETIQUETAS: EtiquetaConfig[] = [
@@ -115,12 +122,118 @@ export const TODAS_LAS_ETIQUETAS: EtiquetaConfig[] = [
 /**
  * Normaliza nombres para coincidencias exactas o parciales sin importar tildes/mayúsculas.
  */
-function cleanStr(s: string): string {
+export function cleanStr(s: string): string {
   return s
     .toLowerCase()
     .normalize("NFD")
     .replace(/[\u0300-\u036f]/g, "")
     .trim();
+}
+
+/**
+ * Etiquetas que corresponden directamente a etapas operativas del pipeline / funnel.
+ * Cuando un deal cambia de etapa en el pipeline, la etiqueta previa de etapa se reemplaza
+ * por la nueva para que el chat siempre refleje el estado real de la operación.
+ */
+export const ETIQUETAS_DE_ETAPA: string[] = [
+  "Compra exitosa",
+  "Orden en camino",
+  "Pendiente de adelanto",
+  "Agendar entrega",
+  "Informativo",
+  "pedido confirmado",
+  "Cancelado",
+  "cancelado",
+];
+
+export function esEtiquetaDeEtapa(tag: string): boolean {
+  const norm = cleanStr(tag);
+  return ETIQUETAS_DE_ETAPA.some((e) => cleanStr(e) === norm);
+}
+
+/**
+ * Determina la etiqueta de chat correspondiente a una etapa del pipeline.
+ */
+export function obtenerEtiquetaDeEtapa(stage: {
+  key?: string | null;
+  name?: string | null;
+  isWon?: boolean | null;
+  isLost?: boolean | null;
+}): string | null {
+  const k = (stage.key || "").toLowerCase().trim();
+  const n = cleanStr(stage.name || "");
+
+  // 1. Ganada / Entregado y Cobrado
+  if (
+    stage.isWon ||
+    k === "entregado" ||
+    n.includes("entregado") ||
+    n.includes("cobrado") ||
+    n.includes("exitosa")
+  ) {
+    return "Compra exitosa";
+  }
+
+  // 2. En camino / Despachado
+  if (
+    k === "en_reparto" ||
+    n.includes("camino") ||
+    n.includes("despachado") ||
+    n.includes("reparto") ||
+    n.includes("enviado") ||
+    n.includes("ruta")
+  ) {
+    return "Orden en camino";
+  }
+
+  // 3. Pedido confirmado
+  if (
+    k === "pedido_confirmado" ||
+    n.includes("pedido confirmado") ||
+    n.includes("confirmado") ||
+    n.includes("agendar") ||
+    n.includes("agendado")
+  ) {
+    return "Agendar entrega";
+  }
+
+  // 4. Por confirmar COD / Adelanto
+  if (
+    k === "por_confirmar_cod" ||
+    n.includes("por confirmar") ||
+    n.includes("adelanto") ||
+    n.includes("contraentrega")
+  ) {
+    return "Pendiente de adelanto";
+  }
+
+  // 5. Consulta de producto / Intención de compra / Catálogo / Inicial
+  if (
+    k === "consulta_catalogo" ||
+    k === "carrito_armado" ||
+    n.includes("consulta") ||
+    n.includes("intencion") ||
+    n.includes("catalogo") ||
+    n.includes("informativo")
+  ) {
+    return "Informativo";
+  }
+
+  // 6. Cancelado / Rechazado / Perdida
+  if (
+    stage.isLost ||
+    k === "cancelado_rechazado" ||
+    n.includes("cancel") ||
+    n.includes("rechaz")
+  ) {
+    return "Cancelado";
+  }
+
+  // 7. Si coincide exactamente con alguna otra etiqueta del catálogo
+  const exacta = TODAS_LAS_ETIQUETAS.find((e) => cleanStr(e.nombre) === n);
+  if (exacta) return exacta.nombre;
+
+  return null;
 }
 
 export function getTagStyle(tag: string): { label: string; color: string; badge: string; dot?: string } {

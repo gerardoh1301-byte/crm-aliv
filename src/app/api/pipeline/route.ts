@@ -60,6 +60,13 @@ export async function PUT(request: NextRequest) {
     return NextResponse.json({ error: "JSON invalido" }, { status: 400 });
   }
 
+  // Sincronizar etiquetas de contactos según etapa de su deal
+  if (body.syncTags) {
+    const { sincronizarEtiquetasDesdePipeline } = await import("@/lib/pipeline/sincronizar");
+    const r = await sincronizarEtiquetasDesdePipeline();
+    return NextResponse.json({ ok: true, actualizados: r.actualizados });
+  }
+
   // Update a single deal's stage (drag and drop)
   if (body.dealId && body.stageId) {
     const existingRows = await db.select().from(deals).where(eq(deals.id, body.dealId)).limit(1);

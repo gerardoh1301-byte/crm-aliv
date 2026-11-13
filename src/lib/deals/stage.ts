@@ -5,6 +5,7 @@ import { pedidosOrdenes } from "../../../modules/pedidos/tabla";
 import { eq } from "drizzle-orm";
 import { emitAutomationEvent } from "@/lib/automations";
 import type { DealStageChangedPayload } from "@/lib/automations/triggers";
+import { esEtiquetaDeEtapa, obtenerEtiquetaDeEtapa } from "@/lib/tags";
 
 /**
  * Mueve una operacion de etapa y emite `deal.stage_changed`.
@@ -65,6 +66,28 @@ export async function setDealStage(input: {
         .update(pedidosOrdenes)
         .set({ estado: nuevoEstado, updatedAt: new Date() })
         .where(eq(pedidosOrdenes.dealId, deal.id));
+    }
+  }
+
+  // Sincronizar etiqueta de la conversación/contacto en el chat según la etapa del pipeline
+  if (deal.contactId) {
+    const nuevaEtiqueta = obtenerEtiquetaDeEtapa(stage);
+    if (nuevaEtiqueta) {
+      const [contactoFila] = await db
+        .select({ id: contacts.id, tags: contacts.tags })
+        .from(contacts)
+        .where(eq(contacts.id, deal.contactId))
+        .limit(1);
+
+      if (contactoFila) {
+        const tagsActuales: string[] = contactoFila.tags ?? [];
+        const sinEtapas = tagsActuales.filter((t) => !esEtiquetaDeEtapa(t));
+        const actualizadas = [...sinEtapas, nuevaEtiqueta];
+        await db
+          .update(contacts)
+          .set({ tags: actualizadas, updatedAt: new Date() })
+          .where(eq(contacts.id, contactoFila.id));
+      }
     }
   }
 

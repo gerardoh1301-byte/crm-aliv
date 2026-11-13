@@ -1,8 +1,9 @@
 import "server-only";
 import { db } from "@/db";
-import { pipelines, pipelineStages, deals } from "@/db/schema";
-import { and, asc, eq, inArray, sql } from "drizzle-orm";
+import { contacts, pipelines, pipelineStages, deals } from "@/db/schema";
+import { and, asc, desc, eq, inArray, sql } from "drizzle-orm";
 import { getConfig } from "@/lib/config";
+import { esEtiquetaDeEtapa, obtenerEtiquetaDeEtapa } from "@/lib/tags";
 
 /**
  * Lleva el pipeline por defecto al estado que describe config/cliente.ts.
@@ -120,5 +121,76 @@ export async function sincronizarPipeline(opts?: { borrarSobrantes?: boolean }) 
       .then(() => db.update(pipelines).set({ isDefault: true }).where(eq(pipelines.id, principal.id)));
   }
 
+  // Sincronizar etiquetas de todos los contactos según su etapa en el pipeline
+  await sincronizarEtiquetasDesdePipeline();
+
   return { pipelineId: principal.id, creadas, actualizadas, conservadas, borradas };
+}
+
+/**
+ * Sincroniza las etiquetas de los contactos que tienen operaciones en el pipeline.
+ * Para cada contacto, toma la etapa de su operación más reciente y actualiza
+ * su etiqueta en el chat para que coincida exactamente con su etapa actual.
+ */
+export async function sincronizarEtiquetasDesdePipeline(): Promise<{ actualizados: number }> {
+  const dealsConEtapa = await db
+    .select({
+      contactId: deals.contactId,
+      stageId: deals.stageId,
+      stageKey: pipelineStages.key,
+      stageName: pipelineStages.name,
+      stageIsWon: pipelineStages.isWon,
+      stageIsLost: pipelineStages.isLost,
+    })
+    .from(deals)
+    .innerJoin(pipelineStages, eq(deals.stageId, pipelineStages.id))
+    .orderBy(desc(deals.updatedAt), desc(deals.createdAt));
+
+  const etapaPorContacto = new Map<
+    string,
+    { key: string | null; name: string; isWon: boolean | null; isLost: boolean | null }
+  >();
+
+  for (const d of dealsConEtapa) {
+    if (d.contactId && !etapaPorContacto.has(d.contactId)) {
+      etapaPorContacto.set(d.contactId, {
+        key: d.stageKey,
+        name: d.stageName,
+        isWon: d.stageIsWon,
+        isLost: d.stageIsLost,
+      });
+    }
+  }
+
+  let actualizados = 0;
+  for (const [contactId, etapa] of etapaPorContacto.entries()) {
+    const nuevaEtiqueta = obtenerEtiquetaDeEtapa(etapa);
+    if (!nuevaEtiqueta) continue;
+
+    const [contacto] = await db
+      .select({ id: contacts.id, tags: contacts.tags })
+      .from(contacts)
+      .where(eq(contacts.id, contactId))
+      .limit(1);
+
+    if (!contacto) continue;
+
+    const tagsActuales: string[] = contacto.tags ?? [];
+    const sinEtapas = tagsActuales.filter((t) => !esEtiquetaDeEtapa(t));
+    const tieneEtiqueta = tagsActuales.some((t) => t.toLowerCase() === nuevaEtiqueta.toLowerCase());
+    const tieneOtrasEtapas = tagsActuales.some(
+      (t) => esEtiquetaDeEtapa(t) && t.toLowerCase() !== nuevaEtiqueta.toLowerCase()
+    );
+
+    if (!tieneEtiqueta || tieneOtrasEtapas) {
+      const finalTags = [...sinEtapas, nuevaEtiqueta];
+      await db
+        .update(contacts)
+        .set({ tags: finalTags, updatedAt: new Date() })
+        .where(eq(contacts.id, contactId));
+      actualizados++;
+    }
+  }
+
+  return { actualizados };
 }
