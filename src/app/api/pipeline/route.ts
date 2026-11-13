@@ -78,6 +78,13 @@ export async function PUT(request: NextRequest) {
     return NextResponse.json({ error: "JSON invalido" }, { status: 400 });
   }
 
+  // Sincronizar pipeline y etapas según config/cliente.ts
+  if (body.syncPipeline) {
+    const { sincronizarPipeline } = await import("@/lib/pipeline/sincronizar");
+    const r = await sincronizarPipeline();
+    return NextResponse.json({ ok: true, ...r });
+  }
+
   // Sincronizar etiquetas de contactos según etapa de su deal
   if (body.syncTags) {
     const { sincronizarEtiquetasDesdePipeline } = await import("@/lib/pipeline/sincronizar");
