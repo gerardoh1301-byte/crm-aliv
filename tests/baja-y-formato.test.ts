@@ -87,3 +87,13 @@ describe("guardas de venta, ronda 4", () => {
     );
   });
 });
+
+describe("guardas de venta, ronda 6", () => {
+  it("quita 'hoy' pegado a enviar o despachar", () => {
+    expect(limpiarFormatoWhatsApp("Para enviártela hoy, pásame tu nombre.")).toBe("Para enviártela, pásame tu nombre.");
+  });
+  it("no toca 'hoy' en otros usos", () => {
+    const t = "¿Te lo enviamos a Lima? Hoy tenemos stock.";
+    expect(limpiarFormatoWhatsApp(t)).toBe(t);
+  });
+});

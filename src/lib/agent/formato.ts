@@ -28,6 +28,8 @@ export function aplicarGuardasDeVenta(texto: string): string {
   );
   // El bot no decide la fecha de despacho: "para despacharlo hoy mismo" -> "para despacharlo".
   t = t.replace(/,?\s+hoy mismo\b/gi, "");
+  // "para enviártela hoy" / "lo despachamos hoy" -> sin "hoy".
+  t = t.replace(/\b((?:envi|despach|mand)\w*)\s+hoy\b/gi, "$1");
   const mencionaAdelanto = /S\/\s?20\b/.test(t) && /adelant|separ|reserv/i.test(t);
   if (mencionaAdelanto && !/951\s?365\s?418/.test(t)) {
     // En linea, junto al monto: agregado al final quedaba despues de la pregunta de cierre.

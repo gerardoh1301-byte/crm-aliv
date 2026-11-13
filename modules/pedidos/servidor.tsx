@@ -558,7 +558,8 @@ const tools: ToolModulo[] = [
             modalidad_pago: {
               type: "string",
               enum: ["contraentrega", "yape", "plin", "adelanto_agencia"],
-              description: "Metodo de pago acordado con el cliente.",
+              description:
+                "Lima: 'contraentrega' (paga al recibir por transferencia, Yape o Plin). Provincia: 'adelanto_agencia' (S/20 por Yape y saldo en Shalom).",
             },
             notas: {
               type: "string",
@@ -636,7 +637,7 @@ const tools: ToolModulo[] = [
       const distrito = args.distrito ? String(args.distrito).trim() : null;
       const direccionEnvio = String(args.direccion_envio ?? "").trim();
       const dniCliente = args.dni_cliente ? String(args.dni_cliente).trim() : null;
-      const modalidadPago =
+      let modalidadPago =
         typeof args.modalidad_pago === "string" ? args.modalidad_pago : "contraentrega";
       const notas = args.notas ? String(args.notas).trim() : null;
 
@@ -655,9 +656,16 @@ const tools: ToolModulo[] = [
       // Provincia (adelanto por Yape): el pedido queda "por confirmar" hasta que una PERSONA
       // verifique el adelanto con el boton "Adelanto confirmado". El bot nunca da por
       // recibido un pago (antes lo marcaba confirmado por una imagen que no podia ver).
-      const esProvinciaChat =
-        ["adelanto_agencia", "yape", "plin"].includes(modalidadPago) ||
-        extraerDatosFormularioShopify({ shipping_address: { city: distrito || ciudad, address1: direccionEnvio } }).esProvincia;
+      // El destino manda, no el medio de pago: en Lima "pago por Yape" es al recibir
+      // (contraentrega). Antes un pedido de Lima con modalidad "yape" caia en la cola de
+      // "adelanto por verificar" como si fuera de provincia.
+      const esProvinciaPorDestino = extraerDatosFormularioShopify({
+        shipping_address: { city: distrito || ciudad, address1: direccionEnvio },
+      }).esProvincia;
+      if (!esProvinciaPorDestino && (modalidadPago === "yape" || modalidadPago === "plin")) {
+        modalidadPago = "contraentrega";
+      }
+      const esProvinciaChat = esProvinciaPorDestino || modalidadPago === "adelanto_agencia";
       const estadoInicial = esProvinciaChat ? "por_confirmar_cod" : "confirmado";
       const dealId = await sincronizarEtapaPipeline(
         ctx.contactId,
