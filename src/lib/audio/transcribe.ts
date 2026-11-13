@@ -3,6 +3,8 @@
  * Modelo optimizado: gemini-3.5-transcribe (Speech-to-Text especializado de ultra baja latencia, ~2s).
  */
 
+import { getNextGeminiKey, markGeminiKeyRateLimited } from "@/lib/gemini-keys";
+
 export interface TranscribeOptions {
   apiKey?: string;
   zernioKey?: string;
@@ -17,11 +19,11 @@ export async function transcribeAudioAttachment(
   const url = attachment.url;
   if (!url) return null;
 
-  const geminiKey = options.apiKey || process.env.GEMINI_API_KEY;
+  const geminiKey = options.apiKey || getNextGeminiKey() || process.env.GEMINI_API_KEY;
   const zernioKey = options.zernioKey || process.env.ZERNIO_API_KEY;
 
   if (!geminiKey) {
-    console.warn("[transcribe] GEMINI_API_KEY no configurada");
+    console.warn("[transcribe] Ninguna clave de Gemini configurada (GEMINI_API_KEYS o GEMINI_API_KEY)");
     return null;
   }
 
@@ -103,6 +105,9 @@ export async function transcribeAudioAttachment(
     }
 
     if (!gRes.ok) {
+      if (gRes.status === 429) {
+        markGeminiKeyRateLimited(geminiKey, 60);
+      }
       const errText = await gRes.text().catch(() => "");
       console.warn(`[transcribe] Gemini error ${gRes.status}: ${errText.slice(0, 200)}`);
       return null;
@@ -139,7 +144,7 @@ export async function inspectImageAttachment(
   const url = attachment.url;
   if (!url) return null;
 
-  const geminiKey = options.apiKey || process.env.GEMINI_API_KEY;
+  const geminiKey = options.apiKey || getNextGeminiKey() || process.env.GEMINI_API_KEY;
   const zernioKey = options.zernioKey || process.env.ZERNIO_API_KEY;
   if (!geminiKey) return null;
 
@@ -205,6 +210,9 @@ export async function inspectImageAttachment(
     });
 
     if (!gRes.ok) {
+      if (gRes.status === 429) {
+        markGeminiKeyRateLimited(geminiKey, 60);
+      }
       const detalle = await gRes.text().catch(() => "");
       console.warn(`[vision] Gemini ${visionModel} respondio ${gRes.status}: ${detalle.slice(0, 200)}`);
       return null;
