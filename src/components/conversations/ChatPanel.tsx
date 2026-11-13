@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useLayoutEffect, useMemo, useRef } from "react";
 import Link from "next/link";
+import { useSearchParams } from "next/navigation";
 import { ConversationMessage } from "@/lib/conversations";
 import { ChatInput } from "./ChatInput";
 import { cn } from "@/lib/utils";
@@ -71,6 +72,12 @@ export function ChatPanel({
   detailsOpen,
   onToggleDetails,
 }: Props) {
+  const searchParams = useSearchParams();
+  const backHref = useMemo(() => {
+    const qs = searchParams?.toString();
+    return `/conversations${qs ? `?${qs}` : ""}`;
+  }, [searchParams]);
+
   const [replyingTo, setReplyingTo] = useState<ConversationMessage | null>(null);
   const [localTags, setLocalTags] = useState<string[]>(contact.tags ?? []);
   const [showTagMenu, setShowTagMenu] = useState(false);
@@ -164,7 +171,7 @@ export function ChatPanel({
       {/* Header */}
       <header className="h-14 px-3 md:px-5 flex items-center gap-2 md:gap-3 border-b border-border bg-muted/40 shrink-0">
         <Link
-          href="/conversations"
+          href={backHref}
           aria-label="Volver a la lista"
           className="md:hidden -ml-1 h-9 w-9 shrink-0 inline-flex items-center justify-center rounded-full text-muted-foreground hover:bg-muted/60"
         >

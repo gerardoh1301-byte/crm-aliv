@@ -1,8 +1,8 @@
 "use client";
 
 import Link from "next/link";
-import { AlertCircle, Bot, Search, X } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
+import { AlertCircle, Bot, ChevronLeft, ChevronRight, Search, X } from "lucide-react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { ConversationListItem } from "@/lib/conversations";
 import { cn } from "@/lib/utils";
@@ -27,11 +27,132 @@ interface Props {
 }
 
 export function ConversationsList({ conversations, selectedId }: Props) {
-  const [search, setSearch] = useState("");
-  const [channel, setChannel] = useState<Channel | "all">("all");
-  const [tagFilter, setTagFilter] = useState<string>("all");
   const searchParams = useSearchParams();
-  const [soloAtencion, setSoloAtencion] = useState(searchParams.get("filtro") === "atencion");
+
+  // Inicializar estado con persistencia de URL y fallback a sessionStorage
+  const [tagFilter, setTagFilter] = useState<string>(() => {
+    const urlTag = searchParams.get("tag");
+    if (urlTag) return urlTag;
+    if (typeof window !== "undefined") {
+      const saved = sessionStorage.getItem("crm_conv_tag");
+      if (saved) return saved;
+    }
+    return "all";
+  });
+
+  const [channel, setChannel] = useState<Channel | "all">(() => {
+    return (searchParams.get("canal") as Channel | "all") || "all";
+  });
+
+  const [search, setSearch] = useState<string>(() => {
+    return searchParams.get("q") || "";
+  });
+
+  const [soloAtencion, setSoloAtencion] = useState<boolean>(() => {
+    return searchParams.get("filtro") === "atencion";
+  });
+
+  // Referencia y estado de scroll para la barra de etiquetas
+  const tagsContainerRef = useRef<HTMLDivElement>(null);
+  const [canScrollLeft, setCanScrollLeft] = useState(false);
+  const [canScrollRight, setCanScrollRight] = useState(false);
+
+  const checkScroll = () => {
+    const el = tagsContainerRef.current;
+    if (!el) return;
+    setCanScrollLeft(el.scrollLeft > 4);
+    setCanScrollRight(el.scrollLeft < el.scrollWidth - el.clientWidth - 4);
+  };
+
+  const scrollTags = (delta: number) => {
+    tagsContainerRef.current?.scrollBy({ left: delta, behavior: "smooth" });
+  };
+
+  // Sincronizar parámetros de URL en navegación
+  useEffect(() => {
+    const urlTag = searchParams.get("tag");
+    if (urlTag && urlTag !== tagFilter) {
+      setTagFilter(urlTag);
+    }
+  }, [searchParams]);
+
+  // Chequear límites de scroll de etiquetas
+  useEffect(() => {
+    checkScroll();
+    const el = tagsContainerRef.current;
+    if (!el) return;
+    const onScroll = () => checkScroll();
+    el.addEventListener("scroll", onScroll, { passive: true });
+    window.addEventListener("resize", checkScroll);
+    return () => {
+      el.removeEventListener("scroll", onScroll);
+      window.removeEventListener("resize", checkScroll);
+    };
+  }, []);
+
+  const updateUrl = (
+    currentTag: string,
+    currentChannel: string,
+    currentAtencion: boolean,
+    currentSearch: string
+  ) => {
+    if (typeof window === "undefined") return;
+    const sp = new URLSearchParams(window.location.search);
+    if (currentTag && currentTag !== "all") sp.set("tag", currentTag);
+    else sp.delete("tag");
+
+    if (currentChannel && currentChannel !== "all") sp.set("canal", currentChannel);
+    else sp.delete("canal");
+
+    if (currentAtencion) sp.set("filtro", "atencion");
+    else sp.delete("filtro");
+
+    if (currentSearch.trim()) sp.set("q", currentSearch.trim());
+    else sp.delete("q");
+
+    const qs = sp.toString();
+    const newUrl = `${window.location.pathname}${qs ? `?${qs}` : ""}`;
+    window.history.replaceState(null, "", newUrl);
+  };
+
+  const handleTagChange = (newTag: string) => {
+    setTagFilter(newTag);
+    if (typeof window !== "undefined") {
+      if (newTag === "all") {
+        sessionStorage.removeItem("crm_conv_tag");
+      } else {
+        sessionStorage.setItem("crm_conv_tag", newTag);
+      }
+    }
+    updateUrl(newTag, channel, soloAtencion, search);
+  };
+
+  const handleChannelChange = (newChannel: Channel | "all") => {
+    setChannel(newChannel);
+    updateUrl(tagFilter, newChannel, soloAtencion, search);
+  };
+
+  const handleSoloAtencionChange = (val: boolean) => {
+    setSoloAtencion(val);
+    updateUrl(tagFilter, channel, val, search);
+  };
+
+  const handleSearchChange = (val: string) => {
+    setSearch(val);
+    updateUrl(tagFilter, channel, soloAtencion, val);
+  };
+
+  // Genera URL que preserva todos los filtros al hacer clic en un chat
+  const buildHref = (convId: string) => {
+    const sp = new URLSearchParams();
+    if (tagFilter && tagFilter !== "all") sp.set("tag", tagFilter);
+    if (channel && channel !== "all") sp.set("canal", channel);
+    if (soloAtencion) sp.set("filtro", "atencion");
+    if (search.trim()) sp.set("q", search.trim());
+    const qs = sp.toString();
+    return `/conversations/${convId}${qs ? `?${qs}` : ""}`;
+  };
+
   // Reloj de la bandeja: "espera N min" avanza solo cada minuto.
   const [ahora, setAhora] = useState(() => Date.now());
   useEffect(() => {
@@ -126,14 +247,14 @@ export function ConversationsList({ conversations, selectedId }: Props) {
           <input
             type="text"
             value={search}
-            onChange={(e) => setSearch(e.target.value)}
+            onChange={(e) => handleSearchChange(e.target.value)}
             placeholder="Buscar por nombre, usuario o telefono"
             className="w-full h-8 pl-8 pr-7 text-[12px] rounded-md border border-border/70 bg-muted/40 placeholder:text-muted-foreground focus:outline-none focus:bg-card focus:border-border focus:ring-2 focus:ring-primary/20 transition-colors"
           />
           {search && (
             <button
               type="button"
-              onClick={() => setSearch("")}
+              onClick={() => handleSearchChange("")}
               aria-label="Limpiar busqueda"
               className="absolute right-1.5 top-1/2 -translate-y-1/2 inline-flex h-5 w-5 items-center justify-center rounded-sm text-muted-foreground hover:text-foreground hover:bg-muted/60 cursor-pointer"
             >
@@ -150,7 +271,7 @@ export function ConversationsList({ conversations, selectedId }: Props) {
             type="button"
             role="tab"
             aria-selected={!soloAtencion}
-            onClick={() => setSoloAtencion(false)}
+            onClick={() => handleSoloAtencionChange(false)}
             className={cn(
               "h-7 rounded-md cursor-pointer transition-colors",
               !soloAtencion ? "bg-card shadow-xs text-foreground" : "text-muted-foreground hover:text-foreground"
@@ -162,7 +283,7 @@ export function ConversationsList({ conversations, selectedId }: Props) {
             type="button"
             role="tab"
             aria-selected={soloAtencion}
-            onClick={() => setSoloAtencion(true)}
+            onClick={() => handleSoloAtencionChange(true)}
             className={cn(
               "h-7 rounded-md cursor-pointer transition-colors inline-flex items-center justify-center gap-1.5",
               soloAtencion ? "bg-card shadow-xs text-foreground" : "text-muted-foreground hover:text-foreground"
@@ -178,45 +299,89 @@ export function ConversationsList({ conversations, selectedId }: Props) {
         </div>
       </div>
 
-      <ChannelFilter value={channel} onChange={setChannel} counts={counts} />
+      <ChannelFilter value={channel} onChange={handleChannelChange} counts={counts} />
 
-      {/* Filtro rápido por Etiquetas Principales */}
-      <div className="px-2.5 py-1.5 border-b border-border/50 bg-muted/20 flex items-center gap-1 overflow-x-auto no-scrollbar">
-        <button
-          type="button"
-          onClick={() => setTagFilter("all")}
-          className={cn(
-            "shrink-0 px-2 py-0.5 rounded-full border text-[10px] transition-all cursor-pointer font-medium",
-            tagFilter === "all"
-              ? "bg-primary text-primary-foreground border-primary font-semibold shadow-2xs"
-              : "bg-background/80 text-muted-foreground border-border hover:bg-muted hover:text-foreground"
-          )}
+      {/* Filtro rápido por Etiquetas Principales con barra de desplazamiento visible y flechas */}
+      <div className="relative border-b border-border/50 bg-muted/20">
+        {/* Botón flecha izquierda */}
+        {canScrollLeft && (
+          <button
+            type="button"
+            aria-label="Desplazar etiquetas a la izquierda"
+            onClick={() => scrollTags(-140)}
+            className="absolute left-0 top-0 bottom-1.5 z-10 w-6 flex items-center justify-center bg-gradient-to-r from-card via-card/95 to-transparent text-foreground/80 hover:text-foreground cursor-pointer shadow-xs transition-opacity"
+          >
+            <ChevronLeft className="h-4 w-4" />
+          </button>
+        )}
+
+        {/* Contenedor desplazable con barra visible y scroll suave */}
+        <div
+          ref={tagsContainerRef}
+          onScroll={checkScroll}
+          onWheel={(e) => {
+            if (e.deltaY !== 0 && tagsContainerRef.current) {
+              tagsContainerRef.current.scrollLeft += e.deltaY;
+            }
+          }}
+          className="px-2.5 pt-1.5 pb-2 flex items-center gap-1.5 overflow-x-auto scroll-smooth select-none
+            scrollbar-thin
+            [&::-webkit-scrollbar]:h-2
+            [&::-webkit-scrollbar-track]:bg-muted/60
+            [&::-webkit-scrollbar-track]:rounded-full
+            [&::-webkit-scrollbar-thumb]:bg-muted-foreground/40
+            [&::-webkit-scrollbar-thumb]:rounded-full
+            hover:[&::-webkit-scrollbar-thumb]:bg-primary/70"
         >
-          Todas
-        </button>
-        {ETIQUETAS_PRINCIPALES.map((p) => {
-          const isSelected = tagFilter.toLowerCase() === p.nombre.toLowerCase();
-          const count = tagCounts[p.nombre.toLowerCase()] ?? 0;
-          return (
-            <button
-              key={p.nombre}
-              type="button"
-              onClick={() => setTagFilter(isSelected ? "all" : p.nombre)}
-              className={cn(
-                "shrink-0 inline-flex items-center gap-1 px-2 py-0.5 rounded-full border text-[10px] transition-all cursor-pointer font-medium whitespace-nowrap shadow-2xs",
-                isSelected
-                  ? `${p.color} ring-1.5 ring-primary/40 font-bold`
-                  : "bg-background/80 text-muted-foreground border-border/60 hover:bg-muted hover:text-foreground"
-              )}
-            >
-              <span className={cn("h-1.5 w-1.5 rounded-full shrink-0", p.dot ?? "bg-primary")} />
-              {p.nombre}
-              {count > 0 && (
-                <span className="text-[9px] opacity-80 font-mono font-semibold">({count})</span>
-              )}
-            </button>
-          );
-        })}
+          <button
+            type="button"
+            onClick={() => handleTagChange("all")}
+            className={cn(
+              "shrink-0 px-2.5 py-0.5 rounded-full border text-[10px] transition-all cursor-pointer font-medium",
+              tagFilter === "all"
+                ? "bg-primary text-primary-foreground border-primary font-semibold shadow-2xs"
+                : "bg-background text-muted-foreground border-border hover:bg-muted hover:text-foreground"
+            )}
+          >
+            Todas
+          </button>
+
+          {ETIQUETAS_PRINCIPALES.map((p) => {
+            const isSelected = tagFilter.toLowerCase() === p.nombre.toLowerCase();
+            const count = tagCounts[p.nombre.toLowerCase()] ?? 0;
+            return (
+              <button
+                key={p.nombre}
+                type="button"
+                onClick={() => handleTagChange(isSelected ? "all" : p.nombre)}
+                className={cn(
+                  "shrink-0 inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full border text-[10px] transition-all cursor-pointer font-medium whitespace-nowrap shadow-2xs",
+                  isSelected
+                    ? `${p.color} ring-1.5 ring-primary/40 font-bold`
+                    : "bg-background text-muted-foreground border-border/70 hover:bg-muted hover:text-foreground"
+                )}
+              >
+                <span className={cn("h-1.5 w-1.5 rounded-full shrink-0", p.dot ?? "bg-primary")} />
+                {p.nombre}
+                {count > 0 && (
+                  <span className="text-[9px] opacity-80 font-mono font-semibold">({count})</span>
+                )}
+              </button>
+            );
+          })}
+        </div>
+
+        {/* Botón flecha derecha */}
+        {canScrollRight && (
+          <button
+            type="button"
+            aria-label="Desplazar etiquetas a la derecha"
+            onClick={() => scrollTags(140)}
+            className="absolute right-0 top-0 bottom-1.5 z-10 w-6 flex items-center justify-center bg-gradient-to-l from-card via-card/95 to-transparent text-foreground/80 hover:text-foreground cursor-pointer shadow-xs transition-opacity"
+          >
+            <ChevronRight className="h-4 w-4" />
+          </button>
+        )}
       </div>
 
       <div className="flex-1 overflow-auto">
@@ -246,7 +411,7 @@ export function ConversationsList({ conversations, selectedId }: Props) {
               return (
                 <li key={c.conversationId}>
                   <Link
-                    href={`/conversations/${c.conversationId}`}
+                    href={buildHref(c.conversationId)}
                     className={cn(
                       "relative flex items-start gap-3 px-3 py-3 cursor-pointer transition-all",
                       isActive
