@@ -105,3 +105,17 @@ describe("guardas de venta, ronda 7", () => {
     expect(limpiarFormatoWhatsApp(t)).toBe("Entendido, Carmen.\n\n¿Te escribo mañana a las 11?");
   });
 });
+
+describe("guardas de venta, ronda 8", () => {
+  it("quita la promesa 'no causa efectos secundarios'", () => {
+    const t =
+      "Es un complemento de uso diario.\n\nRespecto a tu consulta, no causa efectos secundarios comunes; sin embargo, si tomas medicación, consúltalo con tu médico.";
+    expect(limpiarFormatoWhatsApp(t)).toBe(
+      "Es un complemento de uso diario.\n\nSi tomas medicación, consúltalo con tu médico.",
+    );
+  });
+  it("no toca horarios con p. m.", () => {
+    const t = "Entrega de 2:00 p. m. a 6:00 p. m. ¿Te parece?";
+    expect(limpiarFormatoWhatsApp(t)).toBe(t);
+  });
+});

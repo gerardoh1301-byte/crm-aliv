@@ -48,6 +48,12 @@ export function aplicarGuardasDeVenta(texto: string): string {
   t = t.replace(/,?\s+hoy mismo\b/gi, "");
   // "para enviártela hoy" / "lo despachamos hoy" -> sin "hoy".
   t = t.replace(/((?:envi|despach|mand)\p{L}*)\s+hoy(?!\p{L})/giu, "$1");
+  // "No causa efectos secundarios" es una promesa de salud: se quita esa frase.
+  // La letra que sigue a lo quitado pasa a mayuscula (inicio de la oracion siguiente).
+  t = t.replace(
+    /[^.;\n]*\bno (?:causa|tiene|produce|genera|presenta)\b[^.;\n]*efectos secundarios[^.;\n]*[.;]\s*(?:sin embargo,?\s*)?(\p{Ll})?/giu,
+    (_m, letra: string | undefined) => (letra ? letra.toUpperCase() : ""),
+  );
   const mencionaAdelanto = /S\/\s?20\b/.test(t) && /adelant|separ|reserv/i.test(t);
   if (mencionaAdelanto && !/951\s?365\s?418/.test(t)) {
     // En linea, junto al monto: agregado al final quedaba despues de la pregunta de cierre.

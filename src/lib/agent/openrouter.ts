@@ -143,7 +143,7 @@ export async function createChatCompletionWithFallback(
     // cuota, asi que fallan igual si se prueban al instante. Esperar unos segundos y
     // reintentar rescata la respuesta en vez de dejar al cliente sin contestar.
     if (gemini && (status === 429 || status === 503)) {
-      for (const esperaMs of [2500, 6000]) {
+      for (const esperaMs of [2500, 6000, 12000]) {
         await new Promise((r) => setTimeout(r, esperaMs));
         try {
           console.info(`[agent-llm] Reintento tras ${status} con ${requestedModel} (espera ${esperaMs} ms)`);

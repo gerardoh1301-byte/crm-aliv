@@ -145,11 +145,12 @@ async function moverEtapa(args: { etapa?: string; motivo?: string }, ctx: ToolCo
     if (abierta.stageId === stage.id) {
       return { ok: true, data: { etapa: stage.name, sin_cambio: true, message: `Ya estaba en ${stage.name}.` } };
     }
-    // El bot no retrocede una operacion ya confirmada (en simulaciones movia un pedido de
-    // Lima recien registrado a "Por confirmar COD" y lo mandaba a la cola de adelantos).
+    // El bot no retrocede una operacion que ya tiene pedido (en simulaciones movia un pedido
+    // de Lima recien registrado a "Por confirmar COD", o uno de provincia a "Intencion de
+    // compra", y el pedido desaparecia de la vista del equipo). Cancelar va hacia adelante.
     const actual = stages.find((s) => s.id === abierta.stageId);
-    const confirmada = stages.find((s) => s.key === "pedido_confirmado");
-    if (actual && confirmada && actual.order >= confirmada.order && stage.order < actual.order) {
+    const conPedido = stages.find((s) => s.key === "por_confirmar_cod");
+    if (actual && conPedido && actual.order >= conPedido.order && stage.order < actual.order) {
       return {
         ok: true,
         data: { etapa: actual.name, sin_cambio: true, message: `La operacion ya esta en "${actual.name}"; no se retrocede.` },
