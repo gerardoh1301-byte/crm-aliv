@@ -79,3 +79,11 @@ describe("guardas de venta, ronda 3", () => {
     expect(limpiarFormatoWhatsApp("Hola Ana. Excelente elección, vamos con 2.")).toBe("Hola Ana. Perfecto, vamos con 2.");
   });
 });
+
+describe("guardas de venta, ronda 4", () => {
+  it("quita la promesa de despacho 'hoy mismo'", () => {
+    expect(limpiarFormatoWhatsApp("Envíame la captura para registrar tu despacho hoy mismo. 👟")).toBe(
+      "Envíame la captura para registrar tu despacho. 👟",
+    );
+  });
+});
