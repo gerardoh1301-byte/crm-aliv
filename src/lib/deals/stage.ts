@@ -54,6 +54,7 @@ export async function setDealStage(input: {
     // Si este deal está vinculado a una orden COD, mantener sincronizado el estado del pedido
     const MAPA_ETAPA_A_ESTADO: Record<string, string> = {
       por_confirmar_cod: "por_confirmar_cod",
+      agendar_entrega: "por_confirmar_cod",
       pedido_confirmado: "confirmado",
       en_reparto: "enviado",
       entregado: "entregado",

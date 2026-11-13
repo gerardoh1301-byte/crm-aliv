@@ -18,7 +18,8 @@ describe("Sincronización de etiquetas con etapas del Pipeline", () => {
     expect(obtenerEtiquetaDeEtapa({ name: "Despachado a agencia" })).toBe("Orden en camino");
     expect(obtenerEtiquetaDeEtapa({ name: "En reparto motorizado" })).toBe("Orden en camino");
 
-    // 3. Pedido confirmado
+    // 3. Agendar entrega / Pedido confirmado
+    expect(obtenerEtiquetaDeEtapa({ key: "agendar_entrega", name: "Agendar entrega" })).toBe("Agendar entrega");
     expect(obtenerEtiquetaDeEtapa({ key: "pedido_confirmado", name: "Pedido confirmado" })).toBe("Agendar entrega");
     expect(obtenerEtiquetaDeEtapa({ name: "Pedido confirmado" })).toBe("Agendar entrega");
     expect(obtenerEtiquetaDeEtapa({ name: "Agendar entrega" })).toBe("Agendar entrega");

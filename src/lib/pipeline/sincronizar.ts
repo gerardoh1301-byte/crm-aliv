@@ -121,6 +121,60 @@ export async function sincronizarPipeline(opts?: { borrarSobrantes?: boolean }) 
       .then(() => db.update(pipelines).set({ isDefault: true }).where(eq(pipelines.id, principal.id)));
   }
 
+  // Colocar las operaciones de los contactos que tienen la etiqueta "Agendar entrega" en la etapa "agendar_entrega"
+  const [stageAgendar] = await db
+    .select({ id: pipelineStages.id })
+    .from(pipelineStages)
+    .where(and(eq(pipelineStages.pipelineId, principal.id), eq(pipelineStages.key, "agendar_entrega")))
+    .limit(1);
+
+  if (stageAgendar) {
+    const agendarStageId = stageAgendar.id;
+    const todosContactos = await db
+      .select({ id: contacts.id, name: contacts.name, tags: contacts.tags })
+      .from(contacts);
+
+    const contactosConAgendar = todosContactos.filter((c) =>
+      (c.tags || []).some((t) => cleanStr(t) === "agendar entrega")
+    );
+
+    for (const c of contactosConAgendar) {
+      const [deal] = await db
+        .select({ id: deals.id, stageId: deals.stageId })
+        .from(deals)
+        .innerJoin(pipelineStages, eq(deals.stageId, pipelineStages.id))
+        .where(and(eq(deals.contactId, c.id), eq(pipelineStages.pipelineId, principal.id)))
+        .orderBy(desc(deals.updatedAt))
+        .limit(1);
+
+      if (deal) {
+        // No retroceder si ya fue entregado o está en camino
+        const [dealStage] = await db
+          .select({ key: pipelineStages.key, isWon: pipelineStages.isWon })
+          .from(pipelineStages)
+          .where(eq(pipelineStages.id, deal.stageId))
+          .limit(1);
+
+        if (dealStage?.isWon || dealStage?.key === "en_reparto" || dealStage?.key === "entregado") {
+          continue;
+        }
+
+        if (deal.stageId !== agendarStageId) {
+          await db
+            .update(deals)
+            .set({ stageId: agendarStageId, updatedAt: new Date() })
+            .where(eq(deals.id, deal.id));
+        }
+      } else {
+        await db.insert(deals).values({
+          title: c.name || "Operación",
+          stageId: agendarStageId,
+          contactId: c.id,
+        });
+      }
+    }
+  }
+
   return { pipelineId: principal.id, creadas, actualizadas, conservadas, borradas };
 }
 

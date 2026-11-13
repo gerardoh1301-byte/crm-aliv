@@ -186,8 +186,9 @@ export function obtenerEtiquetaDeEtapa(stage: {
     return "Orden en camino";
   }
 
-  // 3. Pedido confirmado
+  // 3. Agendar entrega / Pedido confirmado
   if (
+    k === "agendar_entrega" ||
     k === "pedido_confirmado" ||
     n.includes("pedido confirmado") ||
     n.includes("confirmado") ||
