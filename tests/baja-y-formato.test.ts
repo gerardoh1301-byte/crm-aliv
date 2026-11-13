@@ -31,6 +31,11 @@ describe("formato WhatsApp", () => {
     expect(limpiarFormatoWhatsApp("Yape *951365418*")).toBe("Yape *951365418*");
   });
   it("convierte titulos en negrita", () => {
-    expect(limpiarFormatoWhatsApp("### Opciones\n- 1 frasco")).toBe("*Opciones*\n- 1 frasco");
+    expect(limpiarFormatoWhatsApp("### Opciones\n- 1 frasco")).toBe("*Opciones*\n• 1 frasco");
+  });
+  it("cambia viñetas Markdown por puntos, sin tocar la negrita al inicio", () => {
+    expect(limpiarFormatoWhatsApp("*   1 frasco: *S/119*\n- 2 frascos\n*Precio:* S/199")).toBe(
+      "• 1 frasco: *S/119*\n• 2 frascos\n*Precio:* S/199",
+    );
   });
 });
