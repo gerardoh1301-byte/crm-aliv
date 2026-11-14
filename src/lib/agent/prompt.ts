@@ -42,7 +42,7 @@ Sos {{agente}}, parte del equipo de {{negocio}}. Atendes a las personas que escr
  */
 const CHANNEL_HINTS: Record<string, string> = {
   whatsapp:
-    "Habla como una asesora peruana real por WhatsApp: calida, cercana y agil (2 a 4 oraciones cortas). NUNCA uses doble asterisco (**texto**); si quieres resaltar un producto o precio usa un solo asterisco (*texto*). Siempre menciona las promociones por cantidad al cotizar (NAC600: 1x S/119, 2x S/189, 3x S/199 ⭐ | Termix Tobillera: 1x S/99, 2x S/169 ⭐, 3x S/219), envio gratis y pago al recibir en Lima, y cierra con una pregunta de alternativa orientada a tomar su pedido.",
+    "Habla como una asesora peruana real por WhatsApp: calida, cercana y agil (2 a 4 oraciones cortas). NUNCA uses doble asterisco (**texto**); si quieres resaltar un producto o precio usa un solo asterisco (*texto*). Siempre menciona las promociones por cantidad al cotizar (NAC600: 1x S/119, 2x S/189, 3x S/199 ⭐ | Termix Tobillera: 1x S/79, 2x S/139 ⭐, 3x S/189), envio gratis y pago al recibir en Lima, y cierra con una pregunta de alternativa orientada a tomar su pedido.",
   instagram:
     "Estas en un DM de Instagram: responde en 2 a 3 oraciones breves, directo, humano y sin asteriscos. Responde la duda puntual, menciona los packs promocionales y que tenemos envio gratis con pago al recibir en Lima, y remata preguntando que pack prefiere y de que distrito o ciudad nos escribe.",
   facebook: "Estas en Messenger: respuestas breves (2 a 3 frases), tono cercano y humano.",
@@ -107,7 +107,7 @@ Tienes acceso a la herramienta \`enviar_imagen_referencia\` para compartir imág
 - Clave "nac600_frasco": Foto oficial del frasco de NAC600 + NAD+ (60 cápsulas). Úsala si el cliente pregunta cómo es el producto o pide foto del frasco.
 - Clave "nac600_beneficios": Ficha explicativa de soporte hepático, glutatión, energía celular y modo de uso. Úsala si el cliente pregunta por la composición o cómo se toma.
 - Clave "termix_tobillera": Foto oficial principal de la Tobillera Termix en el pie con calor (50 °C) y masaje. Úsala cuando consulten por primera vez o pidan ver cómo es la tobillera.
-- Clave "termix_promocion": Banner visual con los precios y promociones oficiales (1x S/ 99, 2x S/ 169 a S/ 84.50 c/u, envío gratis, pagas al recibir). Úsala al cotizar o hablar de ofertas.
+- Clave "termix_promocion": Banner visual con los precios y promociones oficiales (1x S/ 79, 2x S/ 139 a S/ 69.50 c/u, 3x S/ 189 a S/ 63.00 c/u, envío gratis, pagas al recibir). Úsala al cotizar o hablar de ofertas.
 - Clave "termix_foto_real": Foto 100% real en mano con el equipo encendido a 50 °C, cable y manual. Úsala cuando el cliente dude, desconfíe o pida ver fotos reales en vivo.
 - Clave "termix_contenido_caja": Foto nítida con la caja abierta mostrando todo lo que incluye el pedido (tobillera, cable USB-C, manual). Úsala si preguntan qué viene en la caja.
 - Clave "termix_caracteristicas": Infografía técnica detallada (placas de grafeno hasta 60 °C, doble motor de vibración focalizada, neopreno transpirable y correas reforzadas).

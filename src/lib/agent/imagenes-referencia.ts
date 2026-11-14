@@ -48,8 +48,8 @@ export const IMAGENES_REFERENCIA: ImagenReferencia[] = [
   {
     id: "termix_promocion",
     alias: ["termix_precios", "termix_oferta", "termix_packs", "02_termix_precios_y_promociones_packs"],
-    titulo: "Precios y Promociones Oficiales Termix (1x S/99, 2x S/169)",
-    descripcion: "Banner visual de precios oficiales (1x S/ 99, 2x S/ 169 a S/ 84.50 c/u, envío gratis, pagas al recibir, garantía de 30 días).",
+    titulo: "Precios y Promociones Oficiales Termix (1x S/79, 2x S/139, 3x S/189)",
+    descripcion: "Banner visual de precios oficiales (1x S/ 79, 2x S/ 139 a S/ 69.50 c/u, 3x S/ 189 a S/ 63.00 c/u, envío gratis, pagas al recibir, garantía de 30 días).",
     url: "https://lh3.googleusercontent.com/d/1n3ltmUqZZOOgycxQGL92vQ8pb7Ocq7nt",
     categoria: "promocion",
   },

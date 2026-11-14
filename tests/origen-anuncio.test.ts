@@ -43,9 +43,9 @@ describe("renderOrigenAnuncio", () => {
     const b = renderOrigenAnuncio(anuncioTermix, false);
     expect(b).toContain("Producto del anuncio: Termix Tobillera");
     expect(b).toContain("NO le preguntes que producto");
-    expect(b).toContain("S/99");
-    expect(b).toContain("S/169");
-    expect(b).toContain("S/219");
+    expect(b).toContain("S/79");
+    expect(b).toContain("S/139");
+    expect(b).toContain("S/189");
     expect(b).toContain("https://alivstore.shop/products/termix-tobillera");
   });
   it("cuando el agente ya respondio, queda solo como contexto", () => {
