@@ -16,6 +16,8 @@ const ENDPOINTS = [
   "/api/automations/process",
   // Avisa a los admins de chats sin respuesta (sistema integrado).
   "/api/alertas",
+  // Auditoría automática de chats abandonados para rescate de ventas caídas
+  "/api/agent/rescate",
 ];
 
 declare global {

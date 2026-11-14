@@ -1,9 +1,10 @@
 import { db } from "@/db";
-import { contacts, crmSettings, deals, pipelineStages, pipelines } from "@/db/schema";
+import { contacts, conversations, crmSettings, deals, messages, pipelineStages, pipelines } from "@/db/schema";
 import { and, desc, eq } from "drizzle-orm";
 import { camposContacto, getConfig } from "@/lib/config";
 import { resumirCampos } from "@/lib/config/campos";
 import { pedidosOrdenes } from "../../../modules/pedidos/tabla";
+import { analizarSolicitudLlamada } from "./llamadas";
 
 export const SYSTEM_PROMPT_SETTINGS_KEY = "agent.system_prompt";
 
@@ -192,6 +193,45 @@ export async function renderContexto(contactId: string): Promise<string> {
     console.warn("[prompt] No se pudo cargar historial de pedidos:", err);
   }
 
+  // Detección y verificación de llamadas telefónicas directamente en el chat
+  let llamadasTxt = "";
+  try {
+    const ultimosMensajes = await db
+      .select({
+        direction: messages.direction,
+        origin: messages.origin,
+        body: messages.body,
+        type: messages.type,
+        createdAt: messages.createdAt,
+      })
+      .from(messages)
+      .innerJoin(conversations, eq(messages.conversationId, conversations.id))
+      .where(eq(conversations.contactId, contactId))
+      .orderBy(desc(messages.createdAt))
+      .limit(15);
+
+    if (ultimosMensajes.length > 0) {
+      const estadoLlamada = analizarSolicitudLlamada([...ultimosMensajes].reverse());
+      if (estadoLlamada.tieneSolicitud) {
+        if (estadoLlamada.llamadaRealizada) {
+          llamadasTxt =
+            "## Estado de Solicitud de Llamada (Verificado en Chat)\n" +
+            `- Solicitud previa del cliente: "${estadoLlamada.detalleSolicitud}"\n` +
+            `- ESTADO VERIFICADO: La llamada YA SE REALIZÓ (${estadoLlamada.evidenciaRealizada}).\n` +
+            "- INSTRUCCIÓN OBLIGATORIA: PROHIBIDO ofrecer volver a llamar o decir 'te vamos a llamar' o 'un asesor te llamará'. La comunicación telefónica ya se concretó. Continúa directamente con el acuerdo alcanzado y los datos que falten para despachar (ej. DNI, dirección o confirmación de entrega).";
+        } else {
+          llamadasTxt =
+            "## Estado de Solicitud de Llamada (Verificado en Chat)\n" +
+            `- Solicitud del cliente: "${estadoLlamada.detalleSolicitud}"${estadoLlamada.horaSolicitada ? ` (horario solicitado: ${estadoLlamada.horaSolicitada})` : ""}\n` +
+            "- ESTADO VERIFICADO: La llamada aún NO se registra como realizada en el chat.\n" +
+            "- INSTRUCCIÓN OBLIGATORIA: Confirma con calidez que un asesor le marcará al horario solicitado, ejecuta la herramienta avisar_asesor con motivo 'solicitud_llamada' y no envíes scripts genéricos de venta ni presiones por chat hasta que el asesor se comunique.";
+        }
+      }
+    }
+  } catch (err) {
+    console.warn("[prompt] Error al analizar estado de llamada en chat:", err);
+  }
+
   const partes = [
     "\n\n# CONTEXTO",
     "## Cliente",
@@ -200,6 +240,7 @@ export async function renderContexto(contactId: string): Promise<string> {
     ...(contact.aiSummary ? [`- Resumen previo: ${contact.aiSummary}`] : []),
     `- Etapa actual: ${etapaActual}`,
   ];
+  if (llamadasTxt) partes.push(llamadasTxt);
   if (pedidosTxt) partes.push(pedidosTxt);
   if (etapasTxt) partes.push("## Pipeline (clave: nombre)", etapasTxt);
   if (aAveriguar.length) partes.push("## Datos a averiguar", ...aAveriguar);
