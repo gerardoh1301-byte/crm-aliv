@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { Mail, Phone, X, Check, Bot, AlertCircle, Megaphone } from "lucide-react";
+import { Mail, Phone, X, Check, Bot, AlertCircle, Megaphone, Kanban } from "lucide-react";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -226,6 +226,17 @@ export function ContactDetailPanel({
               <Mail className="h-3 w-3" />
               {contact.email}
             </a>
+          )}
+
+          {contact.id && (
+            <Link
+              href={`/pipeline?contactId=${contact.id}&search=${encodeURIComponent(contact.name || contact.phone || "")}`}
+              className="mt-3 w-full inline-flex items-center justify-center gap-1.5 h-8 px-3 rounded-md bg-primary/10 hover:bg-primary/20 text-primary border border-primary/20 text-xs font-semibold transition-colors cursor-pointer shadow-2xs"
+              title="Abrir la cartilla de este contacto en el Pipeline"
+            >
+              <Kanban className="h-3.5 w-3.5" />
+              <span>Ver cartilla en Pipeline</span>
+            </Link>
           )}
 
           {threads.length > 1 && (

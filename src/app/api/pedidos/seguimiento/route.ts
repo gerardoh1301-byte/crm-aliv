@@ -92,6 +92,10 @@ export async function POST(req: NextRequest) {
     updatedAt: new Date(),
   };
 
+  if (agencia && String(agencia).trim()) {
+    updates.direccionEnvio = String(agencia).trim();
+  }
+
   if (estado) {
     updates.estado = estado;
   }

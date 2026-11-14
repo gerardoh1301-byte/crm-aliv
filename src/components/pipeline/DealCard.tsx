@@ -115,6 +115,7 @@ export function DealCard({
   const [currentNumeroGuia, setCurrentNumeroGuia] = useState<string | null>(numeroGuia ?? null);
   const [currentCodigoRastreo, setCurrentCodigoRastreo] = useState<string | null>(codigoRastreo ?? null);
   const [currentClaveRecojo, setCurrentClaveRecojo] = useState<string | null>(claveRecojo ?? null);
+  const [currentDireccion, setCurrentDireccion] = useState<string | null>(direccion ?? null);
   const [currentTags, setCurrentTags] = useState<string[]>(tags || []);
 
   useEffect(() => {
@@ -126,7 +127,8 @@ export function DealCard({
     setCurrentNumeroGuia(numeroGuia ?? null);
     setCurrentCodigoRastreo(codigoRastreo ?? null);
     setCurrentClaveRecojo(claveRecojo ?? null);
-  }, [numeroGuia, codigoRastreo, claveRecojo]);
+    setCurrentDireccion(direccion ?? null);
+  }, [numeroGuia, codigoRastreo, claveRecojo, direccion]);
 
   useEffect(() => {
     setCurrentTags(tags || []);
@@ -279,7 +281,7 @@ export function DealCard({
     provincia: ciudad || null,
     distrito: distrito || null,
     ciudad: ciudad || "Provincia",
-    direccion: direccion || "",
+    direccion: currentDireccion || direccion || "",
     referencia: referencia || null,
     modalidad: "TERRESTRE",
     tipoEntrega: "En agencia",
@@ -300,7 +302,7 @@ export function DealCard({
     dni: dniCliente || null,
     ciudad: ciudad || "Provincia",
     distrito: distrito || null,
-    direccion: direccion || "",
+    direccion: currentDireccion || direccion || "",
     referencia: referencia || null,
     total: value || 0,
     numeroGuia: currentNumeroGuia || null,
@@ -562,10 +564,11 @@ export function DealCard({
           open={rotuloShalomOpen}
           onOpenChange={setRotuloShalomOpen}
           data={rotuloShalomData}
-          onUpdated={(guia, codigo, clave) => {
+          onUpdated={(guia, codigo, clave, nuevaAgencia) => {
             setCurrentNumeroGuia(guia || null);
             setCurrentCodigoRastreo(codigo || null);
             setCurrentClaveRecojo(clave || null);
+            if (nuevaAgencia) setCurrentDireccion(nuevaAgencia);
           }}
           onAbrirSeguimientoCompleto={() => setShalomOpen(true)}
         />
@@ -576,10 +579,11 @@ export function DealCard({
           open={shalomOpen}
           onOpenChange={setShalomOpen}
           data={shalomData}
-          onUpdated={(guia, codigo, clave) => {
+          onUpdated={(guia, codigo, clave, nuevaAgencia) => {
             setCurrentNumeroGuia(guia || null);
             setCurrentCodigoRastreo(codigo || null);
             setCurrentClaveRecojo(clave || null);
+            if (nuevaAgencia) setCurrentDireccion(nuevaAgencia);
           }}
           onAbrirRotulo={() => setRotuloShalomOpen(true)}
         />

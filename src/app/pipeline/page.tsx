@@ -1,3 +1,4 @@
+import { Suspense } from "react";
 import { db } from "@/db";
 import { pipelines, pipelineStages, deals, contacts, teamMembers } from "@/db/schema";
 import { pedidosOrdenes } from "../../../modules/pedidos/tabla";
@@ -122,9 +123,11 @@ export default async function PipelinePage() {
   });
 
   return (
-    <PipelineWorkspace
-      pipelines={pipelinesWithStages}
-      deals={dealsForClient}
-    />
+    <Suspense fallback={<div className="p-8 text-center text-sm text-muted-foreground">Cargando pipeline...</div>}>
+      <PipelineWorkspace
+        pipelines={pipelinesWithStages}
+        deals={dealsForClient}
+      />
+    </Suspense>
   );
 }

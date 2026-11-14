@@ -52,7 +52,7 @@ interface SeguimientoShalomModalProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   data: SeguimientoShalomData;
-  onUpdated?: (numeroGuia: string, codigoRastreo: string, claveRecojo: string) => void;
+  onUpdated?: (numeroGuia: string, codigoRastreo: string, claveRecojo: string, agencia?: string) => void;
   onAbrirRotulo?: () => void;
 }
 
@@ -104,17 +104,26 @@ export function SeguimientoShalomModal({
     .filter(Boolean)
     .join(" - ");
 
+  // Inicializar agencia/destino con la dirección guardada o con ciudad/distrito
+  const initialDestino =
+    (data.direccion && data.direccion.trim()) ||
+    destinoLimpio ||
+    "Agencia Shalom";
+
+  const [agenciaDestino, setAgenciaDestino] = useState(initialDestino);
+
   // Mensaje inicial de envío (NUNCA incluye la clave secreta de recojo para asegurar el cobro del saldo)
   const generarTextoSeguimiento = () => {
     const guiaText = numeroGuia.trim() || "(En proceso de emisión)";
     const codigoText = codigoRastreo.trim() || "(En proceso)";
+    const agenciaText = agenciaDestino.trim() || destinoLimpio || "Provincia";
 
     return `¡Hola, ${data.clienteNombre.split(" ")[0]}! 👋 Te saluda Aliv Perú.
 Te compartimos los datos de tu envío por *Shalom Empresarial* 🚚📦:
 
 • *N° de Orden Shalom:* ${guiaText}
 • *Código de Orden:* ${codigoText}
-• *Destino / Agencia:* ${destinoLimpio || "Provincia"}
+• *Destino / Agencia:* ${agenciaText}
 
 💰 *Detalle de Pago:*
 • Monto total del pedido: S/ ${totalSoles.toFixed(2)}
@@ -134,12 +143,14 @@ Coloca tu *N° de Orden* (${guiaText}) y tu *Código* (${codigoText}) para ver d
 
   // Mensaje posterior cuando el cliente ya transfirió el saldo restante
   const generarTextoClave = () => {
+    const agenciaText = agenciaDestino.trim() || destinoLimpio || "Agencia Shalom";
+
     return `¡Pago del saldo de S/ ${saldoSoles.toFixed(2)} confirmado con éxito! 🙌🎉
 
 🔑 Tu *Clave / Código de Recojo en Agencia Shalom* es: *${claveRecojo.trim()}*
 📦 N° de Orden Shalom: ${numeroGuia.trim() || data.numeroOrden}
 🏷️ Código de Orden: ${codigoRastreo.trim() || "-"}
-📍 Destino: ${destinoLimpio || "Agencia Shalom"}
+📍 Destino: ${agenciaText}
 
 Recuerda acudir con tu DNI físico original para el retiro. ¡Que disfrutes tus productos Aliv! 💚`;
   };
@@ -176,6 +187,7 @@ Recuerda acudir con tu DNI físico original para el retiro. ¡Que disfrutes tus 
         numeroGuia: numeroGuia.trim(),
         codigoRastreo: codigoRastreo.trim(),
         claveRecojo: claveRecojo.trim(),
+        agencia: agenciaDestino.trim(),
         estado,
       }),
     });
@@ -190,7 +202,7 @@ Recuerda acudir con tu DNI físico original para el retiro. ¡Que disfrutes tus 
     setSaving(true);
     try {
       await guardarEnBaseDeDatos();
-      onUpdated?.(numeroGuia.trim(), codigoRastreo.trim(), claveRecojo.trim());
+      onUpdated?.(numeroGuia.trim(), codigoRastreo.trim(), claveRecojo.trim(), agenciaDestino.trim());
       toast.success("Seguimiento de Shalom guardado exitosamente");
       onOpenChange(false);
       router.refresh();
@@ -237,7 +249,7 @@ Recuerda acudir con tu DNI físico original para el retiro. ¡Que disfrutes tus 
     try {
       // 1. Guardar primero en la base de datos
       await guardarEnBaseDeDatos();
-      onUpdated?.(numeroGuia.trim(), codigoRastreo.trim(), claveRecojo.trim());
+      onUpdated?.(numeroGuia.trim(), codigoRastreo.trim(), claveRecojo.trim(), agenciaDestino.trim());
 
       // 2. Enviar por WhatsApp vía API
       if (phone) {
@@ -319,7 +331,7 @@ Recuerda acudir con tu DNI físico original para el retiro. ¡Que disfrutes tus 
 
     try {
       await guardarEnBaseDeDatos();
-      onUpdated?.(numeroGuia.trim(), codigoRastreo.trim(), claveRecojo.trim());
+      onUpdated?.(numeroGuia.trim(), codigoRastreo.trim(), claveRecojo.trim(), agenciaDestino.trim());
 
       if (phone) {
         const res = await fetch("/api/whatsapp/send", {
@@ -431,7 +443,7 @@ Recuerda acudir con tu DNI físico original para el retiro. ¡Que disfrutes tus 
               <p className="text-[10px] text-muted-foreground">Destino / Agencia</p>
               <p className="font-semibold text-foreground flex items-center gap-1">
                 <MapPin className="h-3 w-3 text-red-500 shrink-0" />
-                <span className="truncate">{destinoLimpio || "En agencia"}</span>
+                <span className="truncate">{agenciaDestino.trim() || destinoLimpio || "En agencia"}</span>
               </p>
             </div>
             <div className="bg-white/80 dark:bg-card/80 p-1.5 rounded border border-red-100 dark:border-red-900/30">
@@ -483,6 +495,26 @@ Recuerda acudir con tu DNI físico original para el retiro. ¡Que disfrutes tus 
           <p className="text-[10px] text-muted-foreground leading-tight">
             ℹ️ Ambos datos figuran en el rótulo de Shalom y son requeridos para consultar en <strong className="text-red-600">shalom.com.pe/rastrea</strong>.
           </p>
+
+          {/* Campo editable: Agencia Shalom / Destino de Entrega */}
+          <div className="space-y-1 pt-0.5">
+            <div className="flex justify-between items-center">
+              <Label htmlFor="shalom-agencia" className="text-xs font-semibold flex items-center gap-1">
+                <MapPin className="h-3 w-3 text-red-600" />
+                <span>Agencia Shalom de Entrega (Destino):</span>
+              </Label>
+              <span className="text-[9.5px] text-muted-foreground">
+                Cambia aquí si solicitó otra agencia
+              </span>
+            </div>
+            <Input
+              id="shalom-agencia"
+              placeholder="Ej. Chiclayo - Av. Bolognesi / Agencia Central"
+              value={agenciaDestino}
+              onChange={(e) => setAgenciaDestino(e.target.value)}
+              className="text-xs font-medium h-8"
+            />
+          </div>
 
           <div className="space-y-1 pt-1">
             <div className="flex justify-between items-center">

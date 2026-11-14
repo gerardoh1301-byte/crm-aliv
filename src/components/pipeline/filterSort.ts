@@ -9,6 +9,19 @@ export function applyFilters<T extends DealWithContact>(
   return deals.filter((d) => {
     if (filters.minValue !== null && d.value < filters.minValue) return false;
     if (filters.maxValue !== null && d.value > filters.maxValue) return false;
+    if (filters.contactId && d.contactId !== filters.contactId) return false;
+    if (filters.search && filters.search.trim()) {
+      const q = filters.search.trim().toLowerCase();
+      const match =
+        (d.contactName && d.contactName.toLowerCase().includes(q)) ||
+        (d.contactPhone && d.contactPhone.includes(q)) ||
+        (d.numeroOrden && d.numeroOrden.toLowerCase().includes(q)) ||
+        (d.title && d.title.toLowerCase().includes(q)) ||
+        (d.ciudad && d.ciudad.toLowerCase().includes(q)) ||
+        (d.distrito && d.distrito.toLowerCase().includes(q)) ||
+        (d.direccion && d.direccion.toLowerCase().includes(q));
+      if (!match) return false;
+    }
     return true;
   });
 }

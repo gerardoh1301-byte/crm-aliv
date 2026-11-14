@@ -1,6 +1,8 @@
 export interface PipelineFilters {
   minValue: number | null;
   maxValue: number | null;
+  search?: string | null;
+  contactId?: string | null;
 }
 
 export type SortField = "createdAt" | "value" | "probability";
@@ -14,6 +16,8 @@ export interface PipelineSort {
 export const DEFAULT_FILTERS: PipelineFilters = {
   minValue: null,
   maxValue: null,
+  search: null,
+  contactId: null,
 };
 
 export const DEFAULT_SORT: PipelineSort = {
@@ -25,5 +29,7 @@ export function activeFilterCount(filters: PipelineFilters): number {
   let n = 0;
   if (filters.minValue !== null) n++;
   if (filters.maxValue !== null) n++;
+  if (filters.search) n++;
+  if (filters.contactId) n++;
   return n;
 }

@@ -51,7 +51,7 @@ interface RotuloShalomModalProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   data: RotuloShalomData;
-  onUpdated?: (numeroGuia: string, codigoRastreo: string, claveRecojo: string) => void;
+  onUpdated?: (numeroGuia: string, codigoRastreo: string, claveRecojo: string, nuevaAgencia?: string) => void;
   onAbrirSeguimientoCompleto?: () => void;
 }
 

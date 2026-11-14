@@ -19,6 +19,7 @@ import {
   PanelRightOpen,
   Reply,
   Tag,
+  Kanban,
 } from "lucide-react";
 import { CHANNEL_LABELS, type Channel } from "@/lib/channels/types";
 import { CHANNEL_COLORS, ChannelIcon } from "@/components/icons/channels";
@@ -230,6 +231,18 @@ export function ChatPanel({
           </span>
         </div>
         <div className="ml-auto flex items-center gap-1.5 shrink-0">
+          {/* Botón directo para ir a la cartilla en el Pipeline */}
+          {contact.id && (
+            <Link
+              href={`/pipeline?contactId=${contact.id}&search=${encodeURIComponent(contact.name || contact.phone || "")}`}
+              className="inline-flex items-center gap-1.5 h-8 px-2.5 rounded-md border border-border bg-background hover:bg-muted text-xs font-semibold text-foreground transition-colors cursor-pointer shadow-2xs"
+              title="Ir a la cartilla de esta persona en el Pipeline"
+            >
+              <Kanban className="h-3.5 w-3.5 text-primary" />
+              <span className="hidden sm:inline">Pipeline</span>
+            </Link>
+          )}
+
           {/* Selector Rápido de Etiquetas */}
           {contact.id && (
             <div className="relative" ref={tagMenuRef}>

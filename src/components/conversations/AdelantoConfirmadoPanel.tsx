@@ -1,7 +1,8 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { BadgeCheck, Copy, ExternalLink, Truck } from "lucide-react";
+import Link from "next/link";
+import { BadgeCheck, Copy, ExternalLink, Truck, Kanban } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -204,8 +205,18 @@ export function AdelantoConfirmadoPanel({ contactId }: { contactId: string }) {
       {pedidos.map((p) => (
         <div key={p.id} className="rounded-md border border-border px-2.5 py-2 text-[12px] space-y-2">
           <div className="flex items-center justify-between gap-2">
-            <span className="font-medium">{p.numeroOrden}</span>
-            <span className="text-muted-foreground">
+            <div className="flex items-center gap-1.5 min-w-0">
+              <span className="font-semibold">{p.numeroOrden}</span>
+              <Link
+                href={`/pipeline?contactId=${contactId}&search=${encodeURIComponent(p.numeroOrden)}`}
+                className="inline-flex items-center gap-0.5 text-[10.5px] text-primary hover:underline font-semibold"
+                title="Ver cartilla en Pipeline"
+              >
+                <Kanban className="h-2.5 w-2.5" />
+                <span>Pipeline</span>
+              </Link>
+            </div>
+            <span className="text-muted-foreground shrink-0">
               S/ {(Number(p.total) || 0).toFixed(2)} · saldo S/ {Math.max(0, (Number(p.total) || 0) - 20).toFixed(2)}
             </span>
           </div>
