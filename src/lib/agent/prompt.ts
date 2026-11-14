@@ -246,7 +246,7 @@ export async function renderContexto(contactId: string): Promise<string> {
   const partes = [
     "\n\n# CONTEXTO",
     "## Cliente",
-    `- Nombre: ${contact.name}${contact.email ? `\n- Email: ${contact.email}` : ""}${contact.phone ? `\n- Telefono: ${contact.phone}${/^\+?51\d{9}$/.test(contact.phone.replace(/\s/g, "")) ? "" : " (no es un celular peruano: pide su numero de celular para la guia)"}` : ""}`,
+    `- Nombre registrado del cliente: ${contact.name} (IMPORTANTE: es la persona que te contacta. Si menciona que su esposo, familiar o un tercero pagará o retirará, NUNCA cambies el nombre ni empieces a llamarla por el nombre del tercero; sigue tratándola como ${contact.name})${contact.email ? `\n- Email: ${contact.email}` : ""}${contact.phone ? `\n- Telefono: ${contact.phone}${/^\+?51\d{9}$/.test(contact.phone.replace(/\s/g, "")) ? "" : " (no es un celular peruano: pide su numero de celular para la guia)"}` : ""}`,
     ...(conocidos.length ? [`- Datos conocidos: ${conocidos.join("; ")}`] : []),
     ...(contact.aiSummary ? [`- Resumen previo: ${contact.aiSummary}`] : []),
     `- Etapa actual: ${etapaActual}`,

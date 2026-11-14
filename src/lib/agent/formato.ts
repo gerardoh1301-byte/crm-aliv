@@ -69,6 +69,16 @@ export function aplicarGuardasDeVenta(texto: string): string {
   t = t.replace(/S\/\s?169(?=[^.?!\n]{0,80}(?:tobillera|termix))/gi, "S/139");
   t = t.replace(/S\/\s?219(?=[^.?!\n]{0,80}(?:tobillera|termix))/gi, "S/189");
 
+  // Guarda médica: sustituir "porción" por "dosis diaria" o "dosis"
+  t = t.replace(/\bpor porci[oó]n\b/gi, "por dosis diaria (2 cápsulas)");
+  t = t.replace(/\buna porci[oó]n\b/gi, "una dosis");
+  t = t.replace(/\bcada porci[oó]n\b/gi, "cada dosis");
+  t = t.replace(/\bporciones\b/gi, "dosis");
+
+  // Guarda logística: domingos no hay envíos
+  t = t.replace(/\b(?:los\s+)?domingos?\s+(?:hay|hacemos|tenemos|se\s+hacen)\s+env[ií]os\b/gi, "los envíos se realizan de lunes a sábado (los domingos no hay repartos)");
+  t = t.replace(/\b(?:el\s+)?domingo\s+te\s+lo\s+(?:enviamos|llevamos|entregamos)\b/gi, "las entregas son de lunes a sábado, te lo podemos entregar el sábado o lunes");
+
   const mencionaAdelanto = /S\/\s?20\b/.test(t) && /adelant|separ|reserv/i.test(t);
   if (mencionaAdelanto && !/951\s?365\s?418/.test(t)) {
     // En linea, junto al monto: agregado al final quedaba despues de la pregunta de cierre.

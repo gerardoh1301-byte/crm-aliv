@@ -76,6 +76,9 @@ function esRegionProvincia(...textos: (string | null | undefined)[]): boolean {
     // Si dice explícitamente "san martin de porres" o "smp", nunca es provincia
     if (clean.includes("san martin de porres") || clean === "smp" || /\bsmp\b/i.test(clean)) continue;
 
+    // Si menciona "ayacucho" pero como calle/avenida (ej: "av ayacucho", "jr ayacucho", "calle ayacucho")
+    if (/\b(?:av|avenida|jr|jiron|calle|pje|pasaje)\.?\s+ayacucho\b/i.test(clean)) continue;
+
     // Departamento San Martín en la selva (cuando es exactamente "san martin" o "dpto san martin", no SMP)
     if (clean === "san martin" || clean === "dpto san martin" || clean === "departamento san martin" || clean === "region san martin") {
       return true;

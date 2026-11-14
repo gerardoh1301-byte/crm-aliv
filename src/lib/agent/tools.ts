@@ -208,8 +208,19 @@ async function actualizarContacto(
   const cambios: string[] = [];
 
   if (typeof args.nombre === "string" && args.nombre.trim()) {
-    set.name = args.nombre.trim().slice(0, 120);
-    cambios.push("nombre");
+    const nuevoNombre = args.nombre.trim().slice(0, 120);
+    const nombreActual = (actual.name || "").trim();
+    const esNombreGenerico = !nombreActual || /^(lead|cliente|usuario|whatsapp|\+?\d+)/i.test(nombreActual);
+
+    // Si ya tiene un nombre real (ej: María), no sobreescribir con el nombre de un tercero (ej: esposo Edwin)
+    if (esNombreGenerico || nombreActual.toLowerCase() === nuevoNombre.toLowerCase()) {
+      set.name = nuevoNombre;
+      cambios.push("nombre");
+    } else {
+      const notaTercero = `[IA] Nombre o titular adicional mencionado: ${nuevoNombre} (mantiene contacto como ${nombreActual})`;
+      set.notes = actual.notes ? `${actual.notes}\n${notaTercero}` : notaTercero;
+      cambios.push("nombre_titular_adicional");
+    }
   }
   if (typeof args.email === "string" && args.email.includes("@")) {
     set.email = args.email.trim().toLowerCase();

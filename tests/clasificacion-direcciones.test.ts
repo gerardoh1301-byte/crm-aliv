@@ -206,4 +206,26 @@ describe("Clasificación de direcciones Lima vs Provincia (16 casos de auditorí
     });
     expect(res.esProvincia).toBe(true);
   });
+
+  it("28. Av. Ayacucho en Surco / Lima -> Lima (no confundir calle con provincia)", () => {
+    const res = extraerDatosFormularioShopify({
+      shipping_address: { city: "Santiago de Surco", province: "Lima", address1: "Av. Ayacucho 1240" },
+    });
+    expect(res.esProvincia).toBe(false);
+    expect(res.ciudad).toBe("Lima");
+  });
+
+  it("29. Jr. Ayacucho en Magdalena del Mar -> Lima", () => {
+    const res = extraerDatosFormularioShopify({
+      shipping_address: { city: "Magdalena del Mar", address1: "Jr. Ayacucho 350" },
+    });
+    expect(res.esProvincia).toBe(false);
+  });
+
+  it("30. Ciudad / Departamento de Ayacucho (Huamanga) -> Provincia", () => {
+    const res = extraerDatosFormularioShopify({
+      shipping_address: { city: "Huamanga", province: "Ayacucho", address1: "Jr. 28 de Julio 120" },
+    });
+    expect(res.esProvincia).toBe(true);
+  });
 });

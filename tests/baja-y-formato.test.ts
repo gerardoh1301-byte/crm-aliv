@@ -161,4 +161,24 @@ describe("guardas de venta, ronda 10", () => {
       limpiarFormatoWhatsApp("Cada softgel aporta 600 mg de NAC."),
     ).toBe("Cada cápsula aporta 600 mg de NAC.");
   });
+
+  it("sustituye 'porción' por 'dosis diaria (2 cápsulas)' o 'dosis'", () => {
+    expect(
+      limpiarFormatoWhatsApp("Contiene 600 mg de NAC por porción."),
+    ).toBe("Contiene 600 mg de NAC por dosis diaria (2 cápsulas).");
+
+    expect(
+      limpiarFormatoWhatsApp("Toma una porción cada mañana."),
+    ).toBe("Toma una dosis cada mañana.");
+  });
+
+  it("corrige afirmaciones de que los domingos hay envíos", () => {
+    expect(
+      limpiarFormatoWhatsApp("Los domingos hay envíos para entregarte tu pedido."),
+    ).toContain("los envíos se realizan de lunes a sábado (los domingos no hay repartos)");
+
+    expect(
+      limpiarFormatoWhatsApp("El domingo te lo enviamos a tu casa."),
+    ).toContain("las entregas son de lunes a sábado");
+  });
 });
