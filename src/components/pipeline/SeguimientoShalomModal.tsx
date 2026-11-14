@@ -23,6 +23,7 @@ import {
   Sparkles,
   Lock,
   FileImage,
+  MessageCircle,
 } from "lucide-react";
 import { toast } from "sonner";
 import { useRouter } from "next/navigation";
@@ -200,6 +201,28 @@ Recuerda acudir con tu DNI físico original para el retiro. ¡Que disfrutes tus 
     }
   };
 
+  const getCleanPhone = () => {
+    const raw = (data.telefono || "").replace(/\D/g, "");
+    if (!raw) return "";
+    return raw.length === 9 ? `51${raw}` : raw;
+  };
+
+  const handleAbrirWhatsAppWeb = (tipo: "seguimiento" | "clave") => {
+    const phone = getCleanPhone();
+    if (!phone) {
+      toast.error("No hay número de teléfono registrado para este cliente");
+      return;
+    }
+    const texto = tipo === "clave" ? generarTextoClave() : generarTextoSeguimiento();
+    navigator.clipboard.writeText(texto);
+    toast.success("Mensaje copiado. Abriendo WhatsApp...", { duration: 3000 });
+    window.open(
+      `https://wa.me/${phone}?text=${encodeURIComponent(texto)}`,
+      "_blank",
+      "noopener,noreferrer"
+    );
+  };
+
   // Envío automático del mensaje de seguimiento por WhatsApp
   const handleEnviarAuto = async () => {
     if (!numeroGuia.trim()) {
@@ -209,6 +232,7 @@ Recuerda acudir con tu DNI físico original para el retiro. ¡Que disfrutes tus 
 
     setSendingAuto(true);
     const texto = generarTextoSeguimiento();
+    const phone = getCleanPhone();
 
     try {
       // 1. Guardar primero en la base de datos
@@ -216,26 +240,60 @@ Recuerda acudir con tu DNI físico original para el retiro. ¡Que disfrutes tus 
       onUpdated?.(numeroGuia.trim(), codigoRastreo.trim(), claveRecojo.trim());
 
       // 2. Enviar por WhatsApp vía API
-      if (data.telefono) {
+      if (phone) {
         const res = await fetch("/api/whatsapp/send", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
-            to: data.telefono,
+            to: `+${phone}`,
             contactId: data.contactId,
             text: texto,
           }),
         });
 
-        if (res.ok) {
+        const json = await res.json().catch(() => ({}));
+
+        if (res.ok && json.success) {
           toast.success("✅ ¡Mensaje de seguimiento enviado por WhatsApp al cliente!");
           onOpenChange(false);
           router.refresh();
           return;
         }
+
+        // Si la ventana de 24h está cerrada por Meta
+        if (json.outsideWindow || res.status === 403) {
+          navigator.clipboard.writeText(texto);
+          toast.warning(
+            "⚠️ Ventana de 24h cerrada por Meta. Abriendo WhatsApp Web con el mensaje listo...",
+            { duration: 5000 }
+          );
+          window.open(
+            `https://wa.me/${phone}?text=${encodeURIComponent(texto)}`,
+            "_blank",
+            "noopener,noreferrer"
+          );
+          onOpenChange(false);
+          router.refresh();
+          return;
+        }
+
+        // Si la API devolvió otro error
+        navigator.clipboard.writeText(texto);
+        toast.error(
+          json.error || "No se pudo enviar por API; abriendo WhatsApp Web...",
+          { duration: 5000 }
+        );
+        window.open(
+          `https://wa.me/${phone}?text=${encodeURIComponent(texto)}`,
+          "_blank",
+          "noopener,noreferrer"
+        );
+        onOpenChange(false);
+        router.refresh();
+        return;
       }
 
-      // Fallback: Si no hay teléfono o ventana cerrada, copiar al portapapeles
+      // Fallback: Si no hay teléfono
       navigator.clipboard.writeText(texto);
       toast.info("Seguimiento guardado y mensaje copiado al portapapeles");
       onOpenChange(false);
@@ -257,28 +315,63 @@ Recuerda acudir con tu DNI físico original para el retiro. ¡Que disfrutes tus 
 
     setSendingClaveAuto(true);
     const texto = generarTextoClave();
+    const phone = getCleanPhone();
 
     try {
       await guardarEnBaseDeDatos();
       onUpdated?.(numeroGuia.trim(), codigoRastreo.trim(), claveRecojo.trim());
 
-      if (data.telefono) {
+      if (phone) {
         const res = await fetch("/api/whatsapp/send", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
-            to: data.telefono,
+            to: `+${phone}`,
             contactId: data.contactId,
             text: texto,
           }),
         });
 
-        if (res.ok) {
+        const json = await res.json().catch(() => ({}));
+
+        if (res.ok && json.success) {
           toast.success("✅ ¡Clave de recojo enviada por WhatsApp al cliente!");
           onOpenChange(false);
           router.refresh();
           return;
         }
+
+        // Si la ventana de 24h está cerrada por Meta
+        if (json.outsideWindow || res.status === 403) {
+          navigator.clipboard.writeText(texto);
+          toast.warning(
+            "⚠️ Ventana de 24h cerrada por Meta. Abriendo WhatsApp Web con el mensaje listo...",
+            { duration: 5000 }
+          );
+          window.open(
+            `https://wa.me/${phone}?text=${encodeURIComponent(texto)}`,
+            "_blank",
+            "noopener,noreferrer"
+          );
+          onOpenChange(false);
+          router.refresh();
+          return;
+        }
+
+        // Si la API devolvió otro error
+        navigator.clipboard.writeText(texto);
+        toast.error(
+          json.error || "No se pudo enviar por API; abriendo WhatsApp Web...",
+          { duration: 5000 }
+        );
+        window.open(
+          `https://wa.me/${phone}?text=${encodeURIComponent(texto)}`,
+          "_blank",
+          "noopener,noreferrer"
+        );
+        onOpenChange(false);
+        router.refresh();
+        return;
       }
 
       navigator.clipboard.writeText(texto);
@@ -429,75 +522,120 @@ Recuerda acudir con tu DNI físico original para el retiro. ¡Que disfrutes tus 
 
         {/* Acciones de Envío Automático y Copia */}
         <div className="flex flex-col gap-2 pt-2 border-t border-border/50">
-          {/* Botón Principal: Envío Automático WhatsApp */}
-          <Button
-            type="button"
-            variant="default"
-            size="sm"
-            disabled={sendingAuto || saving}
-            onClick={handleEnviarAuto}
-            className="w-full h-8.5 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs gap-1.5 shadow-sm cursor-pointer"
-            title="Guarda y envía el mensaje de seguimiento de Shalom automáticamente por WhatsApp al cliente"
-          >
-            {sendingAuto ? (
-              <>
-                <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                <span>Enviando WhatsApp al cliente...</span>
-              </>
-            ) : (
-              <>
-                <Send className="h-3.5 w-3.5" />
-                <span>Enviar WhatsApp Automático (Seguimiento y Saldo)</span>
-              </>
-            )}
-          </Button>
+          {/* Fila 1: Seguimiento inicial (N° orden, código y saldo) */}
+          <div className="flex items-center gap-1.5">
+            <Button
+              type="button"
+              variant="default"
+              size="sm"
+              disabled={sendingAuto || saving}
+              onClick={handleEnviarAuto}
+              className="flex-1 h-8.5 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs gap-1.5 shadow-sm cursor-pointer"
+              title="Guarda y envía el mensaje de seguimiento de Shalom por WhatsApp al cliente"
+            >
+              {sendingAuto ? (
+                <>
+                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                  <span>Enviando WhatsApp...</span>
+                </>
+              ) : (
+                <>
+                  <Send className="h-3.5 w-3.5" />
+                  <span>Enviar WhatsApp (Seguimiento)</span>
+                </>
+              )}
+            </Button>
 
-          <div className="flex items-center justify-between gap-2">
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={() => handleAbrirWhatsAppWeb("seguimiento")}
+              className="text-xs h-8.5 px-2.5 text-emerald-700 dark:text-emerald-400 border-emerald-500/30 hover:bg-emerald-50 dark:hover:bg-emerald-950/20 font-medium cursor-pointer"
+              title="Abrir directamente en WhatsApp Web con el mensaje de seguimiento"
+            >
+              <MessageCircle className="h-3.5 w-3.5 mr-1" />
+              <span>Web</span>
+            </Button>
+
             <Button
               type="button"
               variant="outline"
               size="sm"
               onClick={handleCopiarMensaje}
-              className="text-xs h-8 flex-1"
+              className="text-xs h-8.5 px-2.5 cursor-pointer"
               title="Copiar mensaje con orden, código y saldo al portapapeles"
             >
               {copied ? (
-                <>
-                  <Check className="h-3.5 w-3.5 mr-1 text-emerald-600" />
-                  Copiado (Sin clave)
-                </>
+                <Check className="h-3.5 w-3.5 text-emerald-600" />
               ) : (
-                <>
-                  <Copy className="h-3.5 w-3.5 mr-1" />
-                  Copiar Mensaje
-                </>
+                <Copy className="h-3.5 w-3.5" />
               )}
             </Button>
-
-            {claveRecojo.trim() && (
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                disabled={sendingClaveAuto}
-                onClick={handleEnviarClaveAuto}
-                className="text-xs h-8 flex-1 bg-amber-500/10 hover:bg-amber-500/20 text-amber-700 dark:text-amber-400 border-amber-500/30 font-semibold"
-                title="Enviar la clave de recojo automáticamente por WhatsApp tras confirmar el pago del saldo"
-              >
-                {sendingClaveAuto ? (
-                  <>
-                    <Loader2 className="h-3.5 w-3.5 animate-spin mr-1" />
-                    Enviando clave...
-                  </>
-                ) : (
-                  <>
-                    <Lock className="h-3.5 w-3.5 mr-1" />
-                    Enviar Clave Auto
-                  </>
-                )}
-              </Button>
-            )}
           </div>
+
+          {/* Fila 2: Clave Secreta de Recojo (cuando existe) */}
+          {claveRecojo.trim() && (
+            <div className="rounded-md border border-amber-500/40 bg-amber-500/10 p-2 space-y-1.5">
+              <div className="flex items-center justify-between text-[11px] font-semibold text-amber-800 dark:text-amber-300">
+                <span className="flex items-center gap-1">
+                  <Lock className="h-3 w-3" />
+                  Clave de Recojo: <span className="font-mono bg-amber-200 dark:bg-amber-900 px-1.5 py-0.5 rounded font-bold">{claveRecojo.trim()}</span>
+                </span>
+                <span className="text-[10px] text-muted-foreground">Enviar solo tras pago del saldo</span>
+              </div>
+              <div className="flex items-center gap-1.5">
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  disabled={sendingClaveAuto}
+                  onClick={handleEnviarClaveAuto}
+                  className="flex-1 text-xs h-8 bg-amber-600 hover:bg-amber-700 text-white border-amber-600 font-bold cursor-pointer"
+                  title="Enviar la clave automáticamente por WhatsApp (abre WhatsApp Web si la ventana 24h está cerrada)"
+                >
+                  {sendingClaveAuto ? (
+                    <>
+                      <Loader2 className="h-3.5 w-3.5 animate-spin mr-1" />
+                      Enviando clave...
+                    </>
+                  ) : (
+                    <>
+                      <Lock className="h-3.5 w-3.5 mr-1" />
+                      🔒 Enviar Clave Auto
+                    </>
+                  )}
+                </Button>
+
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={() => handleAbrirWhatsAppWeb("clave")}
+                  className="text-xs h-8 px-2.5 bg-emerald-600 hover:bg-emerald-700 text-white font-medium cursor-pointer"
+                  title="Abrir directamente en WhatsApp Web con la clave de recojo lista para enviar"
+                >
+                  <MessageCircle className="h-3.5 w-3.5 mr-1" />
+                  <span>Web</span>
+                </Button>
+
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={handleCopiarMensajeClave}
+                  className="text-xs h-8 px-2.5 bg-card hover:bg-accent border-border cursor-pointer"
+                  title="Copiar mensaje con la clave de recojo al portapapeles"
+                >
+                  {copiedClave ? (
+                    <Check className="h-3.5 w-3.5 text-emerald-600" />
+                  ) : (
+                    <Copy className="h-3.5 w-3.5" />
+                  )}
+                </Button>
+              </div>
+            </div>
+          )}
 
           <div className="flex items-center justify-between gap-2 pt-1 border-t border-border/30">
             {onAbrirRotulo && (

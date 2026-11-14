@@ -14,6 +14,7 @@ import {
 import { getAccountForChannel } from "@/lib/channels/accounts";
 import { whatsappProvider } from "@/lib/channels/provider";
 import { requireMember } from "@/lib/api-auth";
+import { isOutsideFreeFormWindow } from "@/lib/channels/types";
 
 /**
  * Envio de WhatsApp identificando al destinatario por TELEFONO.
@@ -70,6 +71,18 @@ export async function POST(request: NextRequest) {
 
   // Hilo abierto: sale por el camino comun (adapter + persistencia unificada).
   if (existing) {
+    if (!body.template && isOutsideFreeFormWindow("whatsapp", existing.lastInboundAt)) {
+      return NextResponse.json(
+        {
+          success: false,
+          outsideWindow: true,
+          error: "Ventana de 24h cerrada por Meta",
+          hint: "Meta no permite enviar texto libre después de 24 horas del último mensaje del cliente. Usa WhatsApp Web directo o una plantilla aprobada.",
+        },
+        { status: 403 }
+      );
+    }
+
     const result = await deliverMessage(
       existing.id,
       body.template
