@@ -16,7 +16,7 @@ import { getOpenRouterClient, getAgentModel, hasOpenRouterKey, createChatComplet
 import { autoDetectarYAgendarHorario } from "./scheduler";
 
 const MAX_TOOL_ROUNDS = 6;
-const HISTORY_LIMIT = 30;
+const HISTORY_LIMIT = 14;
 const REINTENTO_MS = 20_000;
 const MENSAJE_CORTESIA = "Disculpa la demora 🙏 En unos minutos te respondo por aquí.";
 

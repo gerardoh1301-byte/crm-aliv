@@ -23,8 +23,11 @@ export function getAllGeminiKeys(): string[] {
     ...envMulti.split(/[\r\n,]+/),
     envSingle,
   ]
-    .map((k) => k.trim())
-    .filter((k) => k.length > 10);
+    .map((k) => {
+      const match = k.match(/(AQ\.[A-Za-z0-9_\-]+|AIza[A-Za-z0-9_\-]+)/);
+      return match ? match[1] : k.trim();
+    })
+    .filter((k) => k.length >= 10);
 
   // De-duplicar conservando orden
   return Array.from(new Set(raw));

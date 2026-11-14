@@ -116,6 +116,20 @@ export function ConversationsList({ conversations, selectedId }: Props) {
   };
 
   const handleTagChange = (newTag: string) => {
+    // Si el usuario activa una etiqueta específica mientras está en "Requiere atención",
+    // pero esa etiqueta no tiene chats pendientes de atención humana, cambiamos a "Todas"
+    // para mostrar inmediatamente todas las conversaciones etiquetadas en vez de lista vacía.
+    let nextSoloAtencion = soloAtencion;
+    if (newTag !== "all" && soloAtencion) {
+      const enAtencionConTag = conversations.some(
+        (c) => requiereAtencion(c) && c.tags?.some((t) => t.toLowerCase() === newTag.toLowerCase())
+      );
+      if (!enAtencionConTag) {
+        nextSoloAtencion = false;
+        setSoloAtencion(false);
+      }
+    }
+
     setTagFilter(newTag);
     if (typeof window !== "undefined") {
       if (newTag === "all") {
@@ -124,7 +138,7 @@ export function ConversationsList({ conversations, selectedId }: Props) {
         sessionStorage.setItem("crm_conv_tag", newTag);
       }
     }
-    updateUrl(newTag, channel, soloAtencion, search);
+    updateUrl(newTag, channel, nextSoloAtencion, search);
   };
 
   const handleChannelChange = (newChannel: Channel | "all") => {

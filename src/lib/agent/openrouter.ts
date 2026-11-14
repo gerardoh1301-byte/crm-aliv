@@ -2,17 +2,16 @@ import OpenAI from "openai";
 import { getConfig, marca } from "@/lib/config";
 import { getAllGeminiKeys, getNextGeminiKey, markGeminiKeyRateLimited } from "@/lib/gemini-keys";
 
-const DEFAULT_MODEL = "gemini-3.1-flash-lite";
+const DEFAULT_MODEL = "gemini-3.5-flash-lite";
 const OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1";
 const GEMINI_BASE_URL = "https://generativelanguage.googleapis.com/v1beta/openai/";
 const GROQ_BASE_URL = "https://api.groq.com/openai/v1";
 
 // Modelos activos y comprobados en la API de Google
 const GEMINI_FALLBACK_MODELS = [
-  "gemini-3.1-flash-lite",
-  "gemini-flash-lite-latest",
-  "gemini-3.8-flash",
   "gemini-3.5-flash-lite",
+  "gemini-flash-lite-latest",
+  "gemini-3.1-flash-lite",
 ];
 
 const geminiClients = new Map<string, OpenAI>();
@@ -26,7 +25,7 @@ function getGroqClient(): OpenAI | null {
     groqClient = new OpenAI({
       apiKey,
       baseURL: GROQ_BASE_URL,
-      timeout: 10000,
+      timeout: 20000,
       maxRetries: 0,
     });
   }
@@ -42,7 +41,7 @@ export function getGeminiClient(specificKey?: string): OpenAI | null {
     client = new OpenAI({
       apiKey,
       baseURL: GEMINI_BASE_URL,
-      timeout: 12000, // 12s tiempo máximo para no demorar la respuesta
+      timeout: 30000, // 30s tiempo suficiente para turnos con herramientas y razonamiento
       maxRetries: 0,  // Sin reintentos internos del SDK para que nuestro failover actúe de inmediato
     });
     geminiClients.set(apiKey, client);
@@ -113,7 +112,7 @@ export async function createChatCompletionWithFallback(
   const requestedModel = params.model || getAgentModel();
   const allKeys = getAllGeminiKeys();
 
-  const timeoutMs = options?.timeout ?? (params.tools && params.tools.length > 0 ? 12000 : 20000);
+  const timeoutMs = options?.timeout ?? (params.tools && params.tools.length > 0 ? 30000 : 25000);
   const reqOptions: OpenAI.RequestOptions = {
     timeout: timeoutMs,
     maxRetries: 0,
@@ -190,7 +189,7 @@ export async function createChatCompletionWithFallback(
   // 2. Si todas las claves de Gemini fallaron o están agotadas, conmutar a Groq Cloud (Ultra-rápido)
   const groq = getGroqClient();
   if (groq) {
-    const groqModels = ["qwen/qwen3.8-27b", "openai/gpt-oss-120b"];
+    const groqModels = ["openai/gpt-oss-20b", "openai/gpt-oss-120b", "qwen/qwen3.8-27b"];
     for (const gModel of groqModels) {
       try {
         console.info(`[agent-llm] Intentando failover Groq con ${gModel}...`);
