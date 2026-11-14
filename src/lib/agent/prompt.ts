@@ -103,24 +103,34 @@ export function renderSystemPrompt(template: string, opts: { now?: Date; channel
   const hint = CHANNEL_HINTS[channel];
   const conCanal = hint ? `${rendered}\n\n# CANAL\n${hint}` : rendered;
 
-  const bloqueImagenes = `\n\n# IMAGENES DE APOYO Y REFERENCIA (HOSPEDADAS EN GOOGLE DRIVE CDN)
+  const bloqueImagenesYAgencias = `\n\n# IMAGENES DE APOYO Y REFERENCIA (HOSPEDADAS EN GOOGLE DRIVE CDN)
 Tienes acceso a la herramienta \`enviar_imagen_referencia\` para compartir imágenes e infografías oficiales directamente en WhatsApp:
-- Clave "nac600_frasco": Foto oficial del frasco de NAC600 + NAD+ (60 cápsulas). Úsala si el cliente pregunta cómo es el producto o pide foto del frasco. En el texto y pie de foto usa SIEMPRE "cápsulas" (prohibido decir "cápsula blanda" o "softgel").
-- Clave "nac600_beneficios": Ficha explicativa de soporte hepático, glutatión, energía celular y modo de uso. Úsala si el cliente pregunta por la composición o cómo se toma.
+- Clave "nac600_frasco": Foto oficial del frasco de NAC600 + NAD+ (60 cápsulas). Úsala si el cliente pregunta cómo es el producto o pide foto del frasco de NAC600. En el texto y pie de foto usa SIEMPRE "cápsulas" (prohibido decir "cápsula blanda" o "softgel").
+- Clave "nac600_beneficios": Ficha explicativa de soporte hepático, glutatión, energía celular y modo de uso de NAC600. Úsala si el cliente pregunta por la composición, para qué sirve o cómo se toma.
 - Clave "termix_tobillera": Foto oficial principal de la Tobillera Termix en el pie con calor (50 °C) y masaje. Úsala cuando consulten por primera vez o pidan ver cómo es la tobillera.
-- Clave "termix_promocion": Banner visual con los precios y promociones oficiales (1x S/ 79, 2x S/ 139 a S/ 69.50 c/u, 3x S/ 189 a S/ 63.00 c/u, envío gratis, pagas al recibir). Úsala al cotizar o hablar de ofertas.
+- Clave "termix_promocion": Banner visual con los precios y promociones oficiales de Termix (1x S/ 79, 2x S/ 139 a S/ 69.50 c/u, 3x S/ 189 a S/ 63.00 c/u, envío gratis, pagas al recibir). Úsala al cotizar o hablar de ofertas de tobillera.
 - Clave "termix_foto_real": Foto 100% real en mano con el equipo encendido a 50 °C, cable y manual. Úsala cuando el cliente dude, desconfíe o pida ver fotos reales en vivo.
-- Clave "termix_contenido_caja": Foto nítida con la caja abierta mostrando todo lo que incluye el pedido (tobillera, cable USB-C, manual). Úsala si preguntan qué viene en la caja.
-- Clave "termix_caracteristicas": Infografía técnica detallada (placas de grafeno hasta 60 °C, doble motor de vibración focalizada, neopreno transpirable y correas reforzadas).
+- Clave "termix_contenido_caja": Foto nítida con la caja abierta mostrando todo lo que incluye el pedido de Termix (tobillera, cable USB-C, manual). Úsala si preguntan qué viene en la caja.
+- Clave "termix_caracteristicas": Infografía técnica detallada de Termix (placas de grafeno hasta 60 °C, doble motor de vibración focalizada, neopreno transpirable y correas reforzadas).
 - Clave "termix_comparativa": Tabla comparativa de Termix frente a tobilleras comunes / vendas elásticas pasivas.
 - Clave "yape_adelanto": Datos y comprobante oficial de Yape / Plin (951365418 - Gerardo Huaynalaya). Úsala cuando un cliente de provincia solicite los datos de pago para su adelanto de S/ 20.
 
-IMPORTANTE SOBRE IMÁGENES:
-- El parámetro \`motivo\` de la herramienta actúa como pie de foto (caption) en WhatsApp. Escribe una frase breve, cordial y vendedora (ej: "¡Aquí te comparto la foto de nuestra Tobillera Termix en funcionamiento! 👟✨").
+REGLAS ESTRICTAS DE SELECCIÓN DE IMÁGENES (ANTI-CRUCE):
+- ⚠️ PROHIBIDO TERMINANTEMENTE enviar fotos o infografías de Termix Tobillera cuando el cliente esté preguntando o conversando sobre NAC600.
+- ⚠️ PROHIBIDO TERMINANTEMENTE enviar fotos de NAC600 cuando el cliente esté preguntando o conversando sobre la Tobillera Termix.
+- Cada imagen enviada debe corresponder al 100% al producto que el cliente tiene en interés o está consultando en ese instante.
+- El parámetro \`motivo\` de la herramienta actúa como pie de foto (caption) en WhatsApp. Escribe una frase breve, cordial y vendedora (ej: "¡Aquí te comparto la foto de nuestro NAC600 + NAD+! 🌿✨").
 - En NAC600, describe siempre el producto como "cápsulas" (PROHIBIDO usar los términos "cápsula blanda", "cápsulas blandas", "softgel" o "softgels").
-- NUNCA respondas con el texto literal "Foto de referencia" ni dejes el mensaje como texto suelto sin contexto.`;
+- NUNCA respondas con el texto literal "Foto de referencia" ni dejes el mensaje como texto suelto sin contexto.
 
-  return `${conCanal}${bloqueImagenes}`;
+# ENVÍOS A PROVINCIA Y ELECCIÓN PROACTIVA DE AGENCIA SHALOM:
+- Cuando el cliente indique que se encuentra en provincia, o proporcione su ciudad, distrito, calle o dirección (ej: Sullana, Arequipa, Chiclayo, Trujillo, Huancayo, Piura, etc.):
+  1. Identifica qué agencia de Shalom le queda más cercana usando la herramienta \`buscar_agencia_shalom\` (o revisa la sugerencia en tu sección CONTEXTO).
+  2. Proponle SIEMPRE esa agencia Shalom como primera opción de forma inmediata y natural:
+     Ejemplo: "Veo que te ubicas por [zona/calle]. Te sugiero enviarlo a la **Agencia Shalom [Nombre]** ([Dirección]), que es la más cercana a tu ubicación. ¿Te parece bien que lo programemos a esa agencia o prefieres otra?"
+  3. No dejes al cliente adivinando ni le hagas buscar: sugiérele la más cercana tú primero.`;
+
+  return `${conCanal}${bloqueImagenesYAgencias}`;
 }
 
 /**
@@ -241,6 +251,33 @@ export async function renderContexto(contactId: string): Promise<string> {
     ...(contact.aiSummary ? [`- Resumen previo: ${contact.aiSummary}`] : []),
     `- Etapa actual: ${etapaActual}`,
   ];
+
+  // Detección proactiva de agencia Shalom si el cliente es de provincia
+  try {
+    const fields = (contact.customFields as Record<string, unknown> | null) ?? {};
+    const ciudad = fields.ciudad ? String(fields.ciudad) : null;
+    const distrito = fields.distrito ? String(fields.distrito) : null;
+    const direccion = fields.direccion ? String(fields.direccion) : null;
+
+    if (ciudad || distrito || direccion) {
+      const { buscarAgenciaShalomCercana } = await import("@/lib/agencias/shalom-directorio");
+      const shalomRes = buscarAgenciaShalomCercana({
+        ciudad,
+        distrito,
+        direccion,
+      });
+      if (shalomRes.mejorOpcion) {
+        partes.push(
+          "## Agencia Shalom sugerida para este contacto (Provincia)\n" +
+            `- Agencia más cercana: ${shalomRes.mejorOpcion.nombre} (${shalomRes.mejorOpcion.direccion})\n` +
+            `- Instrucción: Proponle al cliente la ${shalomRes.mejorOpcion.nombre} como primera opción para su despacho a provincia.`
+        );
+      }
+    }
+  } catch (err) {
+    console.warn("[prompt] Error al buscar agencia Shalom para contexto:", err);
+  }
+
   if (llamadasTxt) partes.push(llamadasTxt);
   if (pedidosTxt) partes.push(pedidosTxt);
   if (etapasTxt) partes.push("## Pipeline (clave: nombre)", etapasTxt);

@@ -477,24 +477,44 @@ async function enviarImagenReferencia(
   args: { clave?: string; motivo?: string },
   ctx: ToolContext
 ): Promise<ToolResult> {
-  const { buscarImagenReferencia } = await import("./imagenes-referencia");
+  const { resolverMejorImagen } = await import("./imagenes-referencia");
   const { deliverMessage } = await import("@/lib/channels/deliver");
   const { limpiarFormatoWhatsApp } = await import("./formato");
 
-  if (!args.clave) {
-    return {
-      ok: false,
-      error:
-        "Debes especificar la clave de la imagen (ej: 'nac600_frasco', 'nac600_beneficios', 'termix_tobillera', 'yape_adelanto').",
-    };
+  // Obtener contexto de etiquetas del contacto y últimos mensajes para evitar cruces
+  let textoContexto = "";
+  let interesProducto = "";
+  try {
+    const [c] = await db
+      .select({ tags: contacts.tags })
+      .from(contacts)
+      .where(eq(contacts.id, ctx.contactId))
+      .limit(1);
+    const tags = Array.isArray(c?.tags) ? (c?.tags as string[]).join(" ") : "";
+    interesProducto = tags;
+
+    if (ctx.conversationId) {
+      const ultimos = await db
+        .select({ body: messages.body })
+        .from(messages)
+        .where(eq(messages.conversationId, ctx.conversationId))
+        .orderBy(desc(messages.createdAt))
+        .limit(5);
+      textoContexto = ultimos.map((m) => m.body).join(" ");
+    }
+  } catch (err) {
+    console.warn("[enviarImagenReferencia] Error al leer contexto:", err);
   }
 
-  const img = buscarImagenReferencia(args.clave);
-  if (!img) {
-    return {
-      ok: false,
-      error: `Imagen no encontrada para clave '${args.clave}'. Claves válidas: termix_tobillera, termix_promocion, termix_foto_real, termix_contenido_caja, termix_caracteristicas, termix_comparativa, nac600_frasco, nac600_beneficios, yape_adelanto.`,
-    };
+  const { imagen: img, corregida, motivoCorreccion } = resolverMejorImagen({
+    claveSolicitada: args.clave,
+    motivo: args.motivo,
+    textoContexto,
+    interesProducto,
+  });
+
+  if (corregida) {
+    console.info(`[enviarImagenReferencia] ${motivoCorreccion}`);
   }
 
   if (!ctx.conversationId) {
@@ -530,6 +550,8 @@ async function enviarImagenReferencia(
       imagen: img.id,
       titulo: img.titulo,
       url: img.url,
+      corregida,
+      motivoCorreccion,
     },
   };
 }
@@ -556,6 +578,64 @@ async function asignarEtiquetaTool(
       etiqueta: res.etiquetaNormalizada,
       tags: res.tags,
       message: `Etiqueta "${res.etiquetaNormalizada}" actualizada con éxito.`,
+    },
+  };
+}
+
+async function buscarAgenciaShalomTool(
+  args: { ciudad?: string; direccion_o_referencia?: string; distrito?: string },
+  ctx: ToolContext
+): Promise<ToolResult> {
+  const { buscarAgenciaShalomCercana } = await import("@/lib/agencias/shalom-directorio");
+
+  let ciudad = args.ciudad?.trim();
+  let direccion = args.direccion_o_referencia?.trim();
+  let distrito = args.distrito?.trim();
+
+  // Si no se proporcionó ciudad o dirección, extraer de los datos del contacto
+  if (!ciudad || !direccion) {
+    try {
+      const [c] = await db
+        .select({ customFields: contacts.customFields })
+        .from(contacts)
+        .where(eq(contacts.id, ctx.contactId))
+        .limit(1);
+      const fields = (c?.customFields as Record<string, unknown> | null) ?? {};
+      if (!ciudad && fields.ciudad) ciudad = String(fields.ciudad);
+      if (!distrito && fields.distrito) distrito = String(fields.distrito);
+      if (!direccion && fields.direccion) direccion = String(fields.direccion);
+    } catch {
+      // continuar
+    }
+  }
+
+  const res = buscarAgenciaShalomCercana({
+    ciudad,
+    distrito,
+    direccion,
+    referencia: direccion,
+  });
+
+  if (!res.mejorOpcion) {
+    return {
+      ok: true,
+      data: {
+        encontrada: false,
+        mensaje: `No se ubicó una agencia Shalom específica en el directorio para "${[ciudad, distrito, direccion].filter(Boolean).join(" - ")}". Pregúntale cordialmente al cliente a qué agencia Shalom de su ciudad le queda más cómodo recoger su pedido.`,
+      },
+    };
+  }
+
+  return {
+    ok: true,
+    data: {
+      encontrada: true,
+      agencia: res.mejorOpcion.nombre,
+      direccion: res.mejorOpcion.direccion,
+      referencia: res.mejorOpcion.referencia,
+      otrasOpciones: res.otrasOpciones.map((o) => `${o.nombre} (${o.direccion})`),
+      propuestaMensaje: res.propuestaMensaje,
+      instruccion: `Proponle al cliente la agencia ${res.mejorOpcion.nombre} (${res.mejorOpcion.direccion}) como primera opción para su envío a provincia.`,
     },
   };
 }
@@ -796,6 +876,37 @@ function toolsGenericas(): ToolAgente[] {
       ejecutar: (a, ctx) =>
         asignarEtiquetaTool(
           a as { etiqueta?: string; accion?: "establecer_estado" | "agregar" | "quitar"; motivo?: string },
+          ctx
+        ),
+    },
+    {
+      definicion: definir(
+        "buscar_agencia_shalom",
+        "Ubica la agencia de Shalom más cercana a la dirección, calle, distrito o referencia del cliente en provincia para proponérsela de inmediato como primera opción.",
+        {
+          type: "object",
+          properties: {
+            ciudad: {
+              type: "string",
+              description: "Ciudad o departamento de destino en provincia (ej: Sullana, Arequipa, Chiclayo, Trujillo, Huancayo, Piura, etc.).",
+            },
+            direccion_o_referencia: {
+              type: "string",
+              description: "Dirección, calle, urbanización, distrito o referencia brindada por el cliente (ej: 'Sta Rosa', 'Av. Parra', 'Calle Dos 857', 'José Leonardo Ortiz').",
+            },
+            distrito: {
+              type: "string",
+              description: "Distrito del cliente si se conoce (opcional).",
+            },
+          },
+          required: ["ciudad"],
+          additionalProperties: false,
+        }
+      ),
+      descripcionUI: "Ubica la agencia Shalom más cercana a la dirección del cliente en provincia.",
+      ejecutar: (a, ctx) =>
+        buscarAgenciaShalomTool(
+          a as { ciudad?: string; direccion_o_referencia?: string; distrito?: string },
           ctx
         ),
     },

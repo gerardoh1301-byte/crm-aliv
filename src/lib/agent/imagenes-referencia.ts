@@ -132,3 +132,97 @@ export function buscarImagenReferencia(clave: string): ImagenReferencia | undefi
     return false;
   });
 }
+
+/**
+ * Resuelve y valida la mejor imagen de referencia a enviar, aplicando blindaje estricto:
+ * 1. Detección y corrección de cruces de producto (ej: Si se habla de NAC600 pero el bot pide imagen de Tobillera, se corrige automáticamente).
+ * 2. Selección inteligente de la foto según el motivo o la consulta del cliente (ficha técnica, unboxing, foto real, precios, etc.).
+ */
+export function resolverMejorImagen(params: {
+  claveSolicitada?: string;
+  motivo?: string;
+  textoContexto?: string;
+  interesProducto?: string;
+}): {
+  imagen: ImagenReferencia;
+  corregida: boolean;
+  motivoCorreccion?: string;
+} {
+  const claveRaw = (params.claveSolicitada || "").toLowerCase().trim();
+  const textoCombinado = [
+    params.motivo || "",
+    params.textoContexto || "",
+    params.interesProducto || "",
+  ]
+    .join(" ")
+    .toLowerCase();
+
+  const esTemaNac =
+    /\b(nac|nac600|glutation|higado|capsulas?|frasco|frascos|nad|suplemento)\b/i.test(textoCombinado);
+  const esTemaTermix =
+    /\b(termix|tobillera|tobillo|tobillos|calor|masaje|grafeno|esguince|tendon|pie|cargador|cable|unboxing|en mano)\b/i.test(textoCombinado);
+  const esTemaPago =
+    /\b(yape|plin|adelanto|s\/20|cuenta|transferencia|banco)\b/i.test(textoCombinado);
+
+  let claveEfectiva = claveRaw;
+
+  // 1. BLINDAJE ANTI-CRUCE: Si el contexto es NAC600 y la clave pedida es Termix
+  if (esTemaNac && !esTemaTermix && claveRaw.startsWith("termix")) {
+    const esBeneficios = /\b(beneficio|para que sirve|como se toma|dosis|ingredientes|composicion|ficha)\b/i.test(textoCombinado);
+    claveEfectiva = esBeneficios ? "nac600_beneficios" : "nac600_frasco";
+    const imgCorregida = buscarImagenReferencia(claveEfectiva) || IMAGENES_REFERENCIA[0];
+    return {
+      imagen: imgCorregida,
+      corregida: true,
+      motivoCorreccion: `Cruce detectado: se solicitó '${claveRaw}' mientras se conversaba de NAC600. Corregida automáticamente a '${claveEfectiva}'.`,
+    };
+  }
+
+  // 2. BLINDAJE ANTI-CRUCE: Si el contexto es Termix y la clave pedida es NAC600
+  if (esTemaTermix && !esTemaNac && claveRaw.startsWith("nac600")) {
+    const esPromocion = /\b(precio|cuanto|cuesta|oferta|promo|promocion|pack|packs)\b/i.test(textoCombinado);
+    const esFotoReal = /\b(real|en mano|original|confianza|desconfi)\b/i.test(textoCombinado);
+    claveEfectiva = esPromocion ? "termix_promocion" : esFotoReal ? "termix_foto_real" : "termix_tobillera";
+    const imgCorregida = buscarImagenReferencia(claveEfectiva) || IMAGENES_REFERENCIA[2];
+    return {
+      imagen: imgCorregida,
+      corregida: true,
+      motivoCorreccion: `Cruce detectado: se solicitó '${claveRaw}' mientras se conversaba de Tobillera Termix. Corregida automáticamente a '${claveEfectiva}'.`,
+    };
+  }
+
+  // 3. Selección inteligente si la clave no vino o no fue exacta
+  if (!claveEfectiva || !buscarImagenReferencia(claveEfectiva)) {
+    if (esTemaPago) {
+      claveEfectiva = "yape_adelanto";
+    } else if (esTemaNac) {
+      const esBeneficios = /\b(beneficio|para que sirve|como se toma|dosis|ingredientes|composicion|ficha)\b/i.test(textoCombinado);
+      claveEfectiva = esBeneficios ? "nac600_beneficios" : "nac600_frasco";
+    } else if (esTemaTermix) {
+      if (/\b(precio|cuanto|cuesta|oferta|promo|promocion|pack|packs)\b/i.test(textoCombinado)) {
+        claveEfectiva = "termix_promocion";
+      } else if (/\b(real|en mano|original|confianza)\b/i.test(textoCombinado)) {
+        claveEfectiva = "termix_foto_real";
+      } else if (/\b(caja|viene|incluye|unboxing|cargador|cable)\b/i.test(textoCombinado)) {
+        claveEfectiva = "termix_contenido_caja";
+      } else if (/\b(tecnica|caracteristica|partes|grafeno|vibracion|motor)\b/i.test(textoCombinado)) {
+        claveEfectiva = "termix_caracteristicas";
+      } else if (/\b(talla|tamano|medida|ajuste|universal)\b/i.test(textoCombinado)) {
+        claveEfectiva = "termix_talla_universal";
+      } else if (/\b(diferencia|comparativa|comunes|tradicional|venda)\b/i.test(textoCombinado)) {
+        claveEfectiva = "termix_comparativa";
+      } else {
+        claveEfectiva = "termix_tobillera";
+      }
+    } else {
+      claveEfectiva = claveRaw || "nac600_frasco";
+    }
+  }
+
+  const encontrada = buscarImagenReferencia(claveEfectiva) || IMAGENES_REFERENCIA[0];
+  return {
+    imagen: encontrada,
+    corregida: claveEfectiva !== claveRaw,
+    motivoCorreccion: claveEfectiva !== claveRaw ? `Imagen optimizada a '${encontrada.id}' según contexto.` : undefined,
+  };
+}
