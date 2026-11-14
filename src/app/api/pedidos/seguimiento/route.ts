@@ -96,6 +96,10 @@ export async function POST(req: NextRequest) {
     updates.direccionEnvio = String(agencia).trim();
   }
 
+  if (body.total !== undefined && !isNaN(Number(body.total)) && Number(body.total) > 0) {
+    updates.total = String(Number(body.total).toFixed(2));
+  }
+
   if (estado) {
     updates.estado = estado;
   }
@@ -118,6 +122,17 @@ export async function POST(req: NextRequest) {
       actualizado.id,
       actualizado.dealId
     );
+  }
+
+  // Si se modificó el total, sincronizar el valor del negocio en el pipeline
+  if (actualizado.dealId && updates.total) {
+    await db
+      .update(deals)
+      .set({
+        value: Math.round(Number(actualizado.total) * 100),
+        updatedAt: new Date(),
+      })
+      .where(eq(deals.id, actualizado.dealId));
   }
 
   // Registrar actividad

@@ -467,7 +467,7 @@ async function buscarPrecioEnCatalogo(nombreOSku: string): Promise<{
  */
 const PRECIOS_POR_CANTIDAD: Record<string, Record<number, number>> = {
   "ALIV-NAC600": { 1: 119, 2: 189, 3: 199 },
-  "ALIV-TERMIX-TOB": { 1: 99, 2: 169, 3: 219 },
+  "ALIV-TERMIX-TOB": { 1: 79, 2: 139, 3: 189 },
 };
 
 function subtotalConOfertas(sku: string, cantidad: number, precioUnitario: number): number {
@@ -1043,10 +1043,10 @@ async function sembrarPedidosDemo() {
           sku: "ALIV-TERMIX-TOB",
           titulo: "Termix Tobillera – Calor y Masaje Inalámbrico",
           cantidad: 1,
-          precioUnitario: 99,
+          precioUnitario: 79,
         },
       ],
-      total: "99.00",
+      total: "79.00",
       dniCliente: "48192034",
       ciudad: "Lima",
       distrito: "Santiago de Surco",
@@ -1065,10 +1065,10 @@ async function sembrarPedidosDemo() {
           sku: "ALIV-TERMIX-HOMB",
           titulo: "Termix – Hombrera Térmica con Calor, Vibración y Luz Roja",
           cantidad: 1,
-          precioUnitario: 99,
+          precioUnitario: 79,
         },
       ],
-      total: "99.00",
+      total: "79.00",
       dniCliente: "73910284",
       ciudad: "Trujillo",
       distrito: "Víctor Larco",

@@ -99,7 +99,7 @@ const GUIONES: Array<Array<{ dir: "in" | "out"; origen?: "agent" | "human"; body
   ],
   [
     { dir: "in", body: "Hola, me duele mucho el tobillo despues de correr, como funciona la Termix Tobillera?" },
-    { dir: "out", origen: "agent", body: "¡Hola Luciana! La Termix Tobillera es inalámbrica y combina placas térmicas de grafeno (que calientan en segundos) con doble motor de masaje por vibración. Es talla universal y está a S/ 99.00 con pago contraentrega. ¿Para qué distrito o ciudad la necesitarías?" },
+    { dir: "out", origen: "agent", body: "¡Hola Luciana! La Termix Tobillera es inalámbrica y combina placas térmicas de grafeno (que calientan en segundos) con doble motor de masaje por vibración. Es talla universal y está a S/ 79.00 con pago contraentrega. ¿Para qué distrito o ciudad la necesitarías?" },
     { dir: "in", body: "Para Surco, por Chacarilla. Puedo pagar con Yape al recibir?" },
   ],
   [

@@ -61,6 +61,14 @@ export function aplicarGuardasDeVenta(texto: string): string {
     /[^.;\n]*\bno (?:causa|tiene|produce|genera|presenta)\b[^.;\n]*efectos secundarios[^.;\n]*[.;]\s*(?:sin embargo,?\s*)?(\p{Ll})?/giu,
     (_m, letra: string | undefined) => (letra ? letra.toUpperCase() : ""),
   );
+  // Guarda: precios oficiales de Termix Tobillera (1x S/79, 2x S/139, 3x S/189)
+  t = t.replace(/(?:tobillera|termix)[^.?!\n]{0,80}S\/\s?99\b/gi, (m) => m.replace(/99/, "79"));
+  t = t.replace(/(?:tobillera|termix)[^.?!\n]{0,80}S\/\s?169\b/gi, (m) => m.replace(/169/, "139"));
+  t = t.replace(/(?:tobillera|termix)[^.?!\n]{0,80}S\/\s?219\b/gi, (m) => m.replace(/219/, "189"));
+  t = t.replace(/S\/\s?99(?=[^.?!\n]{0,80}(?:tobillera|termix))/gi, "S/79");
+  t = t.replace(/S\/\s?169(?=[^.?!\n]{0,80}(?:tobillera|termix))/gi, "S/139");
+  t = t.replace(/S\/\s?219(?=[^.?!\n]{0,80}(?:tobillera|termix))/gi, "S/189");
+
   const mencionaAdelanto = /S\/\s?20\b/.test(t) && /adelant|separ|reserv/i.test(t);
   if (mencionaAdelanto && !/951\s?365\s?418/.test(t)) {
     // En linea, junto al monto: agregado al final quedaba despues de la pregunta de cierre.

@@ -14,7 +14,7 @@ Este archivo manda sobre cualquier otro texto con precios, condiciones o políti
 | Producto | Precio | Ofertas | Página |
 |---|---|---|---|
 | **NAC600** (NAC 600 mg + NAD+, 60 cápsulas, 2 al día con el desayuno, 1 frasco = 30 días) | S/119 | 2 frascos **S/189** · 3 frascos **S/199** (el más elegido). Más de 3: paquetes de 3 + el resto | alivstore.shop/products/nac600 |
-| **Termix Tobillera** (calor de grafeno + masaje vibratorio, USB-C, talla universal 18-34 cm) | S/99 | 2 tobilleras **S/169** (el más elegido, S/84.50 c/u) · 3 tobilleras **S/219** (S/73 c/u). Más de 3: paquetes de 3 + el resto | alivstore.shop/products/termix-tobillera |
+| **Termix Tobillera** (calor de grafeno + masaje vibratorio, USB-C, talla universal 18-34 cm) | S/79 | 2 tobilleras **S/139** (el más elegido, S/69.50 c/u) · 3 tobilleras **S/189** (S/63 c/u). Más de 3: paquetes de 3 + el resto | alivstore.shop/products/termix-tobillera |
 
 - Se dice **"cápsulas"**, nunca "cápsulas blandas".
 - Sin olor ni sabor a azufre (va en aceite MCT).

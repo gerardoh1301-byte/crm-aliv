@@ -52,7 +52,13 @@ interface SeguimientoShalomModalProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   data: SeguimientoShalomData;
-  onUpdated?: (numeroGuia: string, codigoRastreo: string, claveRecojo: string, agencia?: string) => void;
+  onUpdated?: (
+    numeroGuia: string,
+    codigoRastreo: string,
+    claveRecojo: string,
+    agencia?: string,
+    nuevoTotal?: number
+  ) => void;
   onAbrirRotulo?: () => void;
 }
 
@@ -88,11 +94,12 @@ export function SeguimientoShalomModal({
   const [copiedClave, setCopiedClave] = useState(false);
 
   // Normalización de centavos vs soles para valor del pedido
-  const totalSoles =
+  const totalBase =
     data.total > 1000
       ? Math.round(data.total) / 100
       : Number(data.total || 0);
-  const adelantoSoles = 20;
+  const [totalSoles, setTotalSoles] = useState(totalBase);
+  const [adelantoSoles, setAdelantoSoles] = useState(20);
   const saldoSoles = Math.max(0, totalSoles - adelantoSoles);
 
   const destinoLimpio = [
@@ -188,6 +195,7 @@ Recuerda acudir con tu DNI físico original para el retiro. ¡Que disfrutes tus 
         codigoRastreo: codigoRastreo.trim(),
         claveRecojo: claveRecojo.trim(),
         agencia: agenciaDestino.trim(),
+        total: totalSoles,
         estado,
       }),
     });
@@ -202,7 +210,7 @@ Recuerda acudir con tu DNI físico original para el retiro. ¡Que disfrutes tus 
     setSaving(true);
     try {
       await guardarEnBaseDeDatos();
-      onUpdated?.(numeroGuia.trim(), codigoRastreo.trim(), claveRecojo.trim(), agenciaDestino.trim());
+      onUpdated?.(numeroGuia.trim(), codigoRastreo.trim(), claveRecojo.trim(), agenciaDestino.trim(), totalSoles);
       toast.success("Seguimiento de Shalom guardado exitosamente");
       onOpenChange(false);
       router.refresh();
@@ -249,7 +257,7 @@ Recuerda acudir con tu DNI físico original para el retiro. ¡Que disfrutes tus 
     try {
       // 1. Guardar primero en la base de datos
       await guardarEnBaseDeDatos();
-      onUpdated?.(numeroGuia.trim(), codigoRastreo.trim(), claveRecojo.trim(), agenciaDestino.trim());
+      onUpdated?.(numeroGuia.trim(), codigoRastreo.trim(), claveRecojo.trim(), agenciaDestino.trim(), totalSoles);
 
       // 2. Enviar por WhatsApp vía API
       if (phone) {
@@ -331,7 +339,7 @@ Recuerda acudir con tu DNI físico original para el retiro. ¡Que disfrutes tus 
 
     try {
       await guardarEnBaseDeDatos();
-      onUpdated?.(numeroGuia.trim(), codigoRastreo.trim(), claveRecojo.trim(), agenciaDestino.trim());
+      onUpdated?.(numeroGuia.trim(), codigoRastreo.trim(), claveRecojo.trim(), agenciaDestino.trim(), totalSoles);
 
       if (phone) {
         const res = await fetch("/api/whatsapp/send", {
@@ -447,15 +455,35 @@ Recuerda acudir con tu DNI físico original para el retiro. ¡Que disfrutes tus 
               </p>
             </div>
             <div className="bg-white/80 dark:bg-card/80 p-1.5 rounded border border-red-100 dark:border-red-900/30">
-              <div className="flex justify-between text-[10px] text-muted-foreground">
+              <div className="flex justify-between items-center text-[10px] text-muted-foreground">
                 <span>Total orden:</span>
-                <span className="tabular-nums">S/ {totalSoles.toFixed(2)}</span>
+                <div className="flex items-center gap-0.5">
+                  <span className="text-[10px] font-medium text-foreground">S/</span>
+                  <input
+                    type="number"
+                    step="1"
+                    value={totalSoles}
+                    onChange={(e) => setTotalSoles(Number(e.target.value) || 0)}
+                    className="w-16 h-5 text-right px-1 font-mono text-[11px] font-semibold text-foreground bg-white dark:bg-background border border-red-200 dark:border-red-900/40 rounded focus:outline-none focus:ring-1 focus:ring-red-500"
+                    title="Editar monto total de la orden si varió el pedido o precio"
+                  />
+                </div>
               </div>
-              <div className="flex justify-between text-[10px] text-emerald-700 dark:text-emerald-400">
+              <div className="flex justify-between items-center text-[10px] text-emerald-700 dark:text-emerald-400 mt-1">
                 <span>Adelanto pago:</span>
-                <span className="tabular-nums">- S/ {adelantoSoles.toFixed(2)}</span>
+                <div className="flex items-center gap-0.5">
+                  <span className="text-[10px] font-medium">- S/</span>
+                  <input
+                    type="number"
+                    step="1"
+                    value={adelantoSoles}
+                    onChange={(e) => setAdelantoSoles(Number(e.target.value) || 0)}
+                    className="w-14 h-5 text-right px-1 font-mono text-[11px] font-semibold text-emerald-700 dark:text-emerald-400 bg-white dark:bg-background border border-emerald-200 dark:border-emerald-900/40 rounded focus:outline-none focus:ring-1 focus:ring-emerald-500"
+                    title="Editar monto del adelanto pagado"
+                  />
+                </div>
               </div>
-              <div className="flex justify-between text-[11px] font-bold text-red-700 dark:text-red-400 pt-0.5 border-t border-dashed border-red-200 mt-0.5">
+              <div className="flex justify-between items-center text-[11px] font-bold text-red-700 dark:text-red-400 pt-1 border-t border-dashed border-red-200 mt-1">
                 <span>Saldo a cobrar:</span>
                 <span className="tabular-nums text-foreground">S/ {saldoSoles.toFixed(2)}</span>
               </div>

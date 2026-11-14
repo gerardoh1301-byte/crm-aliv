@@ -156,9 +156,9 @@ const OFERTAS_PACKS_POR_SKU: Record<string, string[]> = {
     "3 frascos (180 cápsulas · 90 días · MÁS ELEGIDO ⭐): S/ 199 (S/ 66.33 c/u · Ahorras S/ 158 — por solo S/ 10 más que el pack de 2 te llevas el 3er frasco)",
   ],
   "ALIV-TERMIX-TOB": [
-    "1 tobillera (para un tobillo): S/ 99",
-    "2 tobilleras (MÁS ELEGIDO ⭐ · ambos tobillos o para regalar a mamá y papá): S/ 169 (S/ 84.50 c/u · Antes S/ 198 · Ahorras S/ 29)",
-    "3 tobilleras (Pack familiar): S/ 219 (S/ 73.00 c/u · Antes S/ 297 · Ahorras S/ 78)",
+    "1 tobillera: S/ 79",
+    "2 tobilleras (MÁS ELEGIDO ⭐ · ambos tobillos o para regalar): S/ 139 (S/ 69.50 c/u · Ahorras S/ 19)",
+    "3 tobilleras (Pack familiar): S/ 189 (S/ 63.00 c/u · Ahorras S/ 48)",
   ],
 };
 
