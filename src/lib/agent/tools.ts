@@ -479,6 +479,7 @@ async function enviarImagenReferencia(
 ): Promise<ToolResult> {
   const { buscarImagenReferencia } = await import("./imagenes-referencia");
   const { deliverMessage } = await import("@/lib/channels/deliver");
+  const { limpiarFormatoWhatsApp } = await import("./formato");
 
   if (!args.clave) {
     return {
@@ -500,7 +501,8 @@ async function enviarImagenReferencia(
     return { ok: false, error: "No hay una conversación activa asociada para enviar la imagen." };
   }
 
-  const caption = args.motivo?.trim() || `¡Aquí te comparto: ${img.titulo}! ✨`;
+  const rawCaption = args.motivo?.trim() || `¡Aquí te comparto: ${img.titulo}! ✨`;
+  const caption = limpiarFormatoWhatsApp(rawCaption);
 
   const res = await deliverMessage(
     ctx.conversationId,

@@ -143,4 +143,22 @@ describe("guardas de venta, ronda 10", () => {
       limpiarFormatoWhatsApp("Un dato: por S/70 más te llevas 2 frascos más y tienes 90 días de uso continuo con el pack de 3."),
     ).toContain("S/80");
   });
+
+  it("elimina cápsulas blandas y softgels reemplazándolos por cápsulas", () => {
+    expect(
+      limpiarFormatoWhatsApp("Cada frasco trae 60 cápsulas blandas para 30 días."),
+    ).toBe("Cada frasco trae 60 cápsulas para 30 días.");
+
+    expect(
+      limpiarFormatoWhatsApp("Viene en formato de cápsula blanda de alta absorción."),
+    ).toBe("Viene en formato de cápsula de alta absorción.");
+
+    expect(
+      limpiarFormatoWhatsApp("Contiene 60 softgels importados."),
+    ).toBe("Contiene 60 cápsulas importados.");
+
+    expect(
+      limpiarFormatoWhatsApp("Cada softgel aporta 600 mg de NAC."),
+    ).toBe("Cada cápsula aporta 600 mg de NAC.");
+  });
 });

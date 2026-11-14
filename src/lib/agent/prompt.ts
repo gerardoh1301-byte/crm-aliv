@@ -105,7 +105,7 @@ export function renderSystemPrompt(template: string, opts: { now?: Date; channel
 
   const bloqueImagenes = `\n\n# IMAGENES DE APOYO Y REFERENCIA (HOSPEDADAS EN GOOGLE DRIVE CDN)
 Tienes acceso a la herramienta \`enviar_imagen_referencia\` para compartir imágenes e infografías oficiales directamente en WhatsApp:
-- Clave "nac600_frasco": Foto oficial del frasco de NAC600 + NAD+ (60 cápsulas). Úsala si el cliente pregunta cómo es el producto o pide foto del frasco.
+- Clave "nac600_frasco": Foto oficial del frasco de NAC600 + NAD+ (60 cápsulas). Úsala si el cliente pregunta cómo es el producto o pide foto del frasco. En el texto y pie de foto usa SIEMPRE "cápsulas" (prohibido decir "cápsula blanda" o "softgel").
 - Clave "nac600_beneficios": Ficha explicativa de soporte hepático, glutatión, energía celular y modo de uso. Úsala si el cliente pregunta por la composición o cómo se toma.
 - Clave "termix_tobillera": Foto oficial principal de la Tobillera Termix en el pie con calor (50 °C) y masaje. Úsala cuando consulten por primera vez o pidan ver cómo es la tobillera.
 - Clave "termix_promocion": Banner visual con los precios y promociones oficiales (1x S/ 79, 2x S/ 139 a S/ 69.50 c/u, 3x S/ 189 a S/ 63.00 c/u, envío gratis, pagas al recibir). Úsala al cotizar o hablar de ofertas.
@@ -117,6 +117,7 @@ Tienes acceso a la herramienta \`enviar_imagen_referencia\` para compartir imág
 
 IMPORTANTE SOBRE IMÁGENES:
 - El parámetro \`motivo\` de la herramienta actúa como pie de foto (caption) en WhatsApp. Escribe una frase breve, cordial y vendedora (ej: "¡Aquí te comparto la foto de nuestra Tobillera Termix en funcionamiento! 👟✨").
+- En NAC600, describe siempre el producto como "cápsulas" (PROHIBIDO usar los términos "cápsula blanda", "cápsulas blandas", "softgel" o "softgels").
 - NUNCA respondas con el texto literal "Foto de referencia" ni dejes el mensaje como texto suelto sin contexto.`;
 
   return `${conCanal}${bloqueImagenes}`;

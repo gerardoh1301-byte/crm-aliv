@@ -44,6 +44,9 @@ export function aplicarGuardasDeVenta(texto: string): string {
     (_m, antes: string, abre: string, p: string | undefined) =>
       `${antes}${p === "!" ? "¡Perfecto!" : `${abre}Perfecto${p ?? ""}`}`,
   );
+  // Guarda: eliminar términos como cápsula blanda, cápsulas blandas, softgel, softgels -> cápsulas
+  t = t.replace(/\bc[aá]psulas?\s+blandas?\b/gi, (m) => (/blandas/i.test(m) ? "cápsulas" : "cápsula"));
+  t = t.replace(/\bsoftgels?\b/gi, (m) => (/s$/i.test(m) ? "cápsulas" : "cápsula"));
   // El bot no decide la fecha de despacho: "para despacharlo hoy mismo" -> "para despacharlo".
   t = t.replace(/,?\s+hoy mismo\b/gi, "");
   // "para enviártela hoy" / "lo despachamos hoy" -> sin "hoy".

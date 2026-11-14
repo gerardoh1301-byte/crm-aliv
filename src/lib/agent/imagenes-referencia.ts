@@ -23,7 +23,7 @@ export const IMAGENES_REFERENCIA: ImagenReferencia[] = [
     id: "nac600_frasco",
     alias: ["nac600", "frasco_nac600", "nac600_foto"],
     titulo: "Frasco NAC600 + NAD+ (60 cápsulas)",
-    descripcion: "Foto oficial del frasco de NAC600 + NAD+ de Aliv Perú, mostrando etiqueta, presentación y cápsulas blandas liposomales.",
+    descripcion: "Foto oficial del frasco de NAC600 + NAD+ de Aliv Perú, mostrando etiqueta y presentación de 60 cápsulas.",
     url: "https://cdn.shopify.com/s/files/1/0853/5579/0548/files/NACProduct1.webp?v=1792254070",
     categoria: "producto",
   },
