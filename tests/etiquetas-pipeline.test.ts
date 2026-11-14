@@ -44,6 +44,7 @@ describe("Sincronización de etiquetas con etapas del Pipeline", () => {
     expect(esEtiquetaDeEtapa("compra exitosa")).toBe(true);
     expect(esEtiquetaDeEtapa("Orden en camino")).toBe(true);
     expect(esEtiquetaDeEtapa("Pendiente de adelanto")).toBe(true);
+    expect(esEtiquetaDeEtapa("adelanto pagado")).toBe(true);
     expect(esEtiquetaDeEtapa("Agendar entrega")).toBe(true);
     expect(esEtiquetaDeEtapa("Informativo")).toBe(true);
     expect(esEtiquetaDeEtapa("Cancelado")).toBe(true);

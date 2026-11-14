@@ -12,7 +12,7 @@ import { es } from "date-fns/locale";
 import type { Channel } from "@/lib/channels/types";
 import { CHANNEL_COLORS, ChannelIcon } from "@/components/icons/channels";
 import { ChannelFilter } from "./ChannelFilter";
-import { ETIQUETAS_PRINCIPALES, getTagStyle } from "@/lib/tags";
+import { ETIQUETAS_PRINCIPALES, getTagStyle, cleanStr } from "@/lib/tags";
 
 const MINUTOS_ESPERA = 10;
 
@@ -122,7 +122,13 @@ export function ConversationsList({ conversations, selectedId }: Props) {
     let nextSoloAtencion = soloAtencion;
     if (newTag !== "all" && soloAtencion) {
       const enAtencionConTag = conversations.some(
-        (c) => requiereAtencion(c) && c.tags?.some((t) => t.toLowerCase() === newTag.toLowerCase())
+        (c) =>
+          requiereAtencion(c) &&
+          c.tags?.some(
+            (t) =>
+              cleanStr(t) === cleanStr(newTag) ||
+              t.toLowerCase().trim() === newTag.toLowerCase().trim()
+          )
       );
       if (!enAtencionConTag) {
         nextSoloAtencion = false;
@@ -197,8 +203,9 @@ export function ConversationsList({ conversations, selectedId }: Props) {
     for (const c of conversations) {
       if (c.tags) {
         for (const t of c.tags) {
-          const norm = t.toLowerCase();
+          const norm = cleanStr(t);
           acc[norm] = (acc[norm] ?? 0) + 1;
+          acc[t.toLowerCase().trim()] = (acc[t.toLowerCase().trim()] ?? 0) + 1;
         }
       }
     }
@@ -216,7 +223,11 @@ export function ConversationsList({ conversations, selectedId }: Props) {
       tagFilter === "all"
         ? byChannel
         : byChannel.filter((c) =>
-            c.tags?.some((t) => t.toLowerCase() === tagFilter.toLowerCase())
+            c.tags?.some(
+              (t) =>
+                cleanStr(t) === cleanStr(tagFilter) ||
+                t.toLowerCase().trim() === tagFilter.toLowerCase().trim()
+            )
           );
 
     const q = search.trim().toLowerCase();
@@ -361,8 +372,13 @@ export function ConversationsList({ conversations, selectedId }: Props) {
           </button>
 
           {ETIQUETAS_PRINCIPALES.map((p) => {
-            const isSelected = tagFilter.toLowerCase() === p.nombre.toLowerCase();
-            const count = tagCounts[p.nombre.toLowerCase()] ?? 0;
+            const isSelected =
+              cleanStr(tagFilter) === cleanStr(p.nombre) ||
+              tagFilter.toLowerCase().trim() === p.nombre.toLowerCase().trim();
+            const count =
+              tagCounts[cleanStr(p.nombre)] ??
+              tagCounts[p.nombre.toLowerCase().trim()] ??
+              0;
             return (
               <button
                 key={p.nombre}

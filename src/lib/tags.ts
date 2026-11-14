@@ -33,6 +33,13 @@ export const ETIQUETAS_PRINCIPALES: EtiquetaConfig[] = [
     dot: "bg-amber-500",
   },
   {
+    id: "adelanto-pagado",
+    nombre: "adelanto pagado",
+    color: "bg-emerald-500/15 text-emerald-800 dark:text-emerald-300 border-emerald-500/40 hover:bg-emerald-500/25",
+    badge: "bg-emerald-50 text-emerald-700 dark:bg-emerald-950/60 dark:text-emerald-300 border-emerald-300/80 dark:border-emerald-700 font-semibold",
+    dot: "bg-emerald-500",
+  },
+  {
     id: "agendar-entrega",
     nombre: "Agendar entrega",
     color: "bg-purple-500/15 text-purple-800 dark:text-purple-300 border-purple-500/40 hover:bg-purple-500/25",
@@ -69,13 +76,6 @@ export const ETIQUETAS_SECUNDARIAS: EtiquetaConfig[] = [
     color: "bg-purple-500/10 text-purple-700 dark:text-purple-300 border-purple-500/30 hover:bg-purple-500/20",
     badge: "bg-purple-50 text-purple-700 dark:bg-purple-950/50 dark:text-purple-300 border-purple-300/60",
     dot: "bg-purple-500",
-  },
-  {
-    id: "adelanto-pagado",
-    nombre: "adelanto pagado",
-    color: "bg-emerald-500/10 text-emerald-700 dark:text-emerald-300 border-emerald-500/30 hover:bg-emerald-500/20",
-    badge: "bg-emerald-50 text-emerald-700 dark:bg-emerald-950/50 dark:text-emerald-300 border-emerald-300/60",
-    dot: "bg-emerald-500",
   },
   {
     id: "pedido-confirmado",
@@ -139,6 +139,8 @@ export const ETIQUETAS_DE_ETAPA: string[] = [
   "Compra exitosa",
   "Orden en camino",
   "Pendiente de adelanto",
+  "Adelanto pagado",
+  "adelanto pagado",
   "Agendar entrega",
   "Informativo",
   "pedido confirmado",
