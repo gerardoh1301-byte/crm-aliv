@@ -28,6 +28,11 @@ export interface ContextoChatParaAuditoria {
     body: string | null;
     createdAt?: Date | string | null;
   } | null;
+  historialMensajes?: Array<{
+    direction: string;
+    body: string | null;
+    createdAt?: Date | string | null;
+  }>;
   pedidoReciente?: {
     numeroOrden?: string | null;
     total?: string | number | null;
@@ -43,6 +48,54 @@ export interface ResultadoAuditoriaRescate {
   motivoDescarte?: string;
   escenario?: TipoEscenarioRescate;
   mensajeRescate?: string;
+}
+
+/**
+ * Detecta con máxima precisión el producto principal de la conversación,
+ * priorizando el texto real de los mensajes intercambiados sobre las etiquetas
+ * (evitando falsos cruces si el contacto recibió un pitch de cross-sell de otro producto).
+ */
+export function detectarProductoRescate(contexto: ContextoChatParaAuditoria): "nac600" | "termix" {
+  const { contact, ultimoMensaje, pedidoReciente, historialMensajes } = contexto;
+  const tags = (contact.tags ?? []).map((t) => t.toLowerCase().trim());
+
+  // 1. Si hay un pedido en base de datos con items explícitos
+  const itemsStr = JSON.stringify(pedidoReciente?.items ?? "").toLowerCase();
+  if (itemsStr.includes("termix") || itemsStr.includes("tobillera")) return "termix";
+  if (itemsStr.includes("nac") || itemsStr.includes("glutation") || itemsStr.includes("frasco")) return "nac600";
+
+  // 2. Analizar el historial de mensajes de la conversación (últimos mensajes del bot y cliente)
+  const mensajesTexto = [
+    ultimoMensaje?.body ?? "",
+    ...(historialMensajes ?? []).map((m) => m.body ?? ""),
+  ]
+    .join(" ")
+    .toLowerCase();
+
+  const nacMatches = (
+    mensajesTexto.match(/\b(nac|nac600|glutation|frasco|frascos|c[aá]psulas?|h[ií]gado|antioxidante|nad\+?)\b/gi) || []
+  ).length;
+  const termixMatches = (
+    mensajesTexto.match(/\b(termix|tobillera|tobillo|tobillos|grafeno|masaje)\b/gi) || []
+  ).length;
+
+  // Si hay menciones en el historial, la conversación manda sobre las etiquetas
+  if (nacMatches > 0 && nacMatches >= termixMatches) {
+    return "nac600";
+  }
+  if (termixMatches > 0 && termixMatches > nacMatches) {
+    return "termix";
+  }
+
+  // 3. Desempate por etiquetas solo si no se mencionó ninguno en el historial
+  const tieneTagNac = tags.some((t) => t.includes("nac"));
+  const tieneTagTermix = tags.some((t) => t.includes("termix") || t.includes("tobillera"));
+
+  if (tieneTagNac && !tieneTagTermix) return "nac600";
+  if (tieneTagTermix && !tieneTagNac) return "termix";
+
+  // Si tiene ambos o ninguno, por defecto en Aliv Perú es nac600
+  return "nac600";
 }
 
 /**
@@ -78,7 +131,7 @@ export function determinarEscenarioRescate(
   contexto: ContextoChatParaAuditoria,
   ahora: Date = new Date()
 ): ResultadoAuditoriaRescate {
-  const { contact, conversation, ultimoMensaje, pedidoReciente } = contexto;
+  const { contact, conversation, ultimoMensaje, pedidoReciente, historialMensajes } = contexto;
   const tags = contact.tags ?? [];
 
   // 1. Validar etiquetas excluyentes
@@ -113,20 +166,33 @@ export function determinarEscenarioRescate(
 
   const bodyUltimo = (ultimoMensaje.body || "").toLowerCase();
 
-  // Determinar producto de interés
-  const esTermix =
-    tags.includes("interes:termix") ||
-    /termix|tobillera/.test(bodyUltimo) ||
-    JSON.stringify(pedidoReciente?.items ?? "").toLowerCase().includes("termix");
+  // Historial acumulado para entender la conversación completa
+  const textosHistorial = [
+    ultimoMensaje.body || "",
+    ...(historialMensajes || []).map((m) => m.body || ""),
+  ]
+    .join(" ")
+    .toLowerCase();
 
+  // Determinar producto de interés real
+  const productoPrincipal = detectarProductoRescate(contexto);
+  const esTermix = productoPrincipal === "termix";
   const nombreProducto = esTermix ? "la Tobillera Termix" : "NAC600 + NAD+";
 
-  // ESCENARIO A: Dirección Incompleta / Pedido Web (caso Laura)
+  // ESCENARIO A: Dirección Incompleta o Datos de Despacho Pendientes
+  // Caso 1: Pedido web con dirección incompleta (caso Laura)
   const direccion = (pedidoReciente?.direccionEnvio || "").trim();
   const direccionCortaOIncompleta =
     direccion.length > 0 &&
     (direccion.length < 15 || !/\d/.test(direccion) || /calle \d+\s*(?:san)?$/i.test(direccion));
-  const botPreguntoPorDireccion = /\b(direcci[oó]n|calle|referencia|ubicaci[oó]n|n[uú]mero de tu calle)\b/i.test(bodyUltimo);
+
+  const botPreguntoPorDireccion =
+    /\b(direcci[oó]n|calle|referencia|ubicaci[oó]n|n[uú]mero de tu calle|agendar la orden|programar el despacho|dejar registrado tu pedido|dejamos agendado|tu nombre completo)\b/i.test(
+      bodyUltimo
+    ) ||
+    /\b(direcci[oó]n exacta|conf[ií]rmame tu nombre completo|cu[aá]l es tu direcci[oó]n|ubicaci[oó]n mucho mejor)\b/i.test(
+      textosHistorial
+    );
 
   if (pedidoReciente && (direccionCortaOIncompleta || botPreguntoPorDireccion)) {
     const ordenTxt = pedidoReciente.numeroOrden ? `#${pedidoReciente.numeroOrden} ` : "";
@@ -134,6 +200,42 @@ export function determinarEscenarioRescate(
       esElegible: true,
       escenario: "direccion_incompleta",
       mensajeRescate: `${saludo} Te saluda Aliv Perú 🌿. Tu pedido ${ordenTxt}de ${nombreProducto} está separado y listo para embalar 📦. Solo nos falta confirmar el número de tu calle o una referencia para programar la entrega a tu puerta. ¿Nos confirmas tu dirección completa o nos compartes tu ubicación por aquí? 📍`,
+    };
+  }
+
+  // Caso 2: Cierre en chat donde el cliente acordó un pack pero quedó pendiente su dirección o nombre completo (caso DJ Zeta)
+  if (!pedidoReciente && botPreguntoPorDireccion) {
+    let detallePack = esTermix ? "tu Tobillera Termix" : "tu pedido de NAC600 + NAD+";
+    if (esTermix) {
+      if (/\b(3\s*(?:tobilleras?|unidades?)|pack\s*(?:de\s*)?3|189)\b/i.test(textosHistorial)) {
+        detallePack = "tus 3 Tobilleras Termix";
+      } else if (/\b(2\s*(?:tobilleras?|unidades?)|pack\s*(?:de\s*)?2|139)\b/i.test(textosHistorial)) {
+        detallePack = "tu promo de 2 Tobilleras Termix";
+      } else if (/\b(1\s*(?:tobillera|unidad)|79)\b/i.test(textosHistorial)) {
+        detallePack = "tu Tobillera Termix";
+      }
+    } else {
+      if (/\b(3\s*frascos?|pack\s*(?:de\s*)?3|199)\b/i.test(textosHistorial)) {
+        detallePack = "tus 3 frascos de NAC600 + NAD+";
+      } else if (/\b(2\s*frascos?|pack\s*(?:de\s*)?2|169)\b/i.test(textosHistorial)) {
+        detallePack = "tus 2 frascos de NAC600 + NAD+";
+      } else if (/\b(1\s*frasco|119)\b/i.test(textosHistorial)) {
+        detallePack = "tu frasco de NAC600 + NAD+";
+      }
+    }
+
+    // Detectar distrito mencionado si existe
+    const matchDistrito = textosHistorial.match(
+      /\b(carabayllo|comas|los olivos|san mart[ií]n|independencia|san miguel|magdalena|jes[uú]s mar[ií]a|pueblo libre|surco|miraflores|san borja|san isidro|la molina|ate|chorrillos|san juan de lurigancho|sjl|sjm|villa el salvador|ves|callao|bellavista|ventanilla)\b/i
+    );
+    const destinoTxt = matchDistrito
+      ? ` a ${matchDistrito[1].charAt(0).toUpperCase() + matchDistrito[1].slice(1).toLowerCase()}`
+      : "";
+
+    return {
+      esElegible: true,
+      escenario: "direccion_incompleta",
+      mensajeRescate: `${saludo} Te saluda Aliv Perú 🌿. Tenemos ${detallePack} separado y listo para programar tu entrega${destinoTxt}. Solo nos falta que nos confirmes tu nombre completo y dirección exacta (calle y número o referencia) para dejar tu despacho agendado. Si te es más fácil, ¿nos puedes compartir tu ubicación por aquí? 📍`,
     };
   }
 
@@ -146,10 +248,25 @@ export function determinarEscenarioRescate(
         distrito: pedidoReciente.distrito ?? null,
         direccionEnvio: pedidoReciente.direccionEnvio ?? null,
       })) ||
-    /\b(adelanto|yape\s+951365418|shalom|provincia)\b/i.test(bodyUltimo);
+    /\b(adelanto|yape\s+951365418|shalom|provincia)\b/i.test(textosHistorial);
 
   if (esProvincia) {
-    const totalNum = pedidoReciente?.total ? Number(pedidoReciente.total) : esTermix ? 139 : 199;
+    let totalNum = 199;
+    if (pedidoReciente?.total) {
+      totalNum = Number(pedidoReciente.total);
+    } else if (esTermix) {
+      totalNum = /\b(3\s*(?:tobilleras?|unidades?)|189)\b/i.test(textosHistorial)
+        ? 189
+        : /\b(79|1\s*(?:tobillera|unidad))\b/i.test(textosHistorial)
+          ? 79
+          : 139;
+    } else {
+      totalNum = /\b(1\s*frasco|119)\b/i.test(textosHistorial)
+        ? 119
+        : /\b(2\s*frascos?|169)\b/i.test(textosHistorial)
+          ? 169
+          : 199;
+    }
     const saldo = Math.max(totalNum - 20, 0);
     return {
       esElegible: true,
@@ -227,8 +344,8 @@ export async function auditarChatsAbandonados(opts?: { limite?: number; forzarHo
   for (const c of candidatas) {
     if (rescatados >= limite) break;
 
-    // Obtener último mensaje de la conversación
-    const [ultimoMsg] = await db
+    // Obtener los últimos mensajes de la conversación para evaluar el contexto completo
+    const ultimosMensajes = await db
       .select({
         direction: messages.direction,
         body: messages.body,
@@ -237,7 +354,9 @@ export async function auditarChatsAbandonados(opts?: { limite?: number; forzarHo
       .from(messages)
       .where(eq(messages.conversationId, c.convId))
       .orderBy(desc(messages.createdAt))
-      .limit(1);
+      .limit(8);
+
+    const ultimoMsg = ultimosMensajes[0] ?? null;
 
     // Obtener pedido más reciente si existe
     const [pedido] = await db
@@ -268,6 +387,7 @@ export async function auditarChatsAbandonados(opts?: { limite?: number; forzarHo
         channel: c.channel,
       },
       ultimoMensaje: ultimoMsg ?? null,
+      historialMensajes: ultimosMensajes,
       pedidoReciente: pedido ?? null,
     };
 

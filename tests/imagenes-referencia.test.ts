@@ -17,7 +17,7 @@ describe("Selección de Fotos y Blindaje Anti-Cruce de Productos", () => {
       claveSolicitada: "termix_tobillera",
       motivo: "¡Aquí tienes la foto de nuestro NAC600 + NAD+!",
       textoContexto: "El cliente preguntó por el frasco de NAC600 para el hígado",
-      interesProducto: "interes:nac600",
+      interesProducto: "interes:nac600 interes:termix",
     });
 
     expect(res.corregida).toBe(true);

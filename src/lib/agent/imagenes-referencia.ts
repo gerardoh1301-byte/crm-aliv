@@ -157,17 +157,18 @@ export function resolverMejorImagen(params: {
     .join(" ")
     .toLowerCase();
 
-  const esTemaNac =
-    /\b(nac|nac600|glutation|higado|capsulas?|frasco|frascos|nad|suplemento)\b/i.test(textoCombinado);
-  const esTemaTermix =
-    /\b(termix|tobillera|tobillo|tobillos|calor|masaje|grafeno|esguince|tendon|pie|cargador|cable|unboxing|en mano)\b/i.test(textoCombinado);
+  const nacMatches = (textoCombinado.match(/\b(nac|nac600|glutation|higado|capsulas?|frasco|frascos|nad\+?|suplemento)\b/gi) || []).length;
+  const termixMatches = (textoCombinado.match(/\b(termix|tobillera|tobillo|tobillos|calor|masaje|grafeno|esguince|tendon|pie|cargador|cable|unboxing|en mano)\b/gi) || []).length;
+
+  const esTemaNac = nacMatches > 0 && nacMatches >= termixMatches;
+  const esTemaTermix = termixMatches > 0 && termixMatches > nacMatches;
   const esTemaPago =
     /\b(yape|plin|adelanto|s\/20|cuenta|transferencia|banco)\b/i.test(textoCombinado);
 
   let claveEfectiva = claveRaw;
 
-  // 1. BLINDAJE ANTI-CRUCE: Si el contexto es NAC600 y la clave pedida es Termix
-  if (esTemaNac && !esTemaTermix && claveRaw.startsWith("termix")) {
+  // 1. BLINDAJE ANTI-CRUCE: Si el contexto dominante es NAC600 y la clave pedida es Termix
+  if (esTemaNac && claveRaw.startsWith("termix")) {
     const esBeneficios = /\b(beneficio|para que sirve|como se toma|dosis|ingredientes|composicion|ficha)\b/i.test(textoCombinado);
     claveEfectiva = esBeneficios ? "nac600_beneficios" : "nac600_frasco";
     const imgCorregida = buscarImagenReferencia(claveEfectiva) || IMAGENES_REFERENCIA[0];
@@ -178,8 +179,8 @@ export function resolverMejorImagen(params: {
     };
   }
 
-  // 2. BLINDAJE ANTI-CRUCE: Si el contexto es Termix y la clave pedida es NAC600
-  if (esTemaTermix && !esTemaNac && claveRaw.startsWith("nac600")) {
+  // 2. BLINDAJE ANTI-CRUCE: Si el contexto dominante es Termix y la clave pedida es NAC600
+  if (esTemaTermix && claveRaw.startsWith("nac600")) {
     const esPromocion = /\b(precio|cuanto|cuesta|oferta|promo|promocion|pack|packs)\b/i.test(textoCombinado);
     const esFotoReal = /\b(real|en mano|original|confianza|desconfi)\b/i.test(textoCombinado);
     claveEfectiva = esPromocion ? "termix_promocion" : esFotoReal ? "termix_foto_real" : "termix_tobillera";

@@ -97,6 +97,105 @@ describe("Auditoría y Rescate de Chats Abandonados", () => {
     expect(res.mensajeRescate).toContain("2 por S/139");
   });
 
+  it("CASO DJ ZETA: Cierre de NAC600 en chat pendiente de dirección no debe cruzar a Tobillera", () => {
+    const contexto: ContextoChatParaAuditoria = {
+      contact: {
+        id: "c-dj",
+        name: "DJ ZETA",
+        phone: "+1963299384",
+        // El contacto pudo recibir pitch previo de termix o tener ambas etiquetas
+        tags: ["interes:nac600", "interes:termix"],
+      },
+      conversation: {
+        id: "conv-dj",
+        lastMessageAt: new Date(ahora.getTime() - 2.5 * 60 * 60 * 1000), // Hace 2.5 horas
+        channel: "whatsapp",
+      },
+      ultimoMensaje: {
+        direction: "out",
+        body: "por favor confirmame tu dirección exacta, si puedes enviarme la ubicación mucho mejor para poder agendar la orden.",
+      },
+      historialMensajes: [
+        {
+          direction: "out",
+          body: "por favor confirmame tu dirección exacta, si puedes enviarme la ubicación mucho mejor para poder agendar la orden.",
+        },
+        {
+          direction: "out",
+          body: "¡Llegaría el lunes a la dirección exacta que nos indiques! 📦 Para poder registrarlo y dejarlo listo en el sistema, por favor compárteme tu nombre completo y tu dirección exacta con número y referencia en Carabayllo.",
+        },
+        {
+          direction: "in",
+          body: "Cuando estaría llegando",
+        },
+        {
+          direction: "out",
+          body: "¡Anotado el celular 963299384! Para dejar registrado tu pedido de los 3 frascos de NAC600 + NAD+ por S/199, solo me falta tu nombre completo y tu dirección exacta con número y referencia en Carabayllo.",
+        },
+        {
+          direction: "in",
+          body: "Carabayllo",
+        },
+        {
+          direction: "out",
+          body: "¡Perfecto, Carabayllo! Te llevas el pack de 3 frascos de NAC600 + NAD+ por S/199 para 90 días de uso constante. ¿Cuál es tu dirección exacta?",
+        },
+      ],
+      // No hay pedido aún en Shopify porque faltaba la dirección exacta
+      pedidoReciente: null,
+    };
+
+    const res = determinarEscenarioRescate(contexto, ahora);
+    expect(res.esElegible).toBe(true);
+    expect(res.escenario).toBe("direccion_incompleta");
+    // Debe hablar de NAC600 y los 3 frascos
+    expect(res.mensajeRescate).toContain("3 frascos de NAC600 + NAD+");
+    expect(res.mensajeRescate).toContain("Carabayllo");
+    expect(res.mensajeRescate).toContain("dirección exacta");
+    // JAMÁS debe hablar de Tobillera Termix
+    expect(res.mensajeRescate).not.toContain("Tobillera");
+    expect(res.mensajeRescate).not.toContain("Termix");
+  });
+
+  it("BLINDAJE: Cotización de NAC600 con etiqueta 'interes:termix' residual mantiene rescate de NAC600", () => {
+    const contexto: ContextoChatParaAuditoria = {
+      contact: {
+        id: "c-nac-cot",
+        name: "Renato",
+        phone: "+51955112233",
+        tags: ["interes:nac600", "interes:termix"],
+      },
+      conversation: {
+        id: "conv-nac-cot",
+        lastMessageAt: new Date(ahora.getTime() - 3 * 60 * 60 * 1000),
+        channel: "whatsapp",
+      },
+      ultimoMensaje: {
+        direction: "out",
+        body: "El frasco de NAC600 + NAD+ sale en S/119 y la promo de 3 frascos en S/199 con envío gratis en Lima.",
+      },
+      historialMensajes: [
+        {
+          direction: "out",
+          body: "El frasco de NAC600 + NAD+ sale en S/119 y la promo de 3 frascos en S/199 con envío gratis en Lima.",
+        },
+        {
+          direction: "in",
+          body: "Buenas tardes, información de las cápsulas de NAC600 para el hígado",
+        },
+      ],
+      pedidoReciente: null,
+    };
+
+    const res = determinarEscenarioRescate(contexto, ahora);
+    expect(res.esElegible).toBe(true);
+    expect(res.escenario).toBe("cotizacion_abandonada");
+    expect(res.mensajeRescate).toContain("NAC600 + NAD+");
+    expect(res.mensajeRescate).toContain("promo de 3 por S/199");
+    expect(res.mensajeRescate).not.toContain("Tobillera");
+    expect(res.mensajeRescate).not.toContain("Termix");
+  });
+
   it("descarta si el cliente ya respondió (último mensaje entrante)", () => {
     const contexto: ContextoChatParaAuditoria = {
       contact: { id: "c-4", name: "Juan", phone: "+51999999999", tags: [] },
