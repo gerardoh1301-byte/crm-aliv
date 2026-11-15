@@ -6,7 +6,7 @@ import { deliverMessage, getConversationRow } from "@/lib/channels/deliver";
 import { isChannel, type Channel } from "@/lib/channels/types";
 import { displayName, listMembers } from "@/lib/team";
 import { alertarEquipo } from "./alertas";
-import { limpiarFormatoWhatsApp } from "./formato";
+import { limpiarFormatoWhatsApp, removerSaludoRepetido } from "./formato";
 import { getConfig } from "@/lib/config";
 import { getAgentConfig } from "./config";
 import { renderContexto, renderSystemPrompt } from "./prompt";
@@ -71,13 +71,18 @@ export async function runAgentForConversation(
     puedeAsignar ? renderTeamBlock(contact.ownerId) : Promise.resolve(""),
   ]);
 
+  const yaRespondio = collapsed.some((m) => m.role === "assistant");
+
   const llmMessages: OpenAI.Chat.Completions.ChatCompletionMessageParam[] = [
     {
       role: "system",
       content:
         renderSystemPrompt(config.systemPrompt, { channel: conversation.provider === "simulador" ? "simulador" : channel }) +
         contexto +
-        renderOrigenAnuncio(conversation.metadata, collapsed.some((m) => m.role === "assistant")) +
+        renderOrigenAnuncio(conversation.metadata, yaRespondio) +
+        (yaRespondio
+          ? "\n\n# ESTADO DEL CHAT: CONVERSACIÓN EN CURSO (PROHIBIDO SALUDAR DE NUEVO)\nYa has saludado al cliente en mensajes anteriores de este chat. ESTÁ ESTRICTAMENTE PROHIBIDO volver a decir '¡Hola', 'Hola [nombre]' o saludar de nuevo. Responde DIRECTAMENTE a lo que dijo o preguntó el cliente (tono 100% humano y natural)."
+          : "") +
         equipo,
     },
     ...collapsed,
@@ -145,7 +150,10 @@ export async function runAgentForConversation(
         continue;
       }
 
-      const reply = limpiarFormatoWhatsApp(assistantMsg.content?.trim() ?? "");
+      let reply = limpiarFormatoWhatsApp(assistantMsg.content?.trim() ?? "");
+      if (yaRespondio && reply) {
+        reply = removerSaludoRepetido(reply);
+      }
       if (!reply) {
         // A1: a veces el modelo cierra el turno sin texto. Se le pide una vez que responda
         // (las herramientas ya ejecutadas quedan en el historial, no se repiten).

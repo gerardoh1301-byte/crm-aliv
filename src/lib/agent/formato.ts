@@ -14,6 +14,49 @@ export function limpiarFormatoWhatsApp(texto: string): string {
   return aplicarGuardasDeVenta(limpio);
 }
 
+/**
+ * Remueve saludos repetitivos al inicio del mensaje cuando la conversación
+ * ya está en curso (ej: "¡Hola, Hilda! ", "Hola Hilda, ", "¡Hola! 👋 ", "Buenas tardes Hilda, ").
+ * Evita que el bot salude en cada turno de un mismo chat, preservando un tono humano y cercano.
+ */
+export function removerSaludoRepetido(texto: string): string {
+  let t = texto.trim();
+
+  // 1. Saludo con nombre del cliente seguido de puntuación o emoji:
+  // ej: "¡Hola, Hilda! ", "Hola Hilda, ", "¡Hola Hilda! 👋 ", "Buenas tardes, Hilda. "
+  const saludoConNombre =
+    /^(?:¡?hola|\bbuen(?:as|os)?\s+(?:d[ií]as|tardes|noches)),?\s+([\p{Lu}][\p{Ll}]+(?:\s+[\p{Lu}][\p{Ll}]+)?)[!.,]?\s*(?:[\p{Extended_Pictographic}\u200d\uFE0F]+[!,.]?)?\s*/iu;
+
+  // 2. Saludo genérico simple o con emoji:
+  // ej: "¡Hola! ", "Hola, ", "¡Hola! 👋 ", "Buenos días. "
+  const saludoSimple =
+    /^(?:¡?hola[!,.]?|\bbuen(?:as|os)?\s+(?:d[ií]as|tardes|noches)[!,.]?)\s*(?:[\p{Extended_Pictographic}\u200d\uFE0F]+[!,.]?)?\s*/iu;
+
+  let cambiado = true;
+  while (cambiado) {
+    cambiado = false;
+    if (saludoConNombre.test(t)) {
+      const sig = t.replace(saludoConNombre, "").trim();
+      if (sig && sig !== t) {
+        t = sig;
+        cambiado = true;
+        continue;
+      }
+    }
+    if (saludoSimple.test(t)) {
+      const sig = t.replace(saludoSimple, "").trim();
+      if (sig && sig !== t) {
+        t = sig;
+        cambiado = true;
+        continue;
+      }
+    }
+  }
+
+  if (!t) return texto;
+  return t.charAt(0).toUpperCase() + t.slice(1);
+}
+
 const HERRAMIENTAS =
   "enviar_imagen_referencia|registrar_actividad|actualizar_contacto|mover_etapa|crear_pedido_chat|avisar_asesor|derivar_asesor|agendar_entrega|resumen_lead|confirmar_pedido|consultar_pedido|solicitar_soporte_pedido";
 

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { esMotivoDeBaja } from "../src/lib/agent/baja";
-import { limpiarFormatoWhatsApp } from "../src/lib/agent/formato";
+import { limpiarFormatoWhatsApp, removerSaludoRepetido } from "../src/lib/agent/formato";
 
 describe("A2: frases de baja que antes no se detectaban", () => {
   it.each([
@@ -180,5 +180,47 @@ describe("guardas de venta, ronda 10", () => {
     expect(
       limpiarFormatoWhatsApp("El domingo te lo enviamos a tu casa."),
     ).toContain("las entregas son de lunes a sábado");
+  });
+
+  it("elimina saludos repetitivos en turnos posteriores (removerSaludoRepetido)", () => {
+    // Caso exacto de Hilda: Turno 2
+    expect(
+      removerSaludoRepetido("¡Hola, Hilda! La finalidad de comprar 1 tobillera es si solo te molesta un pie o quieres probarla."),
+    ).toBe("La finalidad de comprar 1 tobillera es si solo te molesta un pie o quieres probarla.");
+
+    // Caso exacto de Hilda: Turno 3
+    expect(
+      removerSaludoRepetido("¡Hola, Hilda! Entiendo. ¿Hay alguna otra duda sobre la Termix Tobillera?"),
+    ).toBe("Entiendo. ¿Hay alguna otra duda sobre la Termix Tobillera?");
+
+    // Variaciones con Hola, Hola [nombre], emojis, minúsculas
+    expect(
+      removerSaludoRepetido("¡Hola! El precio es de S/79."),
+    ).toBe("El precio es de S/79.");
+
+    expect(
+      removerSaludoRepetido("Hola Hilda, perfecto, te la enviamos."),
+    ).toBe("Perfecto, te la enviamos.");
+
+    expect(
+      removerSaludoRepetido("¡Hola, María Elena! 👋 Te comento sobre las cápsulas."),
+    ).toBe("Te comento sobre las cápsulas.");
+
+    expect(
+      removerSaludoRepetido("Buenas tardes Carlos, el pedido está en camino."),
+    ).toBe("El pedido está en camino.");
+
+    // NO debe alterar mensajes que no son saludos al inicio
+    expect(
+      removerSaludoRepetido("Entendido, Hilda. Ya le dejé la indicación al motorizado."),
+    ).toBe("Entendido, Hilda. Ya le dejé la indicación al motorizado.");
+
+    expect(
+      removerSaludoRepetido("Perfecto, Hilda. Te lo enviamos este lunes."),
+    ).toBe("Perfecto, Hilda. Te lo enviamos este lunes.");
+
+    expect(
+      removerSaludoRepetido("Claro que sí, Hilda, no te preocupes."),
+    ).toBe("Claro que sí, Hilda, no te preocupes.");
   });
 });
