@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/db";
-import { activities, contacts, conversations } from "@/db/schema";
-import { eq } from "drizzle-orm";
+import { activities, contacts, conversations, messages } from "@/db/schema";
+import { desc, eq } from "drizzle-orm";
+import { enqueueAgentJob } from "@/lib/agent/queue";
 import { requireMember } from "@/lib/api-auth";
 import { canAccessContactId, displayName } from "@/lib/team";
 
@@ -72,6 +73,25 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
     return NextResponse.json({ error: "Nada para actualizar" }, { status: 400 });
   }
 
+  // Al reactivar, el mensaje que el cliente mando mientras el bot estaba pausado se
+  // quedaba sin respuesta: su job ya se habia cerrado como "ai_disabled". Si lo ultimo
+  // del hilo es del cliente y sigue abierta la ventana de 24 h, se encola la respuesta.
+  let respuestaEncolada = false;
+  if (body.enabled === true && conv.contactId) {
+    const [ultimo] = await db
+      .select({ id: messages.id, direction: messages.direction, createdAt: messages.createdAt })
+      .from(messages)
+      .where(eq(messages.conversationId, conversationId))
+      .orderBy(desc(messages.createdAt))
+      .limit(1);
+    const dentroDeVentana = ultimo && now.getTime() - ultimo.createdAt.getTime() < 23 * 60 * 60 * 1000;
+    if (ultimo?.direction === "in" && dentroDeVentana) {
+      await enqueueAgentJob(conv.contactId, ultimo.id, conversationId)
+        .then(() => (respuestaEncolada = true))
+        .catch((err) => console.warn("[agente] no se pudo encolar la respuesta pendiente:", err));
+    }
+  }
+
   // Registro de quien pausa, activa o atiende el bot (antes no quedaba rastro).
   if (conv.contactId) {
     const quien = displayName(auth.member);
@@ -98,5 +118,6 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
     aiEnabled: (contact?.aiEnabled ?? true) && c2.aiEnabled,
     needsHuman: (contact?.needsHuman ?? false) || c2.needsHuman,
     needsHumanReason: c2.needsHumanReason ?? contact?.needsHumanReason ?? null,
+    respuestaEncolada,
   });
 }
