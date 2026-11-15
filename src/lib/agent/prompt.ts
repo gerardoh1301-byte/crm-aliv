@@ -181,6 +181,9 @@ export async function renderContexto(contactId: string): Promise<string> {
         total: pedidosOrdenes.total,
         estado: pedidosOrdenes.estado,
         items: pedidosOrdenes.items,
+        direccionEnvio: pedidosOrdenes.direccionEnvio,
+        distrito: pedidosOrdenes.distrito,
+        ciudad: pedidosOrdenes.ciudad,
         createdAt: pedidosOrdenes.createdAt,
       })
       .from(pedidosOrdenes)
@@ -188,18 +191,7 @@ export async function renderContexto(contactId: string): Promise<string> {
       .orderBy(desc(pedidosOrdenes.createdAt))
       .limit(3);
 
-    if (prevOrders.length > 0) {
-      const lineas = prevOrders.map((p) => {
-        const itemsStr = Array.isArray(p.items)
-          ? (p.items as Array<{ cantidad: number; titulo: string }>).map((i) => `${i.cantidad}x ${i.titulo}`).join(", ")
-          : "Productos Aliv";
-        return `- Pedido ${p.numeroOrden}: ${itemsStr} por S/ ${p.total} (estado: ${p.estado})`;
-      });
-      pedidosTxt =
-        "## Historial de pedidos anteriores (cliente recurrente - R5)\n" +
-        lineas.join("\n") +
-        "\nInstrucción: Reconoce al cliente como recurrente de forma cálida (ej. 'Hola Vidal, veo tu pedido previo #1051 de NAC600...').";
-    }
+    pedidosTxt = renderPedidosCliente(prevOrders);
   } catch (err) {
     console.warn("[prompt] No se pudo cargar historial de pedidos:", err);
   }
@@ -289,4 +281,53 @@ export async function renderContexto(contactId: string): Promise<string> {
 export async function buildSystemPrompt(now: Date, channel = "whatsapp"): Promise<string> {
   const template = await getSystemPromptTemplate();
   return renderSystemPrompt(template, { now, channel });
+}
+
+interface PedidoResumen {
+  numeroOrden: string | null;
+  total: string | null;
+  estado: string;
+  items: unknown;
+  direccionEnvio?: string | null;
+  distrito?: string | null;
+  ciudad?: string | null;
+}
+
+const ESTADOS_EN_CURSO = new Set(["por_confirmar_cod", "confirmado", "preparando", "enviado"]);
+
+/**
+ * Antes todos los pedidos salian como "historial (cliente recurrente)" y el bot trataba un
+ * pedido aun sin completar (ej. #1071 con la direccion incompleta) como compra pasada y
+ * ofrecia "un nuevo pedido". Ahora se separan: los que siguen en curso se completan; solo
+ * los entregados cuentan como compra previa.
+ */
+export function renderPedidosCliente(pedidos: PedidoResumen[]): string {
+  if (pedidos.length === 0) return "";
+  const linea = (p: PedidoResumen) => {
+    const items = Array.isArray(p.items)
+      ? (p.items as Array<{ cantidad: number; titulo: string }>).map((i) => `${i.cantidad}x ${i.titulo}`).join(", ")
+      : "Productos Aliv";
+    const destino = [p.direccionEnvio, p.distrito, p.ciudad].filter(Boolean).join(", ");
+    return `- Pedido ${p.numeroOrden}: ${items} por S/ ${p.total} (estado: ${p.estado})${destino ? ` — dirección registrada: "${destino}"` : ""}`;
+  };
+  const enCurso = pedidos.filter((p) => ESTADOS_EN_CURSO.has(p.estado));
+  const entregados = pedidos.filter((p) => p.estado === "entregado");
+  const partes: string[] = [];
+  if (enCurso.length > 0) {
+    partes.push(
+      "## Pedido EN CURSO de este cliente (aún no entregado)\n" +
+        enCurso.map(linea).join("\n") +
+        "\nInstrucción: este pedido sigue abierto. Si el cliente escribe (aunque sea un saludo o \"quiero información\"), " +
+        "retómalo por su número: confirma lo que pidió y pide SOLO el dato que falte (dirección completa con número, distrito, referencia; o en provincia agencia Shalom, nombre y DNI). " +
+        "No lo trates como cliente recurrente ni le ofrezcas \"un nuevo pedido\": solo crea otro si el cliente dice que quiere algo adicional.",
+    );
+  }
+  if (entregados.length > 0) {
+    partes.push(
+      "## Compras anteriores entregadas (cliente recurrente)\n" +
+        entregados.map(linea).join("\n") +
+        "\nInstrucción: reconócelo como cliente recurrente de forma cálida (ej. 'Hola Vidal, veo que ya probaste NAC600...').",
+    );
+  }
+  return partes.join("\n\n");
 }
