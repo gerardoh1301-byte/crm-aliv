@@ -7,6 +7,8 @@ import { deliverMessage } from "@/lib/channels/deliver";
 import { aplicarEtiquetaAContacto } from "./etiquetado";
 import { pedidosOrdenes } from "../../../modules/pedidos/tabla";
 import { esPedidoDeProvincia } from "@/lib/pedidos/adelanto";
+import { createChatCompletionWithFallback, hasOpenRouterKey, getAgentModel } from "./openrouter";
+import { limpiarFormatoWhatsApp } from "./formato";
 
 export type TipoEscenarioRescate = "direccion_incompleta" | "adelanto_provincia" | "cotizacion_abandonada";
 
@@ -174,6 +176,54 @@ export function determinarEscenarioRescate(
     .join(" ")
     .toLowerCase();
 
+  // Obtener el último mensaje entrante del cliente para conocer su estado final
+  const mensajesCliente = (historialMensajes || []).filter((m) => m.direction === "in");
+  const ultimoMsgCliente = mensajesCliente[0] ? (mensajesCliente[0].body || "").toLowerCase() : "";
+
+  // 4. Validar si el pedido YA fue agendado/coordinado con el motorizado o en proceso de despacho (Caso José)
+  const pedidoYaAgendado =
+    /\b(ya le dej[eé] la indicaci[oó]n|al motorizado|el motorizado|ya tengo registrado tu pedido|ya agendamos tu pedido|pedido agendado|dej[eé] listo tu despacho|apenas est[eé] llegando a tu direcci[oó]n|el equipo validar[aá] tu comprobante y se encargar[aá] de despachar|se encargar[aá] de despachar tus|despacharemos tus|dejar la indicaci[oó]n al motorizado)\b/i.test(
+      textosHistorial
+    );
+
+  if (pedidoYaAgendado) {
+    return {
+      esElegible: false,
+      motivoDescarte: "Pedido ya coordinado, agendado con motorizado o en proceso de despacho (post-venta activa)",
+    };
+  }
+
+  // 5. Validar si la conversación concluyó cordialmente con agradecimiento o despedida mutua (Caso José)
+  const clienteSeDespidio =
+    /\b(no\s+listo\s+gracias|listo\s+gracias|muchas\s+gracias|mil\s+gracias|gracias\s+amig[oa]|todo\s+claro|perfecto\s+gracias|ya\s+est[aá]\s+todo|con\s+eso\s+ser[ií]a\s+todo|no[,.]?\s*listo)\b/i.test(
+      ultimoMsgCliente
+    );
+
+  const botSeDespidio =
+    /\b(a ti|un excelente d[ií]a|a la orden|quedamos a tu disposici[oó]n|un gusto|buenas tardes|buenas noches|buen d[ií]a|a tu servicio|con gusto)\b/i.test(
+      bodyUltimo
+    );
+
+  if (clienteSeDespidio && botSeDespidio) {
+    return {
+      esElegible: false,
+      motivoDescarte: "Conversación concluida cordialmente con despedida/agradecimiento mutuo",
+    };
+  }
+
+  // 6. Validar rechazo explícito del cliente
+  const clienteRechazo =
+    /\b(ya no deseo|no deseo|no gracias|no voy a querer|canc[eé]lalo|muy caro|compr[eé] en otro|ya no me interesa|deja no m[aá]s)\b/i.test(
+      ultimoMsgCliente
+    );
+
+  if (clienteRechazo) {
+    return {
+      esElegible: false,
+      motivoDescarte: "Cliente indicó explícitamente que no desea continuar la compra",
+    };
+  }
+
   // Determinar producto de interés real
   const productoPrincipal = detectarProductoRescate(contexto);
   const esTermix = productoPrincipal === "termix";
@@ -232,10 +282,16 @@ export function determinarEscenarioRescate(
       ? ` a ${matchDistrito[1].charAt(0).toUpperCase() + matchDistrito[1].slice(1).toLowerCase()}`
       : "";
 
+    // Detectar si se conversó un día de entrega específico (ej. lunes)
+    const matchDia = textosHistorial.match(
+      /\bllegar[ií]a el\s+(lunes|martes|mi[eé]rcoles|jueves|viernes|s[aá]bado)\b/i
+    );
+    const diaTxt = matchDia ? ` este ${matchDia[1].toLowerCase()}` : "";
+
     return {
       esElegible: true,
       escenario: "direccion_incompleta",
-      mensajeRescate: `${saludo} Te saluda Aliv Perú 🌿. Tenemos ${detallePack} separado y listo para programar tu entrega${destinoTxt}. Solo nos falta que nos confirmes tu nombre completo y dirección exacta (calle y número o referencia) para dejar tu despacho agendado. Si te es más fácil, ¿nos puedes compartir tu ubicación por aquí? 📍`,
+      mensajeRescate: `${saludo} Te saluda Aliv Perú 🌿. Quería confirmarte que tenemos ${detallePack} separados para coordinar tu entrega${destinoTxt}${diaTxt}. Solo nos falta que nos confirmes tu nombre completo y dirección exacta (calle y número o referencia) para dejar tu orden agendada con el motorizado. Si te es más fácil, ¿nos puedes compartir tu ubicación por aquí? 📍`,
     };
   }
 
@@ -275,7 +331,28 @@ export function determinarEscenarioRescate(
     };
   }
 
-  // ESCENARIO C: Cotización / Información sin respuesta
+  // ESCENARIO C: Duda de Modo de Uso o Beneficio sin Cierre
+  const consultoModoOUso =
+    /\b(c[oó]mo se toma|dosis|desayuno|h[ií]gado|graso|gastritis|diabetes|contraindicaci[oó]n|efectos|seguro|garant[ií]a|ingredientes|composici[oó]n|qu[eé] contiene|sirve para)\b/i.test(
+      textosHistorial
+    );
+
+  if (consultoModoOUso) {
+    if (esTermix) {
+      return {
+        esElegible: true,
+        escenario: "cotizacion_abandonada",
+        mensajeRescate: `${saludo} Quería consultarte si tuviste oportunidad de revisar cómo funciona la Tobillera Termix con calor de grafeno y masaje vibratorio ✨. Recuerda que es talla universal y viene con 30 días de garantía. ¿Tienes alguna duda adicional sobre su funcionamiento?`,
+      };
+    }
+    return {
+      esElegible: true,
+      escenario: "cotizacion_abandonada",
+      mensajeRescate: `${saludo} Quería saber si pudiste revisar la información sobre cómo apoya NAC600 + NAD+ a tu bienestar y salud celular ✨. Si te animas a probarlo, recuerda que en Lima pagas recién al recibir en tu puerta con envío gratis y 30 días de garantía. ¿Te gustaría que te programemos 1 frasco de S/119 o prefieres aprovechar la promo de 3 por S/199?`,
+    };
+  }
+
+  // ESCENARIO D: Cotización / Información de precios sin respuesta
   if (esTermix) {
     return {
       esElegible: true,
@@ -289,6 +366,129 @@ export function determinarEscenarioRescate(
     escenario: "cotizacion_abandonada",
     mensajeRescate: `${saludo} Quería saber si tuviste oportunidad de revisar la información de NAC600 + NAD+ ✨. Recuerda que tenemos envío gratis con pago al recibir en Lima y 30 días de garantía. ¿Te gustaría empezar con 1 frasco de S/119 o prefieres aprovechar la promo de 3 por S/199?`,
   };
+}
+
+/**
+ * Usa IA (Gemini vía pool) para auditar la conversación con máxima sutileza:
+ * 1. Confirma si la conversación amerita rescate o si ya está concluida / post-venta.
+ * 2. Si amerita, genera un mensaje hiper-contextual que retoma EXACTAMENTE desde
+ *    el punto donde quedó el proceso.
+ */
+export async function evaluarRescateConIA(
+  contexto: ContextoChatParaAuditoria,
+  evaluacionHeuristica: ResultadoAuditoriaRescate
+): Promise<ResultadoAuditoriaRescate> {
+  // Si no hay API key de IA disponible, mantener la evaluación heurística
+  if (!hasOpenRouterKey()) {
+    return evaluacionHeuristica;
+  }
+
+  try {
+    const { contact, ultimoMensaje, historialMensajes, pedidoReciente } = contexto;
+    const nombre = (contact.name || "Cliente").split(" ")[0].trim();
+    const producto = detectarProductoRescate(contexto) === "termix" ? "Tobillera Termix" : "NAC600 + NAD+";
+
+    // Formatear los últimos mensajes para el prompt
+    const mensajesOrdenados = [...(historialMensajes || [])].reverse();
+    const transcripcion = mensajesOrdenados
+      .map((m) => `${m.direction === "in" ? "Cliente" : "Aliv Perú (Bot/Asesor)"}: ${m.body || "(sin texto)"}`)
+      .join("\n");
+
+    const promptAuditoria = `Eres el supervisor senior de atención y ventas de Aliv Perú (tienda oficial de salud y bienestar).
+Analiza el siguiente historial reciente de WhatsApp para determinar si la conversación quedó REALMENTE TRABADA en una venta que requiere rescate, o si por el contrario es un chat concluido, atendido o con pedido ya agendado.
+
+HISTORIAL DEL CHAT:
+${transcripcion || `Aliv Perú: ${ultimoMensaje?.body ?? ""}`}
+
+DATOS DEL CLIENTE:
+- Nombre: ${nombre}
+- Producto principal: ${producto}
+- Pedido Shopify en sistema: ${pedidoReciente?.numeroOrden ? `#${pedidoReciente.numeroOrden}` : "Ninguno aún"}
+- Evaluación heurística previa: Escenario "${evaluacionHeuristica.escenario}", mensaje propuesto: "${evaluacionHeuristica.mensajeRescate}"
+
+REGLAS DE DECISIÓN CRÍTICAS:
+1. DEBES RESPONDER "debeRescatar": false SI:
+   - El cliente YA COMPRÓ, ya coordinó la entrega con motorizado, o el pedido ya fue agendado/confirmado (ej: "ya le dejé la indicación al motorizado", "este sábado te llega", etc.).
+   - La conversación concluyó cordialmente con agradecimiento o despedida mutua (ej: el cliente dijo "no listo gracias", "gracias amigo", "todo claro" y el bot respondió cordialmente).
+   - El cliente rechazó la compra ("no gracias", "ya no deseo", "muy caro").
+   - El último mensaje fue del cliente (aún espera respuesta nuestra, no está abandonado por él).
+
+2. DEBES RESPONDER "debeRescatar": true SI:
+   - Hay una venta en proceso que se detuvo por falta de respuesta del cliente tras 2 a 22 horas:
+     a) Ya eligió o acordó un producto/pack pero quedó pendiente enviar su dirección, nombre o ubicación en Lima.
+     b) Aceptó el envío a provincia pero quedó pendiente realizar el adelanto de S/20 para la guía Shalom.
+     c) Pidió precios o cotización y no decidió qué opción tomar.
+     d) Hizo una consulta médica o técnica, se le respondió, y no continuó.
+
+3. REGLAS PARA EL MENSAJE DE RETOMA (si debeRescatar es true):
+   - NUNCA sonar como una plantilla genérica ("Quería saber si tuviste oportunidad de revisar...").
+   - Retoma EXACTAMENTE desde el punto donde se detuvo el proceso.
+   - Si ya acordó el pack (ej: 3 frascos por S/199), el distrito (ej: Carabayllo) o el día de llegada (ej: lunes), menciónalos con naturalidad.
+   - NUNCA cambies de producto (si hablaban de NAC600, no menciones Tobillera ni viceversa).
+   - NUNCA uses los términos "cápsula blanda" o "softgel" para NAC600 (usa siempre "cápsulas").
+   - Extensión: 2 a 3 líneas naturales de WhatsApp, cálidas y cordiales, con 1 emoji adecuado.
+
+Responde ÚNICAMENTE un objeto JSON válido con la siguiente estructura:
+{
+  "debeRescatar": boolean,
+  "motivo": string,
+  "puntoDondeQuedo": string,
+  "mensajeRetoma": string
+}`;
+
+    const completion = await createChatCompletionWithFallback({
+      model: getAgentModel(),
+      messages: [
+        { role: "system", content: "Responde únicamente en formato JSON válido sin markdown ni texto extra." },
+        { role: "user", content: promptAuditoria },
+      ],
+      temperature: 0.2,
+      response_format: { type: "json_object" },
+    });
+
+    const contenido = completion.choices[0]?.message?.content?.trim();
+    if (!contenido) return evaluacionHeuristica;
+
+    const data = JSON.parse(contenido);
+    if (data.debeRescatar === false) {
+      return {
+        esElegible: false,
+        motivoDescarte: `Auditoría IA: ${data.motivo || "Conversación no requiere rescate"} (${data.puntoDondeQuedo || "proceso concluido"})`,
+      };
+    }
+
+    if (data.debeRescatar === true && typeof data.mensajeRetoma === "string" && data.mensajeRetoma.trim().length > 15) {
+      // Blindaje de seguridad sobre el texto generado por IA:
+      // 1. Prohibir cápsula blanda / softgel
+      let mensajeFinal = data.mensajeRetoma
+        .replace(/c[aá]psulas?\s+blandas?/gi, "cápsulas")
+        .replace(/softgels?/gi, "cápsulas");
+
+      // 2. Verificar que no haya cruzado de producto
+      const esTermixReal = producto.includes("Tobillera");
+      const hablaDeTermix = /termix|tobillera/i.test(mensajeFinal);
+      const hablaDeNac = /nac|nac600|glutation|frasco/i.test(mensajeFinal);
+
+      if (!esTermixReal && hablaDeTermix && !hablaDeNac) {
+        console.warn("[rescate-ia] IA generó mensaje de Tobillera para chat de NAC600. Usando heurística.");
+        return evaluacionHeuristica;
+      }
+      if (esTermixReal && hablaDeNac && !hablaDeTermix) {
+        console.warn("[rescate-ia] IA generó mensaje de NAC para chat de Tobillera. Usando heurística.");
+        return evaluacionHeuristica;
+      }
+
+      return {
+        esElegible: true,
+        escenario: evaluacionHeuristica.escenario,
+        mensajeRescate: limpiarFormatoWhatsApp(mensajeFinal),
+      };
+    }
+  } catch (err) {
+    console.warn("[rescate-ia] Error en evaluación con IA, usando heurística blindada:", err);
+  }
+
+  return evaluacionHeuristica;
 }
 
 /**
@@ -396,8 +596,14 @@ export async function auditarChatsAbandonados(opts?: { limite?: number; forzarHo
       continue;
     }
 
+    // Auditoría contextual inteligente con IA (Gemini vía pool) para confirmar o enriquecer la retoma
+    const evaluacionFinal = await evaluarRescateConIA(contexto, evaluacion);
+    if (!evaluacionFinal.esElegible || !evaluacionFinal.mensajeRescate || !evaluacionFinal.escenario) {
+      continue;
+    }
+
     // Entregar mensaje oficial de rescate
-    const entrega = await deliverMessage(c.convId, { text: evaluacion.mensajeRescate }, "agent");
+    const entrega = await deliverMessage(c.convId, { text: evaluacionFinal.mensajeRescate }, "agent");
     if (entrega.ok) {
       rescatados++;
       // Aplicar etiqueta 'rescate_enviado' para evitar duplicidad
@@ -405,14 +611,14 @@ export async function auditarChatsAbandonados(opts?: { limite?: number; forzarHo
         contactId: c.contactId,
         etiqueta: "rescate_enviado",
         accion: "agregar",
-        motivo: `Rescate de chat abandonado (${evaluacion.escenario})`,
+        motivo: `Rescate de chat abandonado (${evaluacionFinal.escenario})`,
       });
 
       // Registrar nota en la ficha
       try {
         await db.insert(activities).values({
           type: "note",
-          description: `[RESCATE VENTAS] Mensaje enviado automáticamente para recuperar venta abandonada (${evaluacion.escenario}).`,
+          description: `[RESCATE VENTAS] Mensaje enviado automáticamente para recuperar venta abandonada (${evaluacionFinal.escenario}).`,
           contactId: c.contactId,
         });
       } catch (actErr) {
@@ -422,8 +628,8 @@ export async function auditarChatsAbandonados(opts?: { limite?: number; forzarHo
       detalles.push({
         contactId: c.contactId,
         phone: c.contactPhone,
-        escenario: evaluacion.escenario,
-        mensaje: evaluacion.mensajeRescate,
+        escenario: evaluacionFinal.escenario,
+        mensaje: evaluacionFinal.mensajeRescate,
       });
     }
   }
