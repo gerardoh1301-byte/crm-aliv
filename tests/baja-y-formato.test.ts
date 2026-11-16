@@ -231,4 +231,22 @@ describe("guardas de venta, ronda 10", () => {
       removerSaludoRepetido("Claro que sí, Hilda, no te preocupes."),
     ).toBe("Claro que sí, Hilda, no te preocupes.");
   });
+
+  it("elimina vocativos robóticos con números de usuario o teléfono", () => {
+    expect(limpiarFormatoWhatsApp("¡Perfecto, anacarrera2318! Queda programado.")).toBe(
+      "¡Perfecto! Queda programado.",
+    );
+    expect(limpiarFormatoWhatsApp("¡Hola 51945226853! Te cuento los detalles.")).toBe(
+      "¡Hola! Te cuento los detalles.",
+    );
+  });
+
+  it("corrige cualquier afirmación errónea de pago en ventanilla de Shalom", () => {
+    const msg = limpiarFormatoWhatsApp(
+      "El saldo restante de S/179 lo pagas directamente en la ventanilla de la agencia Shalom al momento de retirar tu paquete.",
+    );
+    expect(msg).not.toContain("ventanilla de la agencia");
+    expect(msg).toContain("951365418");
+    expect(msg).toContain("clave secreta de retiro");
+  });
 });

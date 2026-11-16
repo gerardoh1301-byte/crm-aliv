@@ -122,6 +122,18 @@ export function aplicarGuardasDeVenta(texto: string): string {
   t = t.replace(/\b(?:los\s+)?domingos?\s+(?:hay|hacemos|tenemos|se\s+hacen)\s+env[ií]os\b/gi, "los envíos se realizan de lunes a sábado (los domingos no hay repartos)");
   t = t.replace(/\b(?:el\s+)?domingo\s+te\s+lo\s+(?:enviamos|llevamos|entregamos)\b/gi, "las entregas son de lunes a sábado, te lo podemos entregar el sábado o lunes");
 
+  // Guarda Shalom: prohibir decir que se paga en la ventanilla o en la misma agencia Shalom
+  t = t.replace(
+    /\b(?:lo\s+pagas|se\s+cancela|se\s+paga)\s+(?:directamente\s+|reci[eé]n\s+)?(?:en\s+la\s+ventanilla\s+de\s+la\s+agencia(?:\s+Shalom)?|en\s+la\s+misma\s+agencia(?:\s+Shalom)?)(?:\s+al\s+momento\s+de\s+(?:retirar|recibir)\s+tu\s+paquete)?/gi,
+    `nos lo transfieres por Yape o Plin al *${YAPE_ADELANTO}* (Gerardo Huaynalaya) cuando llegue a la agencia para enviarte tu clave secreta de retiro`,
+  );
+
+  // Guarda anti-vocativos robóticos (ej. "¡Perfecto, anacarrera2318!", "¡Hola 51945226853!")
+  t = t.replace(
+    /(\b(?:Hola|Perfecto|Genial|Excelente|Entendido|Listo|Claro(?:\s+que\s+s[ií])?|Buenas\s+(?:tardes|noches)|Buenos\s+d[ií]as|Muchas\s+gracias|Gracias)),?\s+\+?[\p{L}_]*\d{2,}[\p{L}\d_]*(?=[!.,\s]|$)/giu,
+    "$1",
+  );
+
   const mencionaAdelanto = /S\/\s?20\b/.test(t) && /adelant|separ|reserv/i.test(t);
   if (mencionaAdelanto && !/951\s?365\s?418/.test(t)) {
     // En linea, junto al monto: agregado al final quedaba despues de la pregunta de cierre.

@@ -244,10 +244,29 @@ export async function renderContexto(contactId: string): Promise<string> {
     console.warn("[prompt] Error al analizar estado de llamada en chat:", err);
   }
 
+  // Si no hay pedido en la tabla pedidos_ordenes pero en el chat se envió una confirmación de pedido web (#1023, #1086, etc.), rescatarlo
+  if (!pedidosTxt && ultimosMensajesChat.length > 0) {
+    const msgsOrden = [...ultimosMensajesChat]
+      .reverse()
+      .filter((m) => m.direction === "out" && m.body && /(?:recibimos\s+tu\s+pedido|tu\s+pedido)\s*\*?#?[A-Z0-9-]+\*?/i.test(m.body))
+      .map((m) => m.body!.replace(/\n+/g, " ").trim());
+    if (msgsOrden.length > 0) {
+      pedidosTxt =
+        "## Pedido EN CURSO de este cliente (detectado en el historial del chat)\n" +
+        msgsOrden.map((txt) => `- Mensaje de orden enviado al cliente: "${txt}"`).join("\n") +
+        "\nInstrucción CRÍTICA: este cliente YA TIENE este pedido registrado en el chat. ESTÁ ESTRICTAMENTE PROHIBIDO preguntarle qué producto le interesa o '¿cuál de los dos te llama la atención?'. Retoma directamente este pedido, responde su duda puntual (ej. si pide video, foto o pregunta cómo se usa) en 2 líneas concisas y ayúdalo a confirmar el envío.";
+    }
+  }
+
+  const infoNombre = resolverNombreHumanoCliente(contact.name, [...ultimosMensajesChat].reverse());
+  const lineaNombre = infoNombre.nombreLimpio
+    ? `- Nombre del cliente: ${infoNombre.nombreLimpio} (IMPORTANTE: es la persona que te contacta. Si menciona que su esposo, familiar o un tercero pagará o retirará, NUNCA cambies el nombre ni empieces a llamarla por el nombre del tercero; sigue tratándola como ${infoNombre.nombreLimpio})`
+    : `- Nombre del cliente: Aún no confirmado (su perfil muestra "${contact.name}", que es un alias o código: ESTÁ PROHIBIDO llamarlo "${contact.name}"; háblale de tú con calidez sin usar ese alias hasta que indique su nombre real)`;
+
   const partes = [
     "\n\n# CONTEXTO",
     "## Cliente",
-    `- Nombre registrado del cliente: ${contact.name} (IMPORTANTE: es la persona que te contacta. Si menciona que su esposo, familiar o un tercero pagará o retirará, NUNCA cambies el nombre ni empieces a llamarla por el nombre del tercero; sigue tratándola como ${contact.name})${contact.email ? `\n- Email: ${contact.email}` : ""}${contact.phone ? `\n- Telefono: ${contact.phone}${/^\+?51\d{9}$/.test(contact.phone.replace(/\s/g, "")) ? "" : " (no es un celular peruano: pide su numero de celular para la guia)"}` : ""}`,
+    `${lineaNombre}${contact.email ? `\n- Email: ${contact.email}` : ""}${contact.phone ? `\n- Telefono: ${contact.phone}${/^\+?51\d{9}$/.test(contact.phone.replace(/\s/g, "")) ? "" : " (no es un celular peruano: pide su numero de celular para la guia)"}` : ""}`,
     ...(conocidos.length ? [`- Datos conocidos: ${conocidos.join("; ")}`] : []),
     ...(contact.aiSummary ? [`- Resumen previo: ${contact.aiSummary}`] : []),
     `- Etapa actual: ${etapaActual}`,
@@ -356,4 +375,52 @@ export function renderPedidosCliente(pedidos: PedidoResumen[]): string {
     );
   }
   return partes.join("\n\n");
+}
+
+/**
+ * Determina si un nombre de contacto en WhatsApp es un nombre humano real
+ * o si por el contrario es un teléfono, handle con números (anacarrera2318),
+ * iniciales (C.O.F. MADRE) o frase larga ("si nombró con amor lo atr").
+ * Si el perfil no tiene un nombre limpio, busca si en algún mensaje inicial
+ * de pedido web de Aliv Perú se le llamó por su nombre de pila real ("¡Hola, Yesica!").
+ */
+export function resolverNombreHumanoCliente(
+  rawName: string | null | undefined,
+  mensajes?: Array<{ direction: string; body: string | null }>
+): { nombreLimpio: string | null; esAliasOCodigo: boolean } {
+  const limpio = (rawName || "").replace(/[\p{Extended_Pictographic}\u200d\uFE0F]/gu, "").trim();
+
+  // 1. Intentar rescatar primero si hay un saludo de pedido web oficial ("¡Hola, Yesica! 👋 Te saluda Aliv Perú. Recibimos tu pedido...")
+  if (mensajes && mensajes.length > 0) {
+    for (const m of mensajes) {
+      if (m.direction === "out" && m.body && /recibimos\s+tu\s+pedido|tu\s+pedido\s*\*?#/i.test(m.body)) {
+        const match = m.body.match(/¡?Hola,\s+([A-ZÁÉÍÓÚÑ][a-záéíóúñ]{2,15})!/);
+        if (match && match[1] && !/^(Bienvenido|Bienvenida|Hola|Cliente)$/i.test(match[1])) {
+          return { nombreLimpio: match[1], esAliasOCodigo: false };
+        }
+      }
+    }
+  }
+
+  const tieneDigitos = /\d/.test(limpio);
+  const esInicialesOSimbolos = /^[.\-_@#+$%&*]+$/.test(limpio) || /\b[A-Z]\.[A-Z]\./.test(limpio);
+  const palabras = limpio.split(/\s+/).filter(Boolean);
+  const esFraseORaro =
+    !limpio ||
+    limpio.length < 2 ||
+    tieneDigitos ||
+    esInicialesOSimbolos ||
+    palabras.length > 4 ||
+    /^(desconocido|lead|cliente|usuario|sin nombre|hola|si|no|ninguno)$/i.test(limpio) ||
+    /\b(madre|agradecida|amor|cosmiatria|centro|bodega|tienda|yobamedic)\b/i.test(limpio);
+
+  if (!esFraseORaro) {
+    const primerNombre = palabras[0].replace(/[^a-zA-ZáéíóúÁÉÍÓÚñÑüÜ]/g, "");
+    if (primerNombre.length >= 3 && primerNombre.length <= 15) {
+      const capitalizado = primerNombre.charAt(0).toUpperCase() + primerNombre.slice(1).toLowerCase();
+      return { nombreLimpio: capitalizado, esAliasOCodigo: false };
+    }
+  }
+
+  return { nombreLimpio: null, esAliasOCodigo: true };
 }

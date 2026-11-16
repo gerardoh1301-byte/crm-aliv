@@ -87,7 +87,7 @@ export async function runAgentForConversation(
         contexto +
         renderOrigenAnuncio(conversation.metadata, yaRespondio) +
         (yaRespondio
-          ? "\n\n# ESTADO DEL CHAT: CONVERSACIÓN EN CURSO (PROHIBIDO SALUDAR DE NUEVO)\nYa has saludado al cliente en mensajes anteriores de este chat. ESTÁ ESTRICTAMENTE PROHIBIDO volver a decir '¡Hola', 'Hola [nombre]' o saludar de nuevo. Responde DIRECTAMENTE a lo que dijo o preguntó el cliente (tono 100% humano y natural)."
+          ? "\n\n# ESTADO DEL CHAT: CONVERSACIÓN EN CURSO (PROHIBIDO SALUDAR DE NUEVO Y PROHIBIDO REPETIR TABLA DE PRECIOS)\nYa has saludado al cliente en mensajes anteriores de este chat. ESTÁ ESTRICTAMENTE PROHIBIDO volver a decir '¡Hola', 'Hola [nombre]' o saludar de nuevo. Si ya enviaste los precios en un turno anterior, NO vuelvas a pegar la lista de precios (• 1 frasco... • 2 frascos...). Responde DIRECTAMENTE a lo que dijo o preguntó el cliente en 2 a 3 líneas cortas y naturales, como un vendedor humano por WhatsApp."
           : "") +
         equipo,
     },
@@ -381,14 +381,24 @@ async function loadHistory(conversationId: string): Promise<CollapsedHistory> {
 
   if (rows.length === 0) return "empty";
 
+  const orderedRows = [...rows].reverse();
+  const hayRespuestaPrevia = orderedRows.some(
+    (m) => m.direction === "out" && !esSaludoAutomatico(m.direction, m.origin, m.body) && Boolean(m.body?.trim())
+  );
+
   const collapsed: Array<{ role: "user" | "assistant"; content: string }> = [];
-  for (const m of rows.reverse()) {
+  for (const m of orderedRows) {
     // El saludo automatico de WhatsApp Business no cuenta como respuesta: si lo
     // dejaramos, el primer "Quiero mas informacion" del anuncio quedaria sin contestar.
     if (esSaludoAutomatico(m.direction, m.origin, m.body)) continue;
     const role: "user" | "assistant" = m.direction === "in" ? "user" : "assistant";
     const text = m.body?.trim();
     if (!text) continue;
+    // Evitar bucle infinito cuando llegan reacciones, stickers o eventos "[Unsupported message]"
+    // si ya hubo atención previa en el chat.
+    if (role === "user" && hayRespuestaPrevia && /^\[(?:Unsupported message|sticker)\]$/i.test(text)) {
+      continue;
+    }
     const last = collapsed[collapsed.length - 1];
     if (last && last.role === role) last.content = `${last.content}\n${text}`;
     else collapsed.push({ role, content: text });
