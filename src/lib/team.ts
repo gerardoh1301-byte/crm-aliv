@@ -1,7 +1,7 @@
 import "server-only";
 import { db } from "@/db";
 import { contacts, teamMembers } from "@/db/schema";
-import { asc, eq, and, isNull, or, type SQL } from "drizzle-orm";
+import { asc, eq, and, isNull, or, sql, type SQL } from "drizzle-orm";
 import { createClient } from "@/lib/supabase/server";
 import { cookies } from "next/headers";
 import { COOKIE_SESION_LOCAL, ID_MIEMBRO_LOCAL, modoLocal } from "@/lib/modo-local";
@@ -36,37 +36,45 @@ export function displayName(member: TeamMember | null | undefined): string {
  * Miembro del equipo de la sesion actual, o null si no hay sesion.
  */
 export async function getCurrentMember(): Promise<TeamMember | null> {
-  // Autenticacion por perfil/PIN (local o en la nube sin Supabase Auth)
-  if (modoLocal() || !process.env.NEXT_PUBLIC_SUPABASE_URL || !process.env.NEXT_PUBLIC_SUPABASE_URL.includes("supabase.co")) {
-    let memberId: string | null = null;
-    try {
-      const cookieStore = await cookies();
-      memberId = verificarSesion(cookieStore.get(COOKIE_SESION_LOCAL)?.value);
-    } catch {
-      // Fuera de contexto HTTP
-    }
+  // 1. Verificar siempre primero la cookie de sesion de perfil/PIN (aliv_session_member_id)
+  let memberId: string | null = null;
+  try {
+    const cookieStore = await cookies();
+    memberId = verificarSesion(cookieStore.get(COOKIE_SESION_LOCAL)?.value);
+  } catch {
+    // Fuera de contexto HTTP
+  }
 
-    if (memberId) {
-      const [row] = await db
-        .select()
-        .from(teamMembers)
-        .where(and(eq(teamMembers.id, memberId), eq(teamMembers.active, true)))
-        .limit(1);
-      if (row) return toMember(row);
-    }
+  if (memberId) {
+    const [row] = await db
+      .select()
+      .from(teamMembers)
+      .where(and(eq(teamMembers.id, memberId), eq(teamMembers.active, true)))
+      .limit(1);
+    if (row) return toMember(row);
+  }
+
+  // Si estamos en modo local o sin Supabase Auth configurado, terminar aqui
+  if (modoLocal() || !process.env.NEXT_PUBLIC_SUPABASE_URL || !process.env.NEXT_PUBLIC_SUPABASE_URL.includes("supabase.co")) {
     return null;
   }
 
+  // 2. Verificar sesion de Supabase Auth (buscando por ID o por correo en team_members)
   const supabase = await createClient();
   const {
     data: { user },
   } = await supabase.auth.getUser();
   if (!user) return null;
 
+  const userEmail = (user.email ?? "").trim().toLowerCase();
   const [row] = await db
     .select()
     .from(teamMembers)
-    .where(eq(teamMembers.id, user.id))
+    .where(
+      userEmail
+        ? or(eq(teamMembers.id, user.id), sql`lower(${teamMembers.email}) = ${userEmail}`)
+        : eq(teamMembers.id, user.id)
+    )
     .limit(1);
 
   if (!row || !row.active) return null;

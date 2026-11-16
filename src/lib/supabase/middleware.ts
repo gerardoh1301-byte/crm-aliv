@@ -81,22 +81,27 @@ export async function updateSession(request: NextRequest) {
     data: { user },
   } = await supabase.auth.getUser();
 
-  const { pathname } = request.nextUrl;
+  const { pathname, searchParams } = request.nextUrl;
   const isPublicPath = PUBLIC_PATHS.some(
     (path) => pathname === path || pathname.startsWith(`${path}/`),
   );
-  const isPublicApi = PUBLIC_API_PREFIXES.some((prefix) =>
-    pathname.startsWith(prefix),
-  );
+  const isPublicApi =
+    PUBLIC_API_PREFIXES.some((prefix) => pathname.startsWith(prefix)) ||
+    pathname.startsWith("/api/auth/local");
 
-  if (!user && !isPublicPath && !isPublicApi) {
+  const rawLocalCookie = request.cookies.get(COOKIE_SESION_LOCAL)?.value;
+  const hasLocalSession = Boolean(rawLocalCookie && rawLocalCookie.trim());
+  const isAuthenticated = Boolean(user) || hasLocalSession;
+  const forzarCambio = searchParams.get("cambiar") === "1";
+
+  if (!isAuthenticated && !isPublicPath && !isPublicApi) {
     const url = request.nextUrl.clone();
     url.pathname = "/login";
     url.searchParams.set("redirect", pathname);
     return NextResponse.redirect(url);
   }
 
-  if (user && (pathname === "/login" || pathname === "/signup")) {
+  if (isAuthenticated && !forzarCambio && (pathname === "/login" || pathname === "/signup")) {
     const url = request.nextUrl.clone();
     url.pathname = "/";
     url.searchParams.delete("redirect");

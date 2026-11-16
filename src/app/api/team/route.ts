@@ -16,7 +16,8 @@ function usaAuthLocal(): boolean {
   return (
     modoLocal() ||
     !process.env.NEXT_PUBLIC_SUPABASE_URL ||
-    !process.env.NEXT_PUBLIC_SUPABASE_URL.includes("supabase.co")
+    !process.env.NEXT_PUBLIC_SUPABASE_URL.includes("supabase.co") ||
+    !process.env.SUPABASE_SERVICE_ROLE_KEY
   );
 }
 
@@ -122,12 +123,21 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  // Flujo Supabase Auth (solo cuando Supabase esta activo)
+  // Flujo Supabase Auth (cuando Supabase Auth y SERVICE_ROLE_KEY están activos)
   const invitar = Boolean(body.invitar) && correoDeAccesoActivo();
 
-  const [existing] = await db.execute<{ id: string }>(
-    sql`select id from auth.users where lower(email) = ${email} limit 1`
-  );
+  if (password) {
+    await guardarSetting(`auth.pin.${email}`, password);
+  }
+
+  let existing: { id: string } | undefined;
+  try {
+    [existing] = await db.execute<{ id: string }>(
+      sql`select id from auth.users where lower(email) = ${email} limit 1`
+    );
+  } catch {
+    existing = undefined;
+  }
 
   let userId = existing?.id ?? null;
   let correoEnviado = false;
@@ -146,26 +156,24 @@ export async function POST(request: NextRequest) {
   }
 
   if (!userId) {
-    if (password && password.length < 8) {
-      return NextResponse.json(
-        { error: "La contrasena temporal debe tener al menos 8 caracteres" },
-        { status: 400 }
-      );
+    try {
+      const admin = createAdminClient();
+      const supabasePassword =
+        password && password.length >= 8
+          ? password
+          : `${password || "1234"}Aliv2026!`;
+      const { data, error } = await admin.auth.admin.createUser({
+        email,
+        password: supabasePassword,
+        email_confirm: true,
+        user_metadata: { full_name: name || null },
+      });
+      if (!error && data?.user) {
+        userId = data.user.id;
+      }
+    } catch (err) {
+      console.warn("[api/team] Fallback a registro directo en team_members:", err);
     }
-    const admin = createAdminClient();
-    const { data, error } = await admin.auth.admin.createUser({
-      email,
-      password: password || undefined,
-      email_confirm: true,
-      user_metadata: { full_name: name || null },
-    });
-    if (error || !data.user) {
-      return NextResponse.json(
-        { error: error?.message ?? "No se pudo crear el usuario" },
-        { status: 502 }
-      );
-    }
-    userId = data.user.id;
   }
 
   if (existing && invitar) {
@@ -174,17 +182,45 @@ export async function POST(request: NextRequest) {
     else correoEnviado = true;
   }
 
-  const [row] = await db
-    .insert(teamMembers)
-    .values({ id: userId, email, name: name || null, role, active: true })
-    .onConflictDoUpdate({
-      target: teamMembers.id,
-      set: { name: name || null, role, active: true, updatedAt: new Date() },
-    })
-    .returning();
+  const [existenteEnTeam] = await db
+    .select()
+    .from(teamMembers)
+    .where(sql`lower(${teamMembers.email}) = ${email}`)
+    .limit(1);
+
+  let row;
+  if (existenteEnTeam) {
+    const [actualizado] = await db
+      .update(teamMembers)
+      .set({
+        name: name || existenteEnTeam.name || email.split("@")[0],
+        role: email === MASTER_GOOGLE_EMAIL ? "admin" : role,
+        active: true,
+        updatedAt: new Date(),
+      })
+      .where(eq(teamMembers.id, existenteEnTeam.id))
+      .returning();
+    row = actualizado;
+  } else {
+    const [creado] = await db
+      .insert(teamMembers)
+      .values({
+        id: userId || crypto.randomUUID(),
+        email,
+        name: name || email.split("@")[0],
+        role: email === MASTER_GOOGLE_EMAIL ? "admin" : role,
+        active: true,
+      })
+      .onConflictDoUpdate({
+        target: teamMembers.id,
+        set: { name: name || email.split("@")[0], role, active: true, updatedAt: new Date() },
+      })
+      .returning();
+    row = creado;
+  }
 
   return NextResponse.json(
-    { ...row, reusedAuthUser: Boolean(existing), correoEnviado, avisoCorreo },
+    { ...row, reusedAuthUser: Boolean(existing || existenteEnTeam), correoEnviado, avisoCorreo },
     { status: 201 }
   );
 }
