@@ -55,14 +55,17 @@ export async function signIn(formData: FormData) {
       (miembro.role === "asesor" && (password === pinVendedor || password === "1234" || password === "1234Aliv2026!"));
 
     if (esValido) {
-      const cookieStore = await cookies();
-      cookieStore.set(COOKIE_SESION_LOCAL, firmarSesion(miembro.id), {
-        httpOnly: true,
-        sameSite: "lax",
-        path: "/",
-        maxAge: 60 * 60 * 24 * 30,
-      });
-      redirect("/");
+      const sesion = firmarSesion(miembro.id);
+      if (sesion) {
+        const cookieStore = await cookies();
+        cookieStore.set(COOKIE_SESION_LOCAL, sesion, {
+          httpOnly: true,
+          sameSite: "lax",
+          path: "/",
+          maxAge: 60 * 60 * 24 * 30,
+        });
+        redirect("/");
+      }
     }
   }
 

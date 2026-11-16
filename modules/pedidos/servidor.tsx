@@ -16,6 +16,7 @@ import { emitAutomationEvent } from "@/lib/automations";
 import { deliverMessage } from "@/lib/channels/deliver";
 import { sincronizarConGoogleDrive } from "@/lib/drive-sync";
 import { extraerDatosFormularioShopify } from "@/lib/shopify/form-extractor";
+import { sincronizarDealEnSheets } from "@/lib/sheets/envios-sync";
 import type { ModuloServidor, HandlerModulo, ToolModulo } from "@/lib/modules/types";
 import manifiesto from "./manifiesto";
 import { pedidosOrdenes, type ItemPedido } from "./tabla";
@@ -417,6 +418,9 @@ const actualizar: HandlerModulo = async (req, { member, params }) => {
   }
 
   await sincronizarConGoogleDrive().catch(() => {});
+  if (row.dealId) {
+    sincronizarDealEnSheets(row.dealId).catch(() => {});
+  }
   return NextResponse.json(row);
 };
 

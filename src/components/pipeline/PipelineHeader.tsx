@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { ChevronDown, Plus, LayoutGrid, List, Settings2, Truck } from "lucide-react";
+import { ChevronDown, Plus, LayoutGrid, List, Settings2, Truck, FileSpreadsheet } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import {
@@ -47,6 +47,25 @@ export function PipelineHeader({
   const [newName, setNewName] = useState("");
   const [creating, setCreating] = useState(false);
   const [verificandoShalom, setVerificandoShalom] = useState(false);
+  const [sincronizandoSheets, setSincronizandoSheets] = useState(false);
+
+  const handleAbrirSheets = async () => {
+    // Abrir hoja en nueva pestaña
+    window.open("https://docs.google.com/spreadsheets/d/1vBgWP5MELBc-hiq-Mz4gBJqpxvF2sKTEGhfnddZpkoo/edit", "_blank");
+    // Sincronizar en segundo plano
+    setSincronizandoSheets(true);
+    try {
+      const res = await fetch("/api/sheets/sync-envios", { method: "POST" });
+      const json = await res.json();
+      if (json.ok) {
+        toast.success(`Google Sheets actualizado: ${json.total} envíos respaldados`);
+      }
+    } catch {
+      // noop
+    } finally {
+      setSincronizandoSheets(false);
+    }
+  };
 
   const handleVerificarShalom = async () => {
     setVerificandoShalom(true);
@@ -155,6 +174,19 @@ export function PipelineHeader({
         </div>
 
         <div className="flex items-center gap-2 shrink-0">
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            onClick={handleAbrirSheets}
+            disabled={sincronizandoSheets}
+            className="h-8 gap-1.5 text-xs font-semibold border-emerald-200 dark:border-emerald-900/40 text-emerald-700 dark:text-emerald-400 hover:bg-emerald-50 dark:hover:bg-emerald-950/30 cursor-pointer shadow-xs"
+            title="Abrir hoja de cálculo de Google Sheets con el respaldo en vivo de todos los despachos, motorizados, guías y claves de retiro Shalom"
+          >
+            <FileSpreadsheet className={cn("h-3.5 w-3.5", sincronizandoSheets && "animate-pulse")} />
+            {sincronizandoSheets ? "Sincronizando..." : "Respaldo Sheets"}
+          </Button>
+
           <Button
             type="button"
             variant="outline"

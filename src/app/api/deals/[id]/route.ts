@@ -5,6 +5,7 @@ import { deals } from "@/db/schema";
 import { eq } from "drizzle-orm";
 import { canAccessContactId } from "@/lib/team";
 import { requireMember } from "@/lib/api-auth";
+import { sincronizarDealEnSheets } from "@/lib/sheets/envios-sync";
 
 export async function GET(
   _request: NextRequest,
@@ -85,6 +86,11 @@ export async function PUT(
     .where(eq(deals.id, id))
     .returning();
   const result = resultRows[0];
+
+  // Sincronizar con Google Sheets en segundo plano si está en etapa de despacho
+  sincronizarDealEnSheets(id).catch((err) =>
+    console.error("[PUT /api/deals] Error sincronizando Sheets:", err)
+  );
 
   return NextResponse.json(result);
 }

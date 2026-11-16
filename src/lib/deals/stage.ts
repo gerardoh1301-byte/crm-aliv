@@ -6,6 +6,7 @@ import { eq } from "drizzle-orm";
 import { emitAutomationEvent } from "@/lib/automations";
 import type { DealStageChangedPayload } from "@/lib/automations/triggers";
 import { cleanStr, esEtiquetaDeEtapa, obtenerEtiquetaDeEtapa } from "@/lib/tags";
+import { sincronizarDealEnSheets } from "@/lib/sheets/envios-sync";
 
 /**
  * Mueve una operacion de etapa y emite `deal.stage_changed`.
@@ -134,6 +135,14 @@ export async function setDealStage(input: {
     contactId: deal.contactId,
     payload: payload as unknown as Record<string, unknown>,
   });
+
+  // Si entra a "en_reparto" (En camino/Despachado), o cambia de estado estando despachado,
+  // respaldar automáticamente en Google Sheets
+  if (stage.key === "en_reparto" || stage.isWon || (previous && "key" in previous && previous.key === "en_reparto")) {
+    sincronizarDealEnSheets(deal.id).catch((err) =>
+      console.error("[setDealStage] Error sincronizando con Google Sheets:", err)
+    );
+  }
 
   return { ok: true, changed: true };
 }
