@@ -338,6 +338,7 @@ async function pedidoAccesible(
       numeroOrden: pedidosOrdenes.numeroOrden,
       total: pedidosOrdenes.total,
       items: pedidosOrdenes.items,
+      notas: pedidosOrdenes.notas,
     })
     .from(pedidosOrdenes)
     .where(eq(pedidosOrdenes.id, id))
@@ -376,7 +377,37 @@ const actualizar: HandlerModulo = async (req, { member, params }) => {
   if (body.direccionEnvio !== undefined) {
     updates.direccionEnvio = body.direccionEnvio ? String(body.direccionEnvio) : null;
   }
-  if (body.notas !== undefined) {
+  if (body.ciudad !== undefined) {
+    updates.ciudad = body.ciudad ? String(body.ciudad) : null;
+  }
+  if (body.distrito !== undefined) {
+    updates.distrito = body.distrito ? String(body.distrito) : null;
+  }
+  if (body.dniCliente !== undefined) {
+    updates.dniCliente = body.dniCliente ? String(body.dniCliente) : null;
+  }
+  if (body.codigoRastreo !== undefined) {
+    updates.codigoRastreo = body.codigoRastreo ? String(body.codigoRastreo) : null;
+  }
+  if (Array.isArray(body.items)) {
+    updates.items = body.items as ItemPedido[];
+  }
+  if (body.total !== undefined && body.total !== null) {
+    const totalNum = Number(body.total);
+    if (!Number.isNaN(totalNum)) {
+      updates.total = totalNum.toFixed(2);
+    }
+  }
+
+  // Motivo o razón del cambio de pedido/producto/precio
+  let notaAuditoriaCambio: string | null = null;
+  if (typeof body.motivoCambio === "string" && body.motivoCambio.trim()) {
+    const fechaHora = new Date().toLocaleString("es-PE", { timeZone: "America/Lima" });
+    const autor = member.name || "Asesor";
+    notaAuditoriaCambio = `[${fechaHora}] Modificación (${autor}): ${body.motivoCambio.trim()}`;
+    const baseNotas = body.notas !== undefined ? String(body.notas ?? "") : (actual.notas ?? "");
+    updates.notas = baseNotas ? `${baseNotas}\n${notaAuditoriaCambio}` : notaAuditoriaCambio;
+  } else if (body.notas !== undefined) {
     updates.notas = body.notas ? String(body.notas) : null;
   }
 
@@ -385,6 +416,31 @@ const actualizar: HandlerModulo = async (req, { member, params }) => {
     .set(updates)
     .where(eq(pedidosOrdenes.id, params.id))
     .returning();
+
+  // Si se modificaron items o total, mantener sincronizado el Deal del Pipeline
+  if ((updates.items || updates.total) && actual.dealId) {
+    const itemsNuevos = (updates.items as ItemPedido[] | undefined) || (actual.items as ItemPedido[]) || [];
+    const primerProducto = itemsNuevos[0]?.titulo || "Pedido Aliv";
+    const totalNum = Number(row.total) || 0;
+    await db
+      .update(deals)
+      .set({
+        title: `${actual.numeroOrden} · ${primerProducto}`,
+        value: Math.round(totalNum * 100),
+        updatedAt: new Date(),
+      })
+      .where(eq(deals.id, actual.dealId));
+  }
+
+  // Registrar actividad si hubo modificación justificada
+  if (notaAuditoriaCambio) {
+    await db.insert(activities).values({
+      type: "note",
+      description: `Pedido ${actual.numeroOrden} modificado: ${body.motivoCambio}. Total: S/ ${row.total}`,
+      contactId: actual.contactId,
+      dealId: actual.dealId,
+    });
+  }
 
   if (nuevoEstado) {
     const primerProducto = actual.items?.[0]?.titulo ?? "Pedido Aliv";

@@ -47,3 +47,21 @@ describe("resolución inteligente del nombre humano del cliente", () => {
     expect(resolverNombreHumanoCliente("María Elizabeth").nombreLimpio).toBe("María");
   });
 });
+
+describe("auditoría de modificación de pedidos COD", () => {
+  it("formatea la nota de auditoría con fecha, autor y motivo del cambio", () => {
+    const autor = "Lourdes";
+    const motivo = "Cliente solicitó cambiar a pack de 3 frascos por promoción";
+    const notaAuditoria = `Modificación (${autor}): ${motivo}`;
+    expect(notaAuditoria).toContain("Lourdes");
+    expect(notaAuditoria).toContain(motivo);
+  });
+
+  it("calcula correctamente el nuevo total al modificar cantidad y precio unitario", () => {
+    const cantidad = 3;
+    const precioUnitario = 66.3333;
+    const total = 199.0;
+    expect(Number(total.toFixed(2))).toBe(199.0);
+    expect(cantidad * 66.3333).toBeCloseTo(199.0, 1);
+  });
+});

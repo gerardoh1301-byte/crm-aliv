@@ -22,6 +22,7 @@ import {
   Globe,
   HelpCircle,
   MessageCircle,
+  Pencil,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -139,6 +140,19 @@ export function PedidosPage() {
   const [claveRecojo, setClaveRecojo] = useState("");
   const [notificarCliente, setNotificarCliente] = useState(true);
   const [guardandoDespacho, setGuardandoDespacho] = useState(false);
+
+  // Dialogo de Modificacion de Pedido COD
+  const [editOpen, setEditOpen] = useState(false);
+  const [pedidoEnEdicion, setPedidoEnEdicion] = useState<PedidoConContacto | null>(null);
+  const [editForm, setEditForm] = useState({
+    skuProducto: "",
+    tituloProducto: "",
+    cantidad: 1,
+    precioUnitario: 0,
+    total: 0,
+    motivoCambio: "",
+  });
+  const [guardandoEdicion, setGuardandoEdicion] = useState(false);
 
   // Dialogo de Nuevo Pedido Manual
   const [nuevoOpen, setNuevoOpen] = useState(false);
@@ -280,6 +294,112 @@ export function PedidosPage() {
       cargarPedidos();
     } else {
       toast.error("No se pudo actualizar el pedido");
+    }
+  };
+
+  const abrirModalEdicion = (p: PedidoConContacto) => {
+    setPedidoEnEdicion(p);
+    const primerItem = p.items?.[0];
+    const cant = primerItem?.cantidad ?? 1;
+    const prec = primerItem?.precioUnitario ?? (Number(p.total) / (cant || 1));
+    const tot = Number(p.total) || (cant * prec);
+
+    const prodCat = catalogo.find(
+      (c) =>
+        (primerItem?.sku && c.sku === primerItem.sku) ||
+        c.titulo.toLowerCase() === primerItem?.titulo?.toLowerCase()
+    );
+
+    setEditForm({
+      skuProducto: primerItem?.sku || prodCat?.sku || prodCat?.id || "",
+      tituloProducto: primerItem?.titulo || prodCat?.titulo || "Producto Aliv",
+      cantidad: cant,
+      precioUnitario: prec,
+      total: tot,
+      motivoCambio: "",
+    });
+    setEditOpen(true);
+  };
+
+  const handleSeleccionarProductoCatalogo = (skuOrId: string) => {
+    const prod = catalogo.find((p) => p.sku === skuOrId || p.id === skuOrId);
+    if (!prod) return;
+    const prec = Number(prod.precio) || 0;
+    const tot = prec * (editForm.cantidad || 1);
+    setEditForm((prev) => ({
+      ...prev,
+      skuProducto: prod.sku || prod.id,
+      tituloProducto: prod.titulo,
+      precioUnitario: prec,
+      total: tot,
+    }));
+  };
+
+  const handleCambiarCantidad = (nuevaCant: number) => {
+    const c = Math.max(1, nuevaCant);
+    const tot = c * (editForm.precioUnitario || 0);
+    setEditForm((prev) => ({
+      ...prev,
+      cantidad: c,
+      total: tot,
+    }));
+  };
+
+  const handleCambiarPrecioUnitario = (nuevoPrecio: number) => {
+    const p = Math.max(0, nuevoPrecio);
+    const tot = (editForm.cantidad || 1) * p;
+    setEditForm((prev) => ({
+      ...prev,
+      precioUnitario: p,
+      total: tot,
+    }));
+  };
+
+  const guardarEdicionPedido = async () => {
+    if (!pedidoEnEdicion) return;
+    if (!editForm.motivoCambio.trim()) {
+      toast.error("Por favor escribe el motivo o razón a qué se debe el cambio");
+      return;
+    }
+    if (editForm.total < 0 || editForm.cantidad <= 0) {
+      toast.error("La cantidad y precio deben ser valores positivos válidos");
+      return;
+    }
+
+    setGuardandoEdicion(true);
+    try {
+      const itemsPayload = [
+        {
+          sku: editForm.skuProducto || "ALIV-PROD",
+          titulo: editForm.tituloProducto.trim() || "Producto Aliv",
+          cantidad: Number(editForm.cantidad),
+          precioUnitario: Number(editForm.precioUnitario),
+        },
+      ];
+
+      const res = await fetch(`${API_PEDIDOS}/${pedidoEnEdicion.id}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          items: itemsPayload,
+          total: editForm.total,
+          motivoCambio: editForm.motivoCambio.trim(),
+        }),
+      });
+
+      if (!res.ok) {
+        const errorData = await res.json().catch(() => ({}));
+        throw new Error(errorData.error || "Error al actualizar pedido");
+      }
+
+      toast.success(`Pedido ${pedidoEnEdicion.numeroOrden} modificado con éxito`);
+      setEditOpen(false);
+      setPedidoEnEdicion(null);
+      await cargarPedidos(true);
+    } catch (err: any) {
+      toast.error(err.message || "Error al guardar los cambios");
+    } finally {
+      setGuardandoEdicion(false);
     }
   };
 
@@ -591,10 +711,17 @@ export function PedidosPage() {
                       )}
                     </TableCell>
                     <TableCell>
-                      <div className="space-y-0.5 max-w-xs">
+                      <div
+                        className="space-y-0.5 max-w-xs group cursor-pointer hover:bg-muted/40 p-1 rounded transition-colors"
+                        onClick={() => abrirModalEdicion(p)}
+                        title="Hacer clic para editar producto, cantidad, precio o motivo"
+                      >
                         {(p.items ?? []).map((it, idx) => (
-                          <p key={idx} className="text-xs leading-snug">
-                            <span className="font-semibold">{it.cantidad}x</span> {it.titulo}
+                          <p key={idx} className="text-xs leading-snug group-hover:text-primary transition-colors flex items-center justify-between gap-1">
+                            <span>
+                              <span className="font-semibold">{it.cantidad}x</span> {it.titulo}
+                            </span>
+                            <Pencil className="h-2.5 w-2.5 opacity-0 group-hover:opacity-70 shrink-0 text-muted-foreground" />
                           </p>
                         ))}
                       </div>
@@ -667,6 +794,16 @@ export function PedidosPage() {
                             Chat
                           </Link>
                         )}
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          className="h-7 px-2 text-xs border-border/80 hover:bg-muted cursor-pointer shadow-2xs gap-1"
+                          title="Modificar producto, cantidad, precio y registrar nota/motivo del cambio"
+                          onClick={() => abrirModalEdicion(p)}
+                        >
+                          <Pencil className="h-3 w-3 text-muted-foreground" />
+                          Editar
+                        </Button>
                         {p.estado === "por_confirmar_cod" && (
                           <Button
                             size="sm"
@@ -720,6 +857,155 @@ export function PedidosPage() {
           </CardContent>
         </Card>
       )}
+
+      {/* Dialogo para Modificar Pedido COD (Producto, Cantidad, Precio y Motivo) */}
+      <Dialog open={editOpen} onOpenChange={(open) => !guardandoEdicion && setEditOpen(open)}>
+        <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-base">
+              <Pencil className="h-4 w-4 text-emerald-600" />
+              Editar Pedido {pedidoEnEdicion?.numeroOrden}
+            </DialogTitle>
+          </DialogHeader>
+
+          <div className="space-y-4 py-2">
+            {/* Info del Cliente */}
+            <div className="rounded-lg bg-muted/40 p-3 border border-border text-xs space-y-1">
+              <p className="font-semibold text-foreground text-sm">
+                {pedidoEnEdicion?.contactName || "Cliente"}
+              </p>
+              <p className="text-muted-foreground flex flex-wrap gap-2">
+                {pedidoEnEdicion?.contactPhone && <span>Tel: {pedidoEnEdicion.contactPhone}</span>}
+                {pedidoEnEdicion?.dniCliente && <span>· DNI: {pedidoEnEdicion.dniCliente}</span>}
+                {pedidoEnEdicion?.ciudad && (
+                  <span>
+                    · Destino: {pedidoEnEdicion.ciudad}
+                    {pedidoEnEdicion.distrito ? ` (${pedidoEnEdicion.distrito})` : ""}
+                  </span>
+                )}
+              </p>
+            </div>
+
+            {/* Selector de Producto del Catalogo */}
+            <div className="space-y-1.5">
+              <Label className="text-xs font-semibold">Seleccionar Producto del Catálogo</Label>
+              <select
+                className="flex h-9 w-full rounded-md border border-input bg-background px-3 py-1 text-sm cursor-pointer"
+                value={editForm.skuProducto}
+                onChange={(e) => handleSeleccionarProductoCatalogo(e.target.value)}
+              >
+                <option value="">-- Seleccionar o personalizar --</option>
+                {catalogo.map((prod) => (
+                  <option key={prod.id} value={prod.sku ?? prod.id}>
+                    {prod.titulo} — S/ {Number(prod.precio).toFixed(2)}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            {/* Nombre / Titulo personalizado del Producto */}
+            <div className="space-y-1.5">
+              <Label className="text-xs font-semibold">Nombre / Descripción del Producto</Label>
+              <Input
+                value={editForm.tituloProducto}
+                onChange={(e) => setEditForm((prev) => ({ ...prev, tituloProducto: e.target.value }))}
+                placeholder="Ej. 3x NAC600 + NAD+"
+                className="h-9 text-sm"
+              />
+            </div>
+
+            {/* Cantidad y Precio Unitario */}
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-1.5">
+                <Label className="text-xs font-semibold">Cantidad</Label>
+                <Input
+                  type="number"
+                  min={1}
+                  value={editForm.cantidad}
+                  onChange={(e) => handleCambiarCantidad(parseInt(e.target.value, 10) || 1)}
+                  className="h-9 text-sm"
+                />
+              </div>
+
+              <div className="space-y-1.5">
+                <Label className="text-xs font-semibold">Precio Unitario (S/)</Label>
+                <Input
+                  type="number"
+                  step="0.50"
+                  min={0}
+                  value={editForm.precioUnitario}
+                  onChange={(e) => handleCambiarPrecioUnitario(parseFloat(e.target.value) || 0)}
+                  className="h-9 text-sm"
+                />
+              </div>
+            </div>
+
+            {/* Total a Cobrar */}
+            <div className="space-y-1.5">
+              <div className="flex justify-between items-center">
+                <Label className="text-xs font-semibold">Monto Total a Cobrar (S/)</Label>
+                <span className="text-[11px] text-muted-foreground">
+                  (Calculado: S/ {(editForm.cantidad * editForm.precioUnitario).toFixed(2)})
+                </span>
+              </div>
+              <Input
+                type="number"
+                step="0.50"
+                min={0}
+                value={editForm.total}
+                onChange={(e) =>
+                  setEditForm((prev) => ({ ...prev, total: parseFloat(e.target.value) || 0 }))
+                }
+                className="h-10 text-base font-bold text-emerald-700 dark:text-emerald-400"
+              />
+            </div>
+
+            {/* Motivo o Razon del Cambio */}
+            <div className="space-y-1.5 pt-1">
+              <Label className="text-xs font-bold text-amber-700 dark:text-amber-400 flex items-center gap-1">
+                Motivo del cambio (¿A qué se debe el cambio?) *
+              </Label>
+              <Textarea
+                rows={3}
+                value={editForm.motivoCambio}
+                onChange={(e) => setEditForm((prev) => ({ ...prev, motivoCambio: e.target.value }))}
+                placeholder="Ej: Cliente solicitó agregar 1 frasco adicional por promoción / Descuento acordado en chat / Cambio de producto a tobillera..."
+                className="text-xs border-amber-300 dark:border-amber-700/60 focus-visible:ring-amber-500"
+              />
+              <p className="text-[10.5px] text-muted-foreground">
+                Este motivo se registrará en las notas del pedido, en el historial del cliente y se sincronizará con el Pipeline y Google Sheets.
+              </p>
+            </div>
+
+            {/* Notas previas si existen */}
+            {pedidoEnEdicion?.notas && (
+              <div className="rounded border border-border/70 p-2.5 bg-muted/20 text-[11px] text-muted-foreground space-y-1">
+                <span className="font-semibold block text-foreground">Historial / Notas previas:</span>
+                <p className="whitespace-pre-wrap">{pedidoEnEdicion.notas}</p>
+              </div>
+            )}
+          </div>
+
+          <DialogFooter className="gap-2 sm:gap-0">
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => setEditOpen(false)}
+              disabled={guardandoEdicion}
+            >
+              Cancelar
+            </Button>
+            <Button
+              type="button"
+              onClick={guardarEdicionPedido}
+              disabled={guardandoEdicion || !editForm.motivoCambio.trim()}
+              className="bg-emerald-600 hover:bg-emerald-700 text-white font-semibold cursor-pointer"
+            >
+              {guardandoEdicion ? "Guardando..." : "Guardar Cambios"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       {/* Modal de Despacho y Envio de Guia por WhatsApp */}
       <Dialog
