@@ -205,7 +205,10 @@ export async function runAgentForConversation(
       messages: llmMessages,
       max_completion_tokens: 1024,
     });
-    const textoFinal = limpiarFormatoWhatsApp(final.choices[0]?.message?.content?.trim() ?? "");
+    let textoFinal = limpiarFormatoWhatsApp(final.choices[0]?.message?.content?.trim() ?? "");
+    if (yaRespondio && textoFinal) {
+      textoFinal = removerSaludoRepetido(textoFinal);
+    }
     if (textoFinal) {
       const entrega = await deliverMessage(conversation.id, { text: textoFinal }, "agent");
       if (entrega.ok) {

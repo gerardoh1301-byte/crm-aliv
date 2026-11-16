@@ -612,9 +612,13 @@ async function buscarAgenciaShalomTool(
         .where(eq(contacts.id, ctx.contactId))
         .limit(1);
       const fields = (c?.customFields as Record<string, unknown> | null) ?? {};
-      if (!ciudad && fields.ciudad) ciudad = String(fields.ciudad);
+      if (!ciudad && (fields.ciudad || fields.departamento_ciudad)) {
+        ciudad = String(fields.ciudad || fields.departamento_ciudad);
+      }
       if (!distrito && fields.distrito) distrito = String(fields.distrito);
-      if (!direccion && fields.direccion) direccion = String(fields.direccion);
+      if (!direccion && (fields.direccion || fields.direccion_envio)) {
+        direccion = String(fields.direccion || fields.direccion_envio);
+      }
     } catch {
       // continuar
     }
@@ -910,7 +914,7 @@ function toolsGenericas(): ToolAgente[] {
               description: "Distrito del cliente si se conoce (opcional).",
             },
           },
-          required: ["ciudad"],
+          required: [],
           additionalProperties: false,
         }
       ),

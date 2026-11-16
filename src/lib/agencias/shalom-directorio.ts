@@ -682,37 +682,45 @@ export function buscarAgenciaShalomCercana(params: {
     const agDir = normalizarTexto(ag.direccion);
     const agNom = normalizarTexto(ag.nombre);
 
-    // 1. Coincidencia con la ciudad o provincia
-    if (ciudadNorm && (agCiudad.includes(ciudadNorm) || ciudadNorm.includes(agCiudad))) {
-      score += 40;
-    }
-    if (ciudadNorm && (agDpto.includes(ciudadNorm) || ciudadNorm.includes(agDpto))) {
-      score += 30;
+    // 1. Coincidencia con la ciudad o provincia (soporta nombres cortos como "Ica")
+    const matchCiudad =
+      (ciudadNorm && (agCiudad.includes(ciudadNorm) || ciudadNorm.includes(agCiudad))) ||
+      new RegExp(`\\b${agCiudad}\\b`, "i").test(todoJunto);
+    const matchDpto =
+      (ciudadNorm && (agDpto.includes(ciudadNorm) || ciudadNorm.includes(agDpto))) ||
+      new RegExp(`\\b${agDpto}\\b`, "i").test(todoJunto);
+
+    if (matchCiudad) score += 40;
+    if (matchDpto) score += 20;
+
+    // 2. Coincidencia con distrito específico (alta prioridad para no enviar al centro a quien vive en otro distrito)
+    const matchDistrito =
+      (distritoNorm && (agDist.includes(distritoNorm) || distritoNorm.includes(agDist))) ||
+      (agDist.length >= 4 && agDist !== agCiudad && todoJunto.includes(agDist));
+    if (matchDistrito) {
+      score += 60;
     }
 
-    // 2. Coincidencia con distrito
-    if (distritoNorm && (agDist.includes(distritoNorm) || distritoNorm.includes(agDist))) {
-      score += 50;
-    }
-
-    // 3. Coincidencia específica en la dirección / calle / referencia
-    if (direccionNorm || referenciaNorm) {
-      for (const token of ag.coincidencias ?? []) {
-        const tNorm = normalizarTexto(token);
-        if (tNorm.length >= 3) {
-          if (direccionNorm.includes(tNorm) || referenciaNorm.includes(tNorm) || todoJunto.includes(tNorm)) {
-            score += 35;
-          }
+    // 3. Coincidencia específica en la dirección / calle / referencia / tokens de zona
+    for (const token of ag.coincidencias ?? []) {
+      const tNorm = normalizarTexto(token);
+      if (tNorm.length >= 3 && todoJunto.includes(tNorm)) {
+        // Si el token es solo el nombre de la ciudad ya sumado, da un bono menor; si es calle/zona da 40
+        if (tNorm === agCiudad || tNorm === agDpto) {
+          score += 10;
+        } else {
+          score += 45;
         }
       }
-      // Coincidencia con partes de la dirección de la agencia (ej: "Santa Rosa", "Parra", "Bolognesi")
-      const palabrasClave = agDir.split(" ").filter((w) => w.length > 4);
-      for (const p of palabrasClave) {
-        if (todoJunto.includes(p)) score += 25;
-      }
     }
 
-    // Puntos extra para agencia principal de la ciudad si no hay match hiper-específico
+    // Coincidencia con partes de la dirección de la agencia (ej: "Santa Rosa", "Parra", "Bolognesi")
+    const palabrasClave = agDir.split(" ").filter((w) => w.length > 4);
+    for (const p of palabrasClave) {
+      if (todoJunto.includes(p)) score += 25;
+    }
+
+    // Puntos extra para agencia principal de la ciudad como desempate si no hay match de zona
     if (ag.principal) {
       score += 5;
     }
@@ -729,8 +737,8 @@ export function buscarAgenciaShalomCercana(params: {
   const mejorOpcion = puntuadas[0].agencia;
   const otrasOpciones = puntuadas.slice(1, 4).map((p) => p.agencia);
 
-  const zonaCliente = params.distrito || params.direccion || params.ciudad || "tu zona";
-  const propuestaMensaje = `Me parece que la agencia Shalom más cercana para ti es la **${mejorOpcion.nombre}** (${mejorOpcion.direccion}). ¿Te gustaría que lo programemos a esa agencia o prefieres otra?`;
+  const refTxt = mejorOpcion.referencia ? ` (ref: ${mejorOpcion.referencia})` : "";
+  const propuestaMensaje = `Me parece que la agencia Shalom más cercana a tu dirección es *${mejorOpcion.nombre}* (${mejorOpcion.direccion}${refTxt}). ¿Te parece bien que lo programemos a esa agencia o prefieres otra?`;
 
   return {
     mejorOpcion,

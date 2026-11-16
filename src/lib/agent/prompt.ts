@@ -198,8 +198,9 @@ export async function renderContexto(contactId: string): Promise<string> {
 
   // Detección y verificación de llamadas telefónicas directamente en el chat
   let llamadasTxt = "";
+  let ultimosMensajesChat: Array<{ direction: string; origin: string | null; body: string | null; type: string | null; createdAt: Date | null }> = [];
   try {
-    const ultimosMensajes = await db
+    ultimosMensajesChat = await db
       .select({
         direction: messages.direction,
         origin: messages.origin,
@@ -213,8 +214,10 @@ export async function renderContexto(contactId: string): Promise<string> {
       .orderBy(desc(messages.createdAt))
       .limit(15);
 
-    if (ultimosMensajes.length > 0) {
-      const estadoLlamada = analizarSolicitudLlamada([...ultimosMensajes].reverse());
+    if (ultimosMensajesChat.length > 0) {
+      const estadoLlamada = analizarSolicitudLlamada(
+        [...ultimosMensajesChat].reverse().map((m) => ({ ...m, type: m.type ?? undefined }))
+      );
       if (estadoLlamada.tieneSolicitud) {
         if (estadoLlamada.llamadaRealizada) {
           llamadasTxt =
@@ -244,25 +247,42 @@ export async function renderContexto(contactId: string): Promise<string> {
     `- Etapa actual: ${etapaActual}`,
   ];
 
-  // Detección proactiva de agencia Shalom si el cliente es de provincia
+  // Detección proactiva de agencia Shalom si el cliente es de provincia (o dio su dirección en chat)
   try {
     const fields = (contact.customFields as Record<string, unknown> | null) ?? {};
-    const ciudad = fields.ciudad ? String(fields.ciudad) : null;
+    const ciudad = (fields.departamento_ciudad || fields.ciudad) ? String(fields.departamento_ciudad || fields.ciudad) : null;
     const distrito = fields.distrito ? String(fields.distrito) : null;
-    const direccion = fields.direccion ? String(fields.direccion) : null;
+    const direccion = (fields.direccion_envio || fields.direccion) ? String(fields.direccion_envio || fields.direccion) : null;
 
-    if (ciudad || distrito || direccion) {
+    let textoDireccionOProvincia = [ciudad, distrito, direccion].filter(Boolean).join(" ");
+
+    // Si aún no están en customFields, escanear los mensajes del cliente en el chat
+    if (!textoDireccionOProvincia && ultimosMensajesChat.length > 0) {
+      const msgsCliente = ultimosMensajesChat
+        .filter((m) => m.direction === "in")
+        .map((m) => m.body ?? "")
+        .join(" ");
+      if (msgsCliente.trim()) {
+        textoDireccionOProvincia = msgsCliente;
+      }
+    }
+
+    if (textoDireccionOProvincia) {
       const { buscarAgenciaShalomCercana } = await import("@/lib/agencias/shalom-directorio");
       const shalomRes = buscarAgenciaShalomCercana({
         ciudad,
         distrito,
-        direccion,
+        direccion: textoDireccionOProvincia,
       });
       if (shalomRes.mejorOpcion) {
+        const refTexto = shalomRes.mejorOpcion.referencia ? ` - ${shalomRes.mejorOpcion.referencia}` : "";
         partes.push(
-          "## Agencia Shalom sugerida para este contacto (Provincia)\n" +
-            `- Agencia más cercana: ${shalomRes.mejorOpcion.nombre} (${shalomRes.mejorOpcion.direccion})\n` +
-            `- Instrucción: Proponle al cliente la ${shalomRes.mejorOpcion.nombre} como primera opción para su despacho a provincia.`
+          "## AGENCIA SHALOM MÁS CERCANA (OBLIGATORIO: PROPONER COMO PRIMERA OPCIÓN PARA PROVINCIA)\n" +
+            `- Agencia recomendada: *${shalomRes.mejorOpcion.nombre}* (${shalomRes.mejorOpcion.direccion}${refTexto})\n` +
+            "- INSTRUCCIÓN MANDATORIA DE GERENCIA:\n" +
+            `  El cliente se encuentra en provincia o dio/preguntó por esta dirección. DEBES proponerle de inmediato la agencia *${shalomRes.mejorOpcion.nombre}* (${shalomRes.mejorOpcion.direccion}) como primera opción para su entrega:\n` +
+            `  "Veo que te ubicas por esa zona. La agencia Shalom más cercana a tu dirección es la de *${shalomRes.mejorOpcion.nombre}* (${shalomRes.mejorOpcion.direccion}). ¿Te parece bien que lo programemos a esa agencia o tienes otra de tu preferencia?"\n` +
+            "  No hagas que el cliente busque ni adivine; proponle esta opción directamente."
         );
       }
     }

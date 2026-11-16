@@ -193,25 +193,7 @@ export function determinarEscenarioRescate(
     };
   }
 
-  // 5. Validar si la conversación concluyó cordialmente con agradecimiento o despedida mutua (Caso José)
-  const clienteSeDespidio =
-    /\b(no\s+listo\s+gracias|listo\s+gracias|muchas\s+gracias|mil\s+gracias|gracias\s+amig[oa]|todo\s+claro|perfecto\s+gracias|ya\s+est[aá]\s+todo|con\s+eso\s+ser[ií]a\s+todo|no[,.]?\s*listo)\b/i.test(
-      ultimoMsgCliente
-    );
-
-  const botSeDespidio =
-    /\b(a ti|un excelente d[ií]a|a la orden|quedamos a tu disposici[oó]n|un gusto|buenas tardes|buenas noches|buen d[ií]a|a tu servicio|con gusto)\b/i.test(
-      bodyUltimo
-    );
-
-  if (clienteSeDespidio && botSeDespidio) {
-    return {
-      esElegible: false,
-      motivoDescarte: "Conversación concluida cordialmente con despedida/agradecimiento mutuo",
-    };
-  }
-
-  // 6. Validar rechazo explícito del cliente
+  // 5. Validar rechazo explícito del cliente (prioridad alta sobre despedidas corteses)
   const clienteRechazo =
     /\b(ya no deseo|no deseo|no gracias|no voy a querer|canc[eé]lalo|muy caro|compr[eé] en otro|ya no me interesa|deja no m[aá]s)\b/i.test(
       ultimoMsgCliente
@@ -221,6 +203,24 @@ export function determinarEscenarioRescate(
     return {
       esElegible: false,
       motivoDescarte: "Cliente indicó explícitamente que no desea continuar la compra",
+    };
+  }
+
+  // 6. Validar si la conversación concluyó cordialmente con agradecimiento o despedida (Caso José)
+  const clienteSeDespidio =
+    /\b(no\s+listo\s+gracias|listo\s+gracias|muchas\s+gracias|mil\s+gracias|gracias\s+amig[oa]|todo\s+claro|perfecto\s+gracias|ya\s+est[aá]\s+todo|con\s+eso\s+ser[ií]a\s+todo|no[,.]?\s*listo)\b/i.test(
+      ultimoMsgCliente
+    ) || /^(ok|gracias|muchas gracias|ok gracias|ok listo|listo gracias|idem)[.!]?$/i.test(ultimoMsgCliente.trim());
+
+  const botSeDespidio =
+    /\b(a ti|un excelente d[ií]a|a la orden|quedamos a tu disposici[oó]n|un gusto|buenas tardes|buenas noches|buen d[ií]a|a tu servicio|con gusto)\b/i.test(
+      bodyUltimo
+    );
+
+  if (clienteSeDespidio || (clienteSeDespidio && botSeDespidio)) {
+    return {
+      esElegible: false,
+      motivoDescarte: "Conversación concluida cordialmente con despedida/agradecimiento",
     };
   }
 

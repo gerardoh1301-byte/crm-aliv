@@ -65,4 +65,27 @@ describe("Directorio y Búsqueda de Agencias Shalom Cercanas en Provincia", () =
     expect(res.mejorOpcion).toBeDefined();
     expect(res.mejorOpcion?.id).toBe("huancayo-castilla");
   });
+
+  it("REQUERIMIENTO AUDIO: ubica agencia más cercana por dirección completa en provincia y la propone como primera opción", () => {
+    const res = buscarAgenciaShalomCercana({
+      direccion: "Vivo en Sullana calle dos 857",
+    });
+
+    expect(res.mejorOpcion).toBeDefined();
+    expect(res.mejorOpcion?.id).toBe("sullana-santa-rosa");
+    expect(res.mejorOpcion?.direccion).toBe("Jr. Santa Rosa 450");
+    expect(res.propuestaMensaje).toContain("*Shalom Sullana - Santa Rosa*");
+    expect(res.propuestaMensaje).toContain("Jr. Santa Rosa 450");
+    expect(res.propuestaMensaje).toContain("¿Te parece bien que lo programemos a esa agencia o prefieres otra?");
+  });
+
+  it("REQUERIMIENTO AUDIO: discrimina distrito específico en provincia frente a la sede principal", () => {
+    const res = buscarAgenciaShalomCercana({
+      direccion: "Arequipa cerro colorado",
+    });
+
+    expect(res.mejorOpcion).toBeDefined();
+    expect(res.mejorOpcion?.id).toBe("arequipa-cerro-colorado");
+    expect(res.mejorOpcion?.direccion).toBe("Av. Villa Hermosa 215");
+  });
 });
