@@ -17,6 +17,7 @@ create table if not exists pedidos_ordenes (
   direccion_envio   text,
   transportadora    text,
   numero_guia       text,
+  codigo_rastreo    text,
   clave_recojo      text,
   notas             text,
   created_at        timestamptz not null default now(),
