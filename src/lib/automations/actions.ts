@@ -359,7 +359,7 @@ const sendMessage: ActionDef = {
       const direccionCompleta = [payload.direccion, payload.distrito].filter(Boolean).join(", ") || "tu dirección registrada";
 
       if (payload.esProvincia === "true" || payload.esProvincia === true) {
-        renderedOrderText = `¡Hola, ${clienteNombre}! 👋 Te saluda Aliv Perú.\nRecibimos tu pedido #${ordenNum}: ${prods} por S/${tot} con envío gratis a ${ciudadDestino}.\n📦 Lo enviamos por agencia Shalom. ¿Qué agencia de Shalom te queda más cerca?\n🪪 Para la guía, Shalom nos pide tu nombre completo y DNI.\nPara despachar se necesita un adelanto de S/20 (Yape 951365418 – Gerardo Huaynalaya) y el saldo de S/${saldoRestante} lo pagas al recoger. Envíanos la captura del Yape por aquí.\n¡Gracias por tu confianza! 💚`;
+        renderedOrderText = `¡Hola, ${clienteNombre}! 👋 Te saluda Aliv Perú.\nRecibimos tu pedido #${ordenNum}: ${prods} por S/${tot} con envío gratis a ${ciudadDestino}.\n📦 Lo enviamos por agencia Shalom con número de guía oficial.\n🪪 Para emitir la guía, Shalom nos pide tu nombre completo y DNI. ¿Qué agencia de Shalom te queda más cerca?\nPara despachar se realiza un adelanto de S/20 (Yape 951365418 – Gerardo Huaynalaya); cuando el paquete llegue a tu agencia, nos transfieres el saldo de S/${saldoRestante} y te enviamos tu clave secreta de recojo para que lo retires con tu DNI.\nEnvíanos la captura del adelanto por aquí para dejarlo programado. ¡Gracias por tu confianza! 💚`;
 
         template = {
           name: "aliv_confirmacion_provincia",

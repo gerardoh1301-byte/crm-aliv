@@ -69,6 +69,7 @@ describe("Auditoría y Rescate de Chats Abandonados", () => {
     expect(res.mensajeRescate).toContain("RUC 20612283134");
     expect(res.mensajeRescate).toContain("S/179");
     expect(res.mensajeRescate).toContain("agencia Shalom");
+    expect(res.mensajeRescate).toContain("clave secreta");
   });
 
   it("Escenario C: cotización abandonada para Termix Tobillera", () => {

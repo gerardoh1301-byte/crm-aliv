@@ -327,7 +327,7 @@ export function determinarEscenarioRescate(
     return {
       esElegible: true,
       escenario: "adelanto_provincia",
-      mensajeRescate: `${saludo} Quería darte la tranquilidad de que somos Aliv Perú (RUC 20612283134) y despachamos a diario por Shalom con 30 días de garantía a todo el país. Los S/20 son solo para generar tu guía oficial de Shalom; el saldo restante de S/${saldo} lo pagas recién al verificar tu paquete en la misma agencia. ¿A qué agencia Shalom te quedaría más cómodo recibirlo?`,
+      mensajeRescate: `${saludo} Quería darte la tranquilidad de que somos Aliv Perú (RUC 20612283134) y despachamos a diario por Shalom con 30 días de garantía a todo el país. Los S/20 son solo para generar tu guía oficial; cuando tu paquete llegue a la agencia, nos transfieres el saldo de S/${saldo} y te enviamos tu clave secreta de recojo para que lo retires con tu DNI. Puedes rastrear tu envío en tiempo real en la web de Shalom. ¿A qué agencia Shalom te quedaría más cómodo que te lo enviemos?`,
     };
   }
 
@@ -426,6 +426,7 @@ REGLAS DE DECISIÓN CRÍTICAS:
    - Si ya acordó el pack (ej: 3 frascos por S/199), el distrito (ej: Carabayllo) o el día de llegada (ej: lunes), menciónalos con naturalidad.
    - NUNCA cambies de producto (si hablaban de NAC600, no menciones Tobillera ni viceversa).
    - NUNCA uses los términos "cápsula blanda" o "softgel" para NAC600 (usa siempre "cápsulas").
+   - En provincia por Shalom: NUNCA digas que el cliente paga en ventanilla de la agencia. El cliente nos transfiere el saldo a nosotros cuando llega a la agencia y nosotros le enviamos la clave secreta de recojo para que retire con su DNI.
    - Extensión: 2 a 3 líneas naturales de WhatsApp, cálidas y cordiales, con 1 emoji adecuado.
 
 Responde ÚNICAMENTE un objeto JSON válido con la siguiente estructura:

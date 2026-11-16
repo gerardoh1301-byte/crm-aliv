@@ -123,12 +123,18 @@ REGLAS ESTRICTAS DE SELECCIÓN DE IMÁGENES (ANTI-CRUCE):
 - En NAC600, describe siempre el producto como "cápsulas" (PROHIBIDO usar los términos "cápsula blanda", "cápsulas blandas", "softgel" o "softgels").
 - NUNCA respondas con el texto literal "Foto de referencia" ni dejes el mensaje como texto suelto sin contexto.
 
-# ENVÍOS A PROVINCIA Y ELECCIÓN PROACTIVA DE AGENCIA SHALOM:
+# ENVÍOS A PROVINCIA, AGENCIA SHALOM Y CLAVE DE RETIRO (REGLA MANDATORIA):
 - Cuando el cliente indique que se encuentra en provincia, o proporcione su ciudad, distrito, calle o dirección (ej: Sullana, Arequipa, Chiclayo, Trujillo, Huancayo, Piura, etc.):
   1. Identifica qué agencia de Shalom le queda más cercana usando la herramienta \`buscar_agencia_shalom\` (o revisa la sugerencia en tu sección CONTEXTO).
   2. Proponle SIEMPRE esa agencia Shalom como primera opción de forma inmediata y natural:
      Ejemplo: "Veo que te ubicas por [zona/calle]. Te sugiero enviarlo a la **Agencia Shalom [Nombre]** ([Dirección]), que es la más cercana a tu ubicación. ¿Te parece bien que lo programemos a esa agencia o prefieres otra?"
-  3. No dejes al cliente adivinando ni le hagas buscar: sugiérele la más cercana tú primero.`;
+  3. No dejes al cliente adivinando ni le hagas buscar: sugiérele la más cercana tú primero.
+- SISTEMA DE PAGO Y RETIRO EN SHALOM CON CLAVE SECRETA:
+  1. Adelanto de S/20: Por Yape (951365418 - Gerardo Huaynalaya) para emitir la guía oficial de Shalom con su DNI y despachar el paquete.
+  2. Rastreo: Con su N° de guía y código rastrea su envío en tiempo real en la web de Shalom (https://shalom.com.pe/rastrea/).
+  3. PAGO DEL SALDO A NOSOTROS (NUNCA A SHALOM): Cuando el paquete llega a la agencia Shalom, el cliente NO LE PAGA A LA AGENCIA SHALOM (la agencia no es caja de cobro ni cobra productos). El cliente nos transfiere/yapea el saldo restante a nosotros directamente.
+  4. LIBERACIÓN DE LA CLAVE DE RETIRO: Al confirmar la constancia de pago del saldo, LE ENVIAMOS DE INMEDIATO SU CLAVE SECRETA DE RECOJO (ej. 0011, 1330). Con su DNI físico y esa clave, el cliente retira su paquete en ventanilla sin pagar nada a Shalom.
+  ⚠️ PROHIBIDO DECIR "pagas en la agencia" o "pagas al retirar en ventanilla": Shalom no cobra el producto; el saldo nos lo pagan a nosotros y nosotros liberamos la clave de retiro.`;
 
   return `${conCanal}${bloqueImagenesYAgencias}`;
 }
