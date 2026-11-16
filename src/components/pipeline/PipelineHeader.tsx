@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { ChevronDown, Plus, LayoutGrid, List, Settings2 } from "lucide-react";
+import { ChevronDown, Plus, LayoutGrid, List, Settings2, Truck } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import {
@@ -46,6 +46,33 @@ export function PipelineHeader({
   const [createOpen, setCreateOpen] = useState(false);
   const [newName, setNewName] = useState("");
   const [creating, setCreating] = useState(false);
+  const [verificandoShalom, setVerificandoShalom] = useState(false);
+
+  const handleVerificarShalom = async () => {
+    setVerificandoShalom(true);
+    try {
+      const res = await fetch("/api/shalom/verificar-envios", { method: "POST" });
+      const json = await res.json();
+      if (json.ok && json.data) {
+        const { totalVerificados, enDestinoListos, notificacionesEnviadas, yaEntregados } = json.data;
+        if (enDestinoListos > 0) {
+          toast.success(
+            `Shalom: ${enDestinoListos} en destino (${notificacionesEnviadas} avisos enviados), ${yaEntregados} entregados`,
+            { duration: 6000 }
+          );
+        } else {
+          toast.info(`Shalom: ${totalVerificados} guías consultadas. Ninguna pendiente de llegada.`);
+        }
+        router.refresh();
+      } else {
+        toast.error(json.error || "Error al verificar Shalom");
+      }
+    } catch {
+      toast.error("Error de conexión al rastrear Shalom");
+    } finally {
+      setVerificandoShalom(false);
+    }
+  };
 
   const selected =
     pipelines.find((p) => p.id === selectedPipelineId) ?? pipelines[0] ?? null;
@@ -128,6 +155,19 @@ export function PipelineHeader({
         </div>
 
         <div className="flex items-center gap-2 shrink-0">
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            onClick={handleVerificarShalom}
+            disabled={verificandoShalom}
+            className="h-8 gap-1.5 text-xs font-semibold border-red-200 dark:border-red-900/40 text-red-700 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-950/30 cursor-pointer shadow-xs"
+            title="Verificar estado en vivo de todas las guías en Shalom y avisar automáticamente por WhatsApp a los clientes cuyos pedidos ya llegaron"
+          >
+            <Truck className={cn("h-3.5 w-3.5", verificandoShalom && "animate-pulse")} />
+            {verificandoShalom ? "Rastreando..." : "Rastrear Shalom"}
+          </Button>
+
           <div className="inline-flex rounded-lg border border-border/60 bg-card p-0.5">
             <button
               type="button"
