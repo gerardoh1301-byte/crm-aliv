@@ -378,7 +378,7 @@ export function PedidosPage() {
       ];
 
       const res = await fetch(`${API_PEDIDOS}/${pedidoEnEdicion.id}`, {
-        method: "PUT",
+        method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           items: itemsPayload,

@@ -1199,7 +1199,7 @@ const modulo: ModuloServidor = {
   },
   api: {
     "": { GET: listar, POST: crear },
-    "[id]": { PATCH: actualizar, DELETE: borrar },
+    "[id]": { PUT: actualizar, PATCH: actualizar, DELETE: borrar },
   },
   tools,
   seed: sembrarPedidosDemo,
