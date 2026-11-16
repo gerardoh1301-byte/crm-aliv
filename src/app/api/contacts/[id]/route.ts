@@ -1,13 +1,15 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/db";
-import { contacts, deals, activities, teamMembers } from "@/db/schema";
-import { eq } from "drizzle-orm";
+import { contacts, deals, activities, teamMembers, pipelineStages } from "@/db/schema";
+import { eq, desc } from "drizzle-orm";
 import { requireMember } from "@/lib/api-auth";
 import { camposContacto } from "@/lib/config";
 import { validarCamposPersonalizados } from "@/lib/config/campos";
 import { canAccessContact } from "@/lib/team";
 import { assignContact } from "@/lib/contacts/assign";
 import { purgeContactDocuments } from "@/lib/documents";
+import { setDealStage } from "@/lib/deals/stage";
+import { obtenerClaveEtapaDeEtiqueta } from "@/lib/tags";
 
 export async function GET(
   _request: NextRequest,
@@ -140,6 +142,36 @@ export async function PUT(
     .where(eq(contacts.id, id))
     .returning();
   const result = resultRows[0];
+
+  // Si se actualizan etiquetas y contiene una etiqueta de etapa (ej. "Orden en camino"),
+  // sincronizar automáticamente el deal del pipeline a dicha etapa
+  if (body.tags !== undefined && Array.isArray(body.tags)) {
+    for (const t of body.tags) {
+      if (typeof t !== "string") continue;
+      const claveEtapa = obtenerClaveEtapaDeEtiqueta(t);
+      if (claveEtapa) {
+        const [stageRow] = await db
+          .select({ id: pipelineStages.id })
+          .from(pipelineStages)
+          .where(eq(pipelineStages.key, claveEtapa))
+          .limit(1);
+
+        if (stageRow) {
+          const [dealRow] = await db
+            .select({ id: deals.id, stageId: deals.stageId })
+            .from(deals)
+            .where(eq(deals.contactId, id))
+            .orderBy(desc(deals.updatedAt))
+            .limit(1);
+
+          if (dealRow && dealRow.stageId !== stageRow.id) {
+            await setDealStage({ dealId: dealRow.id, stageId: stageRow.id });
+          }
+        }
+        break;
+      }
+    }
+  }
 
   return NextResponse.json(result);
 }

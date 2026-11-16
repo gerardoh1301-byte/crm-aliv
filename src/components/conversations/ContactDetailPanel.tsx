@@ -139,6 +139,7 @@ export function ContactDetailPanel({
       });
       if (!res.ok) throw new Error("save_failed");
       window.dispatchEvent(new Event("conversations:refresh"));
+      window.dispatchEvent(new Event("pipeline:refresh"));
     } catch {
       setTags(previous);
       toast.error("No se pudo guardar la etiqueta");
@@ -474,7 +475,9 @@ export function ContactDetailPanel({
                         const original = tags.find((t) => t.toLowerCase() === p.nombre.toLowerCase());
                         if (original) removeTag(original);
                       } else {
-                        void persistTags([...tags, p.nombre]);
+                        const otrasEtapas = ETIQUETAS_PRINCIPALES.map((ep) => ep.nombre.toLowerCase());
+                        const sinOtras = tags.filter((t) => !otrasEtapas.includes(t.toLowerCase()));
+                        void persistTags([...sinOtras, p.nombre]);
                       }
                     }}
                     className={cn(
@@ -509,7 +512,9 @@ export function ContactDetailPanel({
                         const original = tags.find((t) => t.toLowerCase() === p.nombre.toLowerCase());
                         if (original) removeTag(original);
                       } else {
-                        void persistTags([...tags, p.nombre]);
+                        const otrasEtapas = ETIQUETAS_PRINCIPALES.map((ep) => ep.nombre.toLowerCase());
+                        const sinOtras = tags.filter((t) => !otrasEtapas.includes(t.toLowerCase()));
+                        void persistTags([...sinOtras, p.nombre]);
                       }
                     }}
                     className={cn(

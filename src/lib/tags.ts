@@ -239,6 +239,33 @@ export function obtenerEtiquetaDeEtapa(stage: {
   return null;
 }
 
+/**
+ * Obtiene la clave de etapa del pipeline (ej. `en_reparto`, `agendar_entrega`)
+ * a partir de una etiqueta de estado de la conversación.
+ */
+export function obtenerClaveEtapaDeEtiqueta(tag: string): string | null {
+  const n = cleanStr(tag);
+  if (n === "orden en camino" || n.includes("en camino") || n.includes("despachado")) {
+    return "en_reparto";
+  }
+  if (n === "compra exitosa" || n.includes("entregado") || n.includes("cobrado")) {
+    return "entregado";
+  }
+  if (n === "agendar entrega" || n === "adelanto pagado" || n.includes("confirmado")) {
+    return "agendar_entrega";
+  }
+  if (n === "pendiente de adelanto" || n.includes("adelanto") || n.includes("por confirmar")) {
+    return "carrito_armado";
+  }
+  if (n === "informativo" || n.includes("consulta") || n.includes("catalogo")) {
+    return "consulta_catalogo";
+  }
+  if (n.includes("cancel") || n.includes("rechaz")) {
+    return "cancelado_rechazado";
+  }
+  return null;
+}
+
 export function getTagStyle(tag: string): { label: string; color: string; badge: string; dot?: string } {
   const norm = cleanStr(tag);
   const found = TODAS_LAS_ETIQUETAS.find((e) => cleanStr(e.nombre) === norm);
