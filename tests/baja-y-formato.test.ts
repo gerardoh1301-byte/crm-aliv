@@ -207,6 +207,14 @@ describe("guardas de venta, ronda 10", () => {
     ).toBe("Te comento sobre las cápsulas.");
 
     expect(
+      removerSaludoRepetido("¡Hola DJ! Quería saber si tuviste oportunidad de revisar los detalles."),
+    ).toBe("Quería saber si tuviste oportunidad de revisar los detalles.");
+
+    expect(
+      removerSaludoRepetido("¡Hola, HILDA! Entiendo perfectamente lo que necesitas."),
+    ).toBe("Entiendo perfectamente lo que necesitas.");
+
+    expect(
       removerSaludoRepetido("Buenas tardes Carlos, el pedido está en camino."),
     ).toBe("El pedido está en camino.");
 

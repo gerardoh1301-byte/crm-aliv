@@ -16,21 +16,21 @@ export function limpiarFormatoWhatsApp(texto: string): string {
 
 /**
  * Remueve saludos repetitivos al inicio del mensaje cuando la conversación
- * ya está en curso (ej: "¡Hola, Hilda! ", "Hola Hilda, ", "¡Hola! 👋 ", "Buenas tardes Hilda, ").
+ * ya está en curso (ej: "¡Hola, Hilda! ", "Hola Hilda, ", "¡Hola! 👋 ", "¡Hola DJ! ", "¡Hola, HILDA! ").
  * Evita que el bot salude en cada turno de un mismo chat, preservando un tono humano y cercano.
  */
 export function removerSaludoRepetido(texto: string): string {
   let t = texto.trim();
 
   // 1. Saludo con nombre del cliente seguido de puntuación o emoji:
-  // ej: "¡Hola, Hilda! ", "Hola Hilda, ", "¡Hola Hilda! 👋 ", "Buenas tardes, Hilda. "
+  // ej: "¡Hola, Hilda! ", "Hola Hilda, ", "¡Hola Hilda! 👋 ", "¡Hola DJ! ", "¡Hola, HILDA! ", "Buenas tardes Carlos, "
   const saludoConNombre =
-    /^(?:¡?hola|\bbuen(?:as|os)?\s+(?:d[ií]as|tardes|noches)),?\s+([\p{Lu}][\p{Ll}]+(?:\s+[\p{Lu}][\p{Ll}]+)?)[!.,]?\s*(?:[\p{Extended_Pictographic}\u200d\uFE0F]+[!,.]?)?\s*/iu;
+    /^(?:¡?\s*hola|\bbuen(?:as|os)?\s+(?:d[ií]as|tardes|noches)),?\s+([\p{L}\d_-]+(?:\s+[\p{L}\d_-]+)?)[!.,]?\s*(?:[\p{Extended_Pictographic}\u200d\uFE0F]+[!,.]?)?\s*/iu;
 
   // 2. Saludo genérico simple o con emoji:
   // ej: "¡Hola! ", "Hola, ", "¡Hola! 👋 ", "Buenos días. "
   const saludoSimple =
-    /^(?:¡?hola[!,.]?|\bbuen(?:as|os)?\s+(?:d[ií]as|tardes|noches)[!,.]?)\s*(?:[\p{Extended_Pictographic}\u200d\uFE0F]+[!,.]?)?\s*/iu;
+    /^(?:¡?\s*hola[!,.]?|\bbuen(?:as|os)?\s+(?:d[ií]as|tardes|noches)[!,.]?)\s*(?:[\p{Extended_Pictographic}\u200d\uFE0F]+[!,.]?)?\s*/iu;
 
   let cambiado = true;
   while (cambiado) {

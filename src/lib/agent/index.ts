@@ -1,7 +1,7 @@
 import type OpenAI from "openai";
 import { db } from "@/db";
 import { activities, contacts, conversations, messages } from "@/db/schema";
-import { desc, eq } from "drizzle-orm";
+import { and, desc, eq } from "drizzle-orm";
 import { deliverMessage, getConversationRow } from "@/lib/channels/deliver";
 import { isChannel, type Channel } from "@/lib/channels/types";
 import { displayName, listMembers } from "@/lib/team";
@@ -71,7 +71,13 @@ export async function runAgentForConversation(
     puedeAsignar ? renderTeamBlock(contact.ownerId) : Promise.resolve(""),
   ]);
 
-  const yaRespondio = collapsed.some((m) => m.role === "assistant");
+  // Si ya hubo mensajes salientes (del bot o de un asesor) en la conversación, está prohibido volver a saludar
+  const [mensajePrevioSaliente] = await db
+    .select({ id: messages.id })
+    .from(messages)
+    .where(and(eq(messages.conversationId, conversation.id), eq(messages.direction, "out")))
+    .limit(1);
+  const yaRespondio = Boolean(mensajePrevioSaliente) || collapsed.some((m) => m.role === "assistant");
 
   const llmMessages: OpenAI.Chat.Completions.ChatCompletionMessageParam[] = [
     {

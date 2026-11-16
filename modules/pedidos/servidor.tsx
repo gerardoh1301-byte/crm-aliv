@@ -27,9 +27,9 @@ import {
 import { PedidosPage } from "./componentes/PedidosPage";
 
 const MAPA_ESTADO_A_ETAPA: Record<EstadoPedido, string> = {
-  por_confirmar_cod: "por_confirmar_cod",
-  confirmado: "pedido_confirmado",
-  preparando: "pedido_confirmado",
+  por_confirmar_cod: "agendar_entrega",
+  confirmado: "agendar_entrega",
+  preparando: "agendar_entrega",
   enviado: "en_reparto",
   entregado: "entregado",
   cancelado: "cancelado_rechazado",
