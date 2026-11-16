@@ -160,15 +160,22 @@ export function resolverMejorImagen(params: {
   const nacMatches = (textoCombinado.match(/\b(nac|nac600|glutation|higado|capsulas?|frasco|frascos|nad\+?|suplemento)\b/gi) || []).length;
   const termixMatches = (textoCombinado.match(/\b(termix|tobillera|tobillo|tobillos|calor|masaje|grafeno|esguince|tendon|pie|cargador|cable|unboxing|en mano)\b/gi) || []).length;
 
-  const esTemaNac = nacMatches > 0 && nacMatches >= termixMatches;
-  const esTemaTermix = termixMatches > 0 && termixMatches > nacMatches;
+  const esAmbos = nacMatches > 0 && termixMatches > 0;
+  const motivoMencionaNac = /\b(nac|nac600|glutation|higado|capsulas?|frasco|frascos|nad\+?|suplemento)\b/i.test(params.motivo || "");
+  const motivoMencionaTermix = /\b(termix|tobillera|tobillo|tobillos|calor|masaje|grafeno|esguince|tendon|pie)\b/i.test(params.motivo || "");
+
+  const esTemaNac = nacMatches > 0 && (nacMatches >= termixMatches || motivoMencionaNac);
+  const esTemaTermix = termixMatches > 0 && (termixMatches > nacMatches || motivoMencionaTermix);
   const esTemaPago =
     /\b(yape|plin|adelanto|s\/20|cuenta|transferencia|banco)\b/i.test(textoCombinado);
 
   let claveEfectiva = claveRaw;
 
-  // 1. BLINDAJE ANTI-CRUCE: Si el contexto dominante es NAC600 y la clave pedida es Termix
-  if (esTemaNac && claveRaw.startsWith("termix")) {
+  // 1. BLINDAJE ANTI-CRUCE: Si el bot solicitó Termix pero el motivo o contexto es NAC600
+  if (
+    claveRaw.startsWith("termix") &&
+    (motivoMencionaNac || (nacMatches > 0 && termixMatches === 0) || (nacMatches > 0 && !motivoMencionaTermix && !esAmbos))
+  ) {
     const esBeneficios = /\b(beneficio|para que sirve|como se toma|dosis|ingredientes|composicion|ficha)\b/i.test(textoCombinado);
     claveEfectiva = esBeneficios ? "nac600_beneficios" : "nac600_frasco";
     const imgCorregida = buscarImagenReferencia(claveEfectiva) || IMAGENES_REFERENCIA[0];
@@ -179,8 +186,11 @@ export function resolverMejorImagen(params: {
     };
   }
 
-  // 2. BLINDAJE ANTI-CRUCE: Si el contexto dominante es Termix y la clave pedida es NAC600
-  if (esTemaTermix && claveRaw.startsWith("nac600")) {
+  // 2. BLINDAJE ANTI-CRUCE: Si el bot solicitó NAC600 pero el motivo o contexto es Termix
+  if (
+    claveRaw.startsWith("nac600") &&
+    (motivoMencionaTermix || (termixMatches > 0 && nacMatches === 0) || (termixMatches > 0 && !motivoMencionaNac && !esAmbos))
+  ) {
     const esPromocion = /\b(precio|cuanto|cuesta|oferta|promo|promocion|pack|packs)\b/i.test(textoCombinado);
     const esFotoReal = /\b(real|en mano|original|confianza|desconfi)\b/i.test(textoCombinado);
     claveEfectiva = esPromocion ? "termix_promocion" : esFotoReal ? "termix_foto_real" : "termix_tobillera";

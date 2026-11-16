@@ -36,6 +36,18 @@ describe("Selección de Fotos y Blindaje Anti-Cruce de Productos", () => {
     expect(res.imagen.id).toBe("nac600_beneficios");
   });
 
+  it("NO DEBE cambiar NAC600 a Termix cuando se ofreció cross-sell de tobillera en el contexto", () => {
+    const res = resolverMejorImagen({
+      claveSolicitada: "nac600_frasco",
+      motivo: "Foto del frasco",
+      textoContexto: "¡Excelente, Andrés! Ya tengo registrado tu pedido para la agencia Shalom de Sta Rosa en Sullana. El equipo validará tu comprobante y se encargará de despachar tus 3 frascos de NAC600. Si te interesa complementar tu rutina, te cuento que también tenemos la *Termix Tobillera* a S/79 para calmar los tobillos cansados con calor de grafeno y masaje.",
+      interesProducto: "interes:nac600 interes:termix",
+    });
+
+    expect(res.imagen.id).toBe("nac600_frasco");
+    expect(res.corregida).toBe(false);
+  });
+
   it("BLINDAJE: Si el contexto habla de Tobillera Termix pero el bot solicitó 'nac600_frasco', corrige a Termix", () => {
     const res = resolverMejorImagen({
       claveSolicitada: "nac600_frasco",
