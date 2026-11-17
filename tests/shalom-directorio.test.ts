@@ -114,4 +114,21 @@ describe("Directorio y Búsqueda de Agencias Shalom Cercanas en Provincia", () =
     });
     expect(resManantay.mejorOpcion?.id).toBe("pucallpa-manantay");
   });
+
+  it("identifica al 100% las agencias oficiales de Pisco (La Villa Cruce Pisco vs Centro Valdelomar)", () => {
+    const resCruce = buscarAgenciaShalomCercana({
+      ciudad: "Pisco",
+      direccion: "Cerca al cruce de la Panamericana o La Villa",
+    });
+    expect(resCruce.mejorOpcion?.id).toBe("shalom-472-vla");
+    expect(resCruce.mejorOpcion?.nombre).toContain("La Villa (Cruce Pisco)");
+    expect(resCruce.mejorOpcion?.direccion).toContain("Villa Los Ángeles");
+
+    const resValdelomar = buscarAgenciaShalomCercana({
+      ciudad: "Pisco",
+      direccion: "Por la Posta San Martín en Valdelomar",
+    });
+    expect(resValdelomar.mejorOpcion?.id).toBe("shalom-56-pis");
+    expect(resValdelomar.mejorOpcion?.nombre).toContain("Abraham Valdelomar");
+  });
 });

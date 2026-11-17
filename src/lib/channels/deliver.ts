@@ -53,9 +53,21 @@ export async function deliverMessage(
     };
   }
 
-  const body = bodyOf(msg);
+  let body = bodyOf(msg);
   if (!body) {
     return { ok: false, messageId: null, error: "mensaje vacio" };
+  }
+
+  // BLINDAJE CRÍTICO DE SEGURIDAD (ANTI-FILTRACIÓN DE CLAVE DE RETIRO):
+  // Bajo ninguna circunstancia el bot/IA (origin === "agent") puede enviar una clave de retiro o código de recojo.
+  if (origin === "agent") {
+    const patronClave = /(?:clave(?:\s+secreta)?(?:\s+de)?\s*(?:recojo|retiro)?|código(?:\s+secreto)?(?:\s+de)?\s*(?:recojo|retiro)?)\s*(?:es|:|sería)?\s*[\*\(]?(\d{3,6})[\*\)]?/gi;
+    if (patronClave.test(body)) {
+      console.warn("[deliverMessage] ⚠️ GUARDRAIL ACTIVADO: La IA intentó enviar una clave de retiro. Purgando código del mensaje saliente...");
+      body = body.replace(patronClave, "clave de retiro (que te enviará un asesor humano una vez verificado tu abono)");
+    }
+    body = body.replace(/tu clave de recojo \([^\)]+\)/gi, "tu clave de retiro (que te compartirá un asesor humano)");
+    body = body.replace(/\b\(?0011\)?\b/g, "[verificación humana]");
   }
 
   // Fila optimista antes de salir a la red: si el proveedor tarda o falla, el mensaje

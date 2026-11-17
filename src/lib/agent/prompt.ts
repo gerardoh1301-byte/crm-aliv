@@ -133,12 +133,18 @@ REGLAS ESTRICTAS DE SELECCIÓN DE IMÁGENES (ANTI-CRUCE):
      DEBES agradecer el abono e INSISTIR DE FORMA OBLIGATORIA Y AMABLE en definir la agencia exacta antes de despachar:
      Ejemplo: "¡Muchas gracias por tu abono de S/20, [Nombre]! Ya registré tu pago en el sistema. Para emitir tu guía de remisión oficial de Shalom necesitamos saber a qué agencia exacta deseas que llegue tu paquete. ¿Cuál de las agencias te queda más cerca para programarlo de inmediato?"
   3. No des un pedido de provincia por listo para despacho hasta tener completos: Nombre completo, número de DNI, teléfono y AGENCIA EXACTA (con sede o dirección/distrito).
-- SISTEMA DE PAGO Y RETIRO EN SHALOM CON CLAVE SECRETA:
+- SISTEMA DE PAGO Y RETIRO EN SHALOM:
   1. Adelanto de S/20: Por Yape (951365418 - Gerardo Huaynalaya) para emitir la guía oficial de Shalom con su DNI y despachar el paquete.
   2. Rastreo: Con su N° de guía y código rastrea su envío en tiempo real en la web de Shalom (https://shalom.com.pe/rastrea/).
-  3. PAGO DEL SALDO A NOSOTROS (NUNCA A SHALOM): Cuando el paquete llega a la agencia Shalom, el cliente NO LE PAGA A LA AGENCIA SHALOM (la agencia no es caja de cobro ni cobra productos). El cliente nos transfiere/yapea el saldo restante a nosotros directamente.
-  4. LIBERACIÓN DE LA CLAVE DE RETIRO: Al confirmar la constancia de pago del saldo, LE ENVIAMOS DE INMEDIATO SU CLAVE SECRETA DE RECOJO (ej. 0011, 1330). Con su DNI físico y esa clave, el cliente retira su paquete en ventanilla sin pagar nada a Shalom.
-  ⚠️ PROHIBIDO DECIR "pagas en la agencia" o "pagas al retirar en ventanilla": Shalom no cobra el producto; el saldo nos lo pagan a nosotros y nosotros liberamos la clave de retiro.`;
+  3. PAGO DEL SALDO A NOSOTROS (NUNCA A SHALOM): Cuando el paquete llega a la agencia Shalom, el cliente NO LE PAGA A LA AGENCIA SHALOM (la agencia no es caja de cobro ni cobra productos). El cliente nos transfiere/yapea el saldo restante a nosotros directamente por Yape al 951365418 (Gerardo Huaynalaya).
+  4. ⛔ REGLA DE ORO DE SEGURIDAD ABSOLUTA - LA CLAVE SECRETA DE RETIRO ES 100% EXCLUSIVA DE GESTIÓN HUMANA:
+     - ESTÁ TERMINANTEMENTE PROHIBIDO QUE EL BOT O LA IA ENVÍE, MENCIONE, REVELE O INVENTE CUALQUIER NÚMERO O CÓDIGO DE CLAVE DE RETIRO (NUNCA digas números de clave, ni '0011', ni '1330', ni ningún código de 4 dígitos).
+     - BAJO NINGUNA CIRCUNSTANCIA EL BOT TIENE O ENTREGA LA CLAVE.
+     - Cuando el cliente pida su clave de recojo, o cuando envíe la constancia de pago del saldo:
+       El bot ÚNICAMENTE debe responder: "Muchas gracias por tu constancia. Nuestro equipo de administración verificará tu abono en cuenta y un asesor humano te enviará de inmediato tu clave de retiro para que puedas recoger tu paquete en la agencia."
+       Y de inmediato ejecutar avisar_asesor con motivo "abono_saldo_verificar_clave".
+     - NUNCA digas "como ya transferiste el saldo te enviamos la clave", y NUNCA des por verificado un pago.
+  ⚠️ PROHIBIDO DECIR "pagas en la agencia" o "pagas al retirar en ventanilla": Shalom no cobra el producto; el saldo nos lo pagan a nosotros y un asesor humano libera la clave de retiro.`;
 
   return `${conCanal}${bloqueImagenesYAgencias}`;
 }
@@ -152,8 +158,15 @@ export async function renderContexto(contactId: string): Promise<string> {
   const [contact] = await db.select().from(contacts).where(eq(contacts.id, contactId)).limit(1);
   if (!contact) return "";
 
+  // BLINDAJE DE SEGURIDAD: Purgar cualquier clave de recojo para que la IA JAMÁS tenga acceso a ella
   const campos = camposContacto();
-  const conocidos = resumirCampos(campos, contact.customFields as Record<string, never> | null);
+  const fieldsSafe = { ...((contact.customFields as Record<string, unknown> | null) ?? {}) };
+  delete fieldsSafe.clave_recojo;
+  delete fieldsSafe.clave_retiro;
+  delete fieldsSafe.codigo_secreto;
+  delete fieldsSafe.clave;
+
+  const conocidos = resumirCampos(campos, fieldsSafe as Record<string, never> | null);
   const aAveriguar = campos
     .filter((c) => c.agente?.calificar !== false && c.agente)
     .filter((c) => {

@@ -7,7 +7,7 @@
 (vacio)
 
 ## project/ — Decisiones activas y estado del trabajo
-(vacio)
+- [seguridad-clave-retiro-humano.md](project/seguridad-clave-retiro-humano.md) — Regla crítica: la IA nunca entrega claves de retiro de Shalom; entrega 100% exclusiva por asesor humano tras verificar saldo.
 
 ## feedback/ — Correcciones y preferencias
 (vacio)
