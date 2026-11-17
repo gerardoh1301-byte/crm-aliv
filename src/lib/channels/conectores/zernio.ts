@@ -57,7 +57,7 @@ export const zernio: Conector = {
 
     if (!isPlaceholderId) {
       const firstAtt = attachments?.[0];
-      result = await sendMessage(ctx.conversation.externalId, {
+      const payloadEnvio = {
         accountId,
         ...(msg.replyTo ? { replyTo: msg.replyTo } : {}),
         ...(firstAtt?.url
@@ -92,7 +92,16 @@ export const zernio: Conector = {
         ...(needsTag
           ? { messageTag: "HUMAN_AGENT" as const, messagingType: "MESSAGE_TAG" as const }
           : {}),
-      });
+      };
+
+      result = await sendMessage(ctx.conversation.externalId, payloadEnvio);
+
+      // Reintento defensivo si Meta/Zernio reporta un platform_api_error o timeout transitorio
+      if (!result.success && (result.error?.code === "platform_api_error" || result.error?.status === 500)) {
+        console.warn(`[zernio] platform_api_error transitorio en conversación ${ctx.conversation.externalId}, reintentando en 1.5s...`);
+        await new Promise((r) => setTimeout(r, 1500));
+        result = await sendMessage(ctx.conversation.externalId, payloadEnvio);
+      }
     }
 
     // Si la conversación no existía en Zernio (placeholder) o Zernio respondió CONVERSATION_NOT_FOUND:
