@@ -5,6 +5,7 @@ import { conversations } from "@/db/schema";
 import { eq } from "drizzle-orm";
 import { canAccessContactId } from "@/lib/team";
 import { requireMember } from "@/lib/api-auth";
+import { autorizadoPorSecreto } from "@/lib/secreto-worker";
 
 /**
  * Envio generico por conversacion: sirve para WhatsApp, Instagram y Messenger.
@@ -17,6 +18,12 @@ export const dynamic = "force-dynamic";
 interface SendBody {
   conversationId?: string;
   text?: string;
+  attachments?: Array<{
+    type?: "image" | "video" | "audio" | "document";
+    url: string;
+    name?: string;
+    mimeType?: string;
+  }>;
   replyTo?: string;
   quotedText?: string;
   quotedSender?: string;
@@ -29,9 +36,14 @@ interface SendBody {
 }
 
 export async function POST(request: NextRequest) {
-  const auth = await requireMember();
-  if ("response" in auth) return auth.response;
-  const { member } = auth;
+  const esWorker = autorizadoPorSecreto(request);
+  let member: { id: string; role: string } | null = null;
+
+  if (!esWorker) {
+    const auth = await requireMember();
+    if ("response" in auth) return auth.response;
+    member = auth.member;
+  }
   let body: SendBody;
   try {
     body = await request.json();
@@ -45,9 +57,9 @@ export async function POST(request: NextRequest) {
       { status: 400 }
     );
   }
-  if (!body.text?.trim() && !body.template) {
+  if (!body.text?.trim() && !body.template && !body.attachments?.length) {
     return NextResponse.json(
-      { error: "Tenes que enviar 'text' o 'template'" },
+      { error: "Tenes que enviar 'text', 'template' o 'attachments'" },
       { status: 400 }
     );
   }
@@ -58,11 +70,14 @@ export async function POST(request: NextRequest) {
     .from(conversations)
     .where(eq(conversations.id, body.conversationId))
     .limit(1);
+
   if (
     !conv ||
-    (conv.contactId
-      ? !(await canAccessContactId(member, conv.contactId))
-      : member.role !== "admin")
+    (!esWorker &&
+      member &&
+      (conv.contactId
+        ? !(await canAccessContactId(member as any, conv.contactId))
+        : member.role !== "admin"))
   ) {
     return NextResponse.json({ error: "conversation_not_found" }, { status: 404 });
   }
@@ -73,6 +88,7 @@ export async function POST(request: NextRequest) {
       ? { template: body.template }
       : {
           text: body.text,
+          attachments: body.attachments,
           replyTo: body.replyTo,
           quotedText: body.quotedText,
           quotedSender: body.quotedSender,
