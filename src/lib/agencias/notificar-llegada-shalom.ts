@@ -200,7 +200,25 @@ Para enviarte tu *clave secreta de recojo* y puedas retirarlo hoy mismo con tu D
 
 ¿Nos compartes tu constancia por aquí para liberarte tu clave secreta de inmediato? 🔑🙌`;
 
-      const entrega = await deliverMessage(c.convId, { text: mensajeAviso }, "agent");
+      const entrega = await deliverMessage(
+        c.convId,
+        {
+          text: mensajeAviso,
+          template: {
+            name: "aliv_pedido_en_agencia",
+            language: "es",
+            params: [
+              nombreLimpio,
+              agenciaNombre,
+              c.numeroGuia,
+              c.codigoRastreo || "SHALOM",
+              saldoSoles.toFixed(2),
+            ],
+            previewText: mensajeAviso,
+          },
+        },
+        "agent"
+      );
 
       if (entrega.ok) {
         notificacionesEnviadas++;
