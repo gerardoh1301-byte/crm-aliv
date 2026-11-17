@@ -587,15 +587,89 @@ const AGENCIAS_CURADAS: AgenciaShalom[] = [
 
   // --- LORETO / IQUITOS ---
   {
-    id: "iquitos-putumayo",
-    nombre: "Shalom Iquitos",
+    id: "shalom-460-iqcojrbol",
+    nombre: "Shalom Iquitos - Jr. Francisco Bolognesi",
     departamento: "Loreto",
     provincia: "Maynas",
     distrito: "Iquitos",
-    direccion: "Av. Putumayo 1420",
-    referencia: "Cerca a Plaza 28 de Julio y Punchana",
+    direccion: "Jr. Francisco Bolognesi #941 con Jr. Bermúdez",
+    referencia: "Frente a la Universidad Nacional de la Amazonía Peruana (UNAP)",
+    telefono: "(01) 500 7878",
+    horario: "Lunes a Viernes - 8:00 AM a 8:00 PM",
     principal: true,
-    coincidencias: ["iquitos", "putumayo", "maynas", "punchana", "san juan bautista iquitos", "belen iquitos"],
+    coincidencias: ["iquitos", "bolognesi", "francisco bolognesi", "bermudez", "unap", "maynas", "iqcojrbol"],
+  },
+  {
+    id: "shalom-52-iqjrpab",
+    nombre: "Shalom Iquitos - Jr. Pablo Rossel",
+    departamento: "Loreto",
+    provincia: "Maynas",
+    distrito: "Iquitos",
+    direccion: "Jr. Pablo Rossel 590 con Nanay",
+    referencia: "Frente al CETPRO American Computer",
+    telefono: "(01) 500 7878",
+    horario: "Lunes a Viernes - 8:00 AM a 8:00 PM",
+    coincidencias: ["pablo rossel", "nanay", "american computer", "iquitos centro", "iqjrpab"],
+  },
+  {
+    id: "shalom-624-iqits",
+    nombre: "Shalom Iquitos - Av. Túpac Amaru",
+    departamento: "Loreto",
+    provincia: "Maynas",
+    distrito: "Iquitos",
+    direccion: "Av. Túpac Amaru con Calle Lourdes de León #479",
+    referencia: "Frente a la Botica Thiagofarma",
+    telefono: "(01) 500 7878",
+    horario: "Lunes a Viernes - 8:00 AM a 8:00 PM",
+    coincidencias: ["tupac amaru", "lourdes de leon", "thiagofarma", "iqits"],
+  },
+  {
+    id: "shalom-536-avjsqns",
+    nombre: "Shalom Iquitos - San Juan Bautista (Av. Quiñones)",
+    departamento: "Loreto",
+    provincia: "Maynas",
+    distrito: "San Juan Bautista",
+    direccion: "Av. José Abelardo Quiñones #2475",
+    referencia: "Frente a la Universidad Científica del Perú (UCP)",
+    telefono: "(01) 500 7878",
+    horario: "Lunes a Viernes - 8:00 AM a 8:00 PM",
+    coincidencias: ["san juan bautista", "quiñones", "abelardo quiñones", "ucp", "avjsqns"],
+  },
+  {
+    id: "shalom-473-sjba",
+    nombre: "Shalom Iquitos - San Juan Bautista (Av. Participación)",
+    departamento: "Loreto",
+    provincia: "Maynas",
+    distrito: "San Juan Bautista",
+    direccion: "Av. Participación Parcela 9-A",
+    referencia: "Frente al Lavadero Osito y a media cuadra del Parque 1 de Enero",
+    telefono: "(01) 500 7878",
+    horario: "Lunes a Viernes - 8:00 AM a 8:00 PM",
+    coincidencias: ["participacion", "parque 1 de enero", "lavadero osito", "sjba"],
+  },
+  {
+    id: "shalom-497-pchna",
+    nombre: "Shalom Punchana",
+    departamento: "Loreto",
+    provincia: "Maynas",
+    distrito: "Punchana",
+    direccion: "Calle Borja N° 648",
+    referencia: "Al costado de la Farmacia San Carlos Centro Médico",
+    telefono: "(01) 500 7878",
+    horario: "Lunes a Viernes - 8:00 AM a 8:00 PM",
+    coincidencias: ["punchana", "calle borja", "borja", "farmacia san carlos", "pchna"],
+  },
+  {
+    id: "shalom-678-ctraiqts",
+    nombre: "Shalom Iquitos - Carretera Iquitos Nauta",
+    departamento: "Loreto",
+    provincia: "Maynas",
+    distrito: "San Juan Bautista",
+    direccion: "Carretera Iquitos Nauta S/N Mz. K Lt. 20",
+    referencia: "Al costado de la distribuidora Amazon Gas",
+    telefono: "(01) 500 7878",
+    horario: "Lunes a Viernes - 8:00 AM a 8:00 PM",
+    coincidencias: ["carretera iquitos nauta", "iquitos nauta", "amazon gas", "ctraiqts"],
   },
 
   // --- AYACUCHO ---
@@ -898,7 +972,8 @@ export function buscarAgenciaShalomCercana(params: {
     const c = (ag.coincidencias || []).map(normalizarTexto);
 
     if (ciudadNorm) {
-      return c.includes(ciudadNorm) || p === ciudadNorm || dist === ciudadNorm;
+      const nombreNorm = normalizarTexto(ag.nombre);
+      return c.includes(ciudadNorm) || p === ciudadNorm || dist === ciudadNorm || nombreNorm.includes(ciudadNorm);
     }
     return p === agCiudadNorm || (dist && dist === agDistNorm);
   });

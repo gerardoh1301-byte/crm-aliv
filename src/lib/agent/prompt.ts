@@ -130,9 +130,11 @@ REGLAS ESTRICTAS DE SELECCIÓN DE IMÁGENES (ANTI-CRUCE):
   1. Si el cliente solo menciona su ciudad o departamento (ej: "Pucallpa") sin indicar la sede o calle exacta:
      Usa la herramienta \`buscar_agencia_shalom\` o revisa la sección CONTEXTO. DEBES listar las agencias disponibles en esa ciudad y pedirle explícitamente a cuál prefiere que se le envíe:
      Ejemplo: "En Pucallpa contamos con varias agencias Shalom: por ejemplo en Jr. José Gálvez 147 (Callería), Av. Sáenz Peña 229, Av. Centenario Km 4.2 (frente a Real Plaza), Yarinacocha (Av. Universitaria) o Manantay (Av. Aguaytía). ¿A cuál de ellas te queda más cómodo recoger tu pedido?"
-  2. Si el cliente ya realizó el adelanto de S/20 pero NO ha definido la agencia exacta:
-     DEBES agradecer el abono e INSISTIR DE FORMA OBLIGATORIA Y AMABLE en definir la agencia exacta antes de despachar:
-     Ejemplo: "¡Muchas gracias por tu abono de S/20, [Nombre]! Ya registré tu pago en el sistema. Para emitir tu guía de remisión oficial de Shalom necesitamos saber a qué agencia exacta deseas que llegue tu paquete. ¿Cuál de las agencias te queda más cerca para programarlo de inmediato?"
+  2. Si el cliente ya realizó el adelanto de S/20 (o envía captura / dice "ahí el adelanto", "ya pagué", etc.):
+     DEBES agradecer el abono y REVISAR DE INMEDIATO si faltan el DNI o la Agencia Shalom exacta:
+     - Si falta el DNI: PÍDELO DE INMEDIATO en esa misma respuesta ("Para emitir tu guía de remisión oficial en Shalom y dejar listo tu despacho, por favor compárteme tu número de DNI").
+     - Si falta la Agencia Shalom exacta: LISTA O PROPÓN de inmediato las agencias oficiales con dirección para que elija a cuál acudir ("Y confírmame por favor en cuál de nuestras agencias te queda más cómodo recoger: [Lista]").
+     ⚠️ ESTÁ ESTRICTAMENTE PROHIBIDO limitarse a decir "ya le avisé al equipo para despachar" si aún no tienes el DNI o la sede exacta. ¡Pide los datos indispensables en esa misma respuesta!
   3. No des un pedido de provincia por listo para despacho hasta tener completos: Nombre completo, número de DNI, teléfono y AGENCIA EXACTA (con sede o dirección/distrito).
 - SISTEMA DE PAGO Y RETIRO EN SHALOM:
   1. Adelanto de S/20: Por Yape (951365418 - Gerardo Huaynalaya) para emitir la guía oficial de Shalom con su DNI y despachar el paquete.
@@ -291,14 +293,13 @@ export async function renderContexto(contactId: string): Promise<string> {
   ];
 
   // Detección proactiva de agencia Shalom si el cliente es de provincia (o dio su dirección en chat)
+  const fields = (contact.customFields as Record<string, unknown> | null) ?? {};
+  const ciudad = (fields.departamento_ciudad || fields.ciudad) ? String(fields.departamento_ciudad || fields.ciudad) : null;
+  const distrito = fields.distrito ? String(fields.distrito) : null;
+  const direccion = (fields.direccion_envio || fields.direccion) ? String(fields.direccion_envio || fields.direccion) : null;
+  let textoDireccionOProvincia = [ciudad, distrito, direccion].filter(Boolean).join(" ");
+
   try {
-    const fields = (contact.customFields as Record<string, unknown> | null) ?? {};
-    const ciudad = (fields.departamento_ciudad || fields.ciudad) ? String(fields.departamento_ciudad || fields.ciudad) : null;
-    const distrito = fields.distrito ? String(fields.distrito) : null;
-    const direccion = (fields.direccion_envio || fields.direccion) ? String(fields.direccion_envio || fields.direccion) : null;
-
-    let textoDireccionOProvincia = [ciudad, distrito, direccion].filter(Boolean).join(" ");
-
     // Si aún no están en customFields, escanear los mensajes del cliente en el chat
     if (!textoDireccionOProvincia && ultimosMensajesChat.length > 0) {
       const msgsCliente = ultimosMensajesChat
@@ -347,6 +348,40 @@ export async function renderContexto(contactId: string): Promise<string> {
     }
   } catch (err) {
     console.warn("[prompt] Error al buscar agencia Shalom para contexto:", err);
+  }
+
+  // Verificación estricta de requisitos para despacho por Shalom (Provincia)
+  const esProvincia = Boolean(
+    ciudad ||
+    (fields.modalidad_entrega && String(fields.modalidad_entrega).toLowerCase().includes("shalom")) ||
+    (pedidosTxt && pedidosTxt.toLowerCase().includes("shalom")) ||
+    (textoDireccionOProvincia && !/lima|callao/i.test(textoDireccionOProvincia))
+  );
+
+  if (esProvincia) {
+    const tieneDni = Boolean(fields.dni_ruc || fields.dni || fields.documento || (contact.notes && /dni[:\s]*\d{8}/i.test(contact.notes)));
+    const tieneAgenciaExacta = Boolean(
+      (fields.agencia_shalom && !/shalom\s+(?:provincia|iquitos|pisco|arequipa|trujillo|chiclayo|piura)$/i.test(String(fields.agencia_shalom))) ||
+      (fields.direccion_envio && /av\.|jr\.|calle|nro|#|mz\.|lt\./i.test(String(fields.direccion_envio)) && !/shalom\s+(?:provincia|iquitos|pisco|arequipa|trujillo|chiclayo|piura)$/i.test(String(fields.direccion_envio)))
+    );
+
+    const faltantesProvincia: string[] = [];
+    if (!tieneDni) {
+      faltantesProvincia.push("- DNI (8 dígitos): ❌ NO REGISTRADO (Obligatorio para emitir la guía oficial de Shalom). DEBES pedirlo amablemente en tu respuesta.");
+    }
+    if (!tieneAgenciaExacta) {
+      faltantesProvincia.push("- AGENCIA SHALOM EXACTA: ❌ NO IDENTIFICADA (Falta definir la sede con dirección). DEBES proponer o consultar las sedes oficiales disponibles.");
+    }
+
+    if (faltantesProvincia.length > 0) {
+      partes.push(
+        "## ⚠️ REQUISITOS OBLIGATORIOS FALTANTES PARA DESPACHO SHALOM:\n" +
+          faltantesProvincia.join("\n") +
+          "\nINSTRUCCIÓN CRÍTICA DE ATENCIÓN:\n" +
+          "Si el cliente realiza o indica que ya hizo el adelanto, agradécele y de forma OBLIGATORIA solicita los datos marcados con ❌ en este mismo mensaje.\n" +
+          "ESTÁ TOTALMENTE PROHIBIDO decir simplemente 'ya avisé para despachar' si no tienes el DNI o la agencia exacta."
+      );
+    }
   }
 
   if (llamadasTxt) partes.push(llamadasTxt);
