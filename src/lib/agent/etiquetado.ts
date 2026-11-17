@@ -218,21 +218,39 @@ export async function autoClasificarYEtiquetarConversacion(params: {
     }
   }
 
-  // SEÑAL D: Pedido confirmado / Pendiente de adelanto
+  // SEÑAL D: Pedido despachado / en camino / entregado / confirmado / Pendiente de adelanto
   if (!etiquetaObjetivo && pedido) {
-    const esProv = esPedidoDeProvincia(pedido);
-    const adelantoPagado = adelantoRegistrado(pedido.notas);
+    const yaTieneDespacho =
+      tagsActuales.some((t) => {
+        const c = cleanStr(t);
+        return c === "orden en camino" || c === "compra exitosa" || c === "en agencia shalom";
+      }) ||
+      pedido.estado === "enviado" ||
+      pedido.estado === "entregado";
 
-    if (esProv && !adelantoPagado) {
-      // Si ya tiene "Agendar entrega" previa, protegerla
-      const yaTieneAgendar = tagsActuales.some((t) => cleanStr(t) === "agendar entrega");
-      if (!yaTieneAgendar) {
-        etiquetaObjetivo = "Pendiente de adelanto";
-        motivo = "Pedido en provincia con adelanto S/20 pendiente";
+    if (yaTieneDespacho) {
+      if (pedido.estado === "entregado") {
+        etiquetaObjetivo = "Compra exitosa";
+        motivo = "Pedido entregado y completado";
+      } else {
+        etiquetaObjetivo = "Orden en camino";
+        motivo = "Pedido despachado / en camino o en agencia";
       }
-    } else if (!esProv && pedido.estado === "confirmado") {
-      etiquetaObjetivo = "Agendar entrega";
-      motivo = "Pedido en Lima listo para coordinar entrega";
+    } else {
+      const esProv = esPedidoDeProvincia(pedido);
+      const adelantoPagado = adelantoRegistrado(pedido.notas);
+
+      if (esProv && !adelantoPagado) {
+        // Si ya tiene "Agendar entrega" previa, protegerla
+        const yaTieneAgendar = tagsActuales.some((t) => cleanStr(t) === "agendar entrega");
+        if (!yaTieneAgendar) {
+          etiquetaObjetivo = "Pendiente de adelanto";
+          motivo = "Pedido en provincia con adelanto S/20 pendiente";
+        }
+      } else if (!esProv && pedido.estado === "confirmado") {
+        etiquetaObjetivo = "Agendar entrega";
+        motivo = "Pedido en Lima listo para coordinar entrega";
+      }
     }
   }
 
