@@ -10,6 +10,9 @@ const pkg = JSON.parse(readFileSync(path.resolve("package.json"), "utf8")) as { 
 generarRegistroModulos(process.cwd());
 
 const nextConfig: NextConfig = {
+  experimental: {
+    agentUpgrade: "security",
+  },
   // Standalone: la imagen Docker copia solo .next/standalone + static + public.
   // En Windows se desactiva porque el trazado usa symlinks que ahi fallan.
   output: process.platform === "win32" ? undefined : "standalone",
