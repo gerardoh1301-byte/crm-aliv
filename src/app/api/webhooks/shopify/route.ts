@@ -279,47 +279,58 @@ export async function POST(req: NextRequest) {
         `Pedido web ${numeroOrden} desde ${shopDomain} (Canal: ${payload.gateway || "EasySell COD Form"})`,
     }).returning({ id: pedidosOrdenes.id });
 
-    // R1: Detección de pedidos duplicados en las últimas 72 horas para el mismo cliente
-    const hace72Horas = new Date(Date.now() - 72 * 60 * 60 * 1000);
-    const [pedidoPrevioReciente] = await db
+    // R1: Detección inteligente de duplicados
+    // a) Ráfaga (< 3 minutos): doble clic o reenvío inmediato del formulario web
+    const hace3Minutos = new Date(Date.now() - 3 * 60 * 1000);
+    const [pedidoPrevioRafaga] = await db
       .select({ id: pedidosOrdenes.id, numeroOrden: pedidosOrdenes.numeroOrden, total: pedidosOrdenes.total })
       .from(pedidosOrdenes)
       .where(
         and(
           eq(pedidosOrdenes.contactId, contactId),
-          gte(pedidosOrdenes.createdAt, hace72Horas),
-          // Excluir el pedido que se acaba de registrar arriba: sin esto, todo pedido
-          // nuevo se encontraba a si mismo y ninguno recibia la plantilla.
+          gte(pedidosOrdenes.createdAt, hace3Minutos),
           ne(pedidosOrdenes.id, pedidoNuevo.id)
         )
       )
       .limit(1);
 
-    const esPosibleDuplicado = Boolean(pedidoPrevioReciente);
+    // b) Pedido previo en las últimas 24h (para auditoría informativa al equipo sin silenciar al bot)
+    const hace24Horas = new Date(Date.now() - 24 * 60 * 60 * 1000);
+    const [pedidoPrevio24h] = await db
+      .select({ id: pedidosOrdenes.id, numeroOrden: pedidosOrdenes.numeroOrden, total: pedidosOrdenes.total })
+      .from(pedidosOrdenes)
+      .where(
+        and(
+          eq(pedidosOrdenes.contactId, contactId),
+          gte(pedidosOrdenes.createdAt, hace24Horas),
+          ne(pedidosOrdenes.id, pedidoNuevo.id)
+        )
+      )
+      .limit(1);
 
-    if (esPosibleDuplicado && pedidoPrevioReciente) {
+    if (pedidoPrevioRafaga) {
+      // Reintento en ráfaga (menos de 3 minutos): no duplicar el envío de plantilla inmediata
       await db.insert(activities).values({
         type: "note",
-        description: `⚠️ [POSIBLE DUPLICADO] El cliente ya tiene el pedido ${pedidoPrevioReciente.numeroOrden} registrado en las últimas 72h. Se bloqueó el envío de plantilla automática para evitar confusión con montos distintos. Asesor debe confirmar con cliente cuál pedido es válido.`,
+        description: `⚠️ [REINTENTO EN RÁFAGA] Pedido ${numeroOrden} recibido a menos de 3 min de ${pedidoPrevioRafaga.numeroOrden}. Se omite duplicar el envío de plantilla automática en el mismo instante.`,
         contactId,
-      });
-
-      await db
-        .update(contacts)
-        .set({
-          needsHuman: true,
-          needsHumanReason: `Posible pedido duplicado (${numeroOrden} vs ${pedidoPrevioReciente.numeroOrden})`,
-          needsHumanAt: new Date(),
-          updatedAt: new Date(),
-        })
-        .where(eq(contacts.id, contactId));
-
-      await alertarEquipo({
-        contactId,
-        titulo: `Posible pedido duplicado: ${nombre}`,
-        cuerpo: `${numeroOrden} y ${pedidoPrevioReciente.numeroOrden} en menos de 72 h. No se envió plantilla: confirma con el cliente cuál vale.`,
       });
     } else {
+      // Si el cliente ya tenía un pedido reciente (> 3 min y < 24h), registramos nota e informamos sin silenciar al bot
+      if (pedidoPrevio24h) {
+        await db.insert(activities).values({
+          type: "note",
+          description: `ℹ️ [PEDIDO ADICIONAL O REINTENTO] El cliente registra pedido ${numeroOrden}. Pedido previo en 24h: ${pedidoPrevio24h.numeroOrden}. Se envía plantilla de confirmación automáticamente.`,
+          contactId,
+        });
+
+        await alertarEquipo({
+          contactId,
+          titulo: `Pedido adicional / reintento: ${nombre}`,
+          cuerpo: `Cliente con pedido ${numeroOrden} ya tenía ${pedidoPrevio24h.numeroOrden} en las últimas 24h. Se envió confirmación automática para no perder la venta.`,
+        });
+      }
+
       const esProv = datosForm.esProvincia;
       const totalNum = Number(payload.total_price) || 0;
       const saldoNum = Math.max(0, totalNum - 20);
