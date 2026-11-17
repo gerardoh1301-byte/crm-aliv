@@ -88,4 +88,30 @@ describe("Directorio y Búsqueda de Agencias Shalom Cercanas en Provincia", () =
     expect(res.mejorOpcion?.id).toBe("arequipa-cerro-colorado");
     expect(res.mejorOpcion?.direccion).toBe("Av. Villa Hermosa 215");
   });
+
+  it("detecta múltiples agencias en Pucallpa cuando el cliente no especifica sede o calle", () => {
+    const res = buscarAgenciaShalomCercana({
+      ciudad: "Pucallpa",
+    });
+
+    expect(res.multiplesAgenciasEnCiudad).toBe(true);
+    expect(res.todasDeCiudad && res.todasDeCiudad.length).toBeGreaterThanOrEqual(4);
+    expect(res.propuestaMensaje).toContain("En Pucallpa contamos con varias agencias de Shalom");
+    expect(res.propuestaMensaje).toContain("Jr. José Gálvez 147");
+    expect(res.propuestaMensaje).toContain("Yarinacocha");
+  });
+
+  it("discrimina agencia específica en Pucallpa si el cliente da distrito o referencia", () => {
+    const resYarina = buscarAgenciaShalomCercana({
+      ciudad: "Pucallpa",
+      distrito: "Yarinacocha",
+    });
+    expect(resYarina.mejorOpcion?.id).toBe("pucallpa-yarinacocha");
+
+    const resManantay = buscarAgenciaShalomCercana({
+      ciudad: "Pucallpa",
+      direccion: "Por el mercado San Fernando en Manantay",
+    });
+    expect(resManantay.mejorOpcion?.id).toBe("pucallpa-manantay");
+  });
 });

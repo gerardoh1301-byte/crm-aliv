@@ -124,11 +124,15 @@ REGLAS ESTRICTAS DE SELECCIÓN DE IMÁGENES (ANTI-CRUCE):
 - NUNCA respondas con el texto literal "Foto de referencia" ni dejes el mensaje como texto suelto sin contexto.
 
 # ENVÍOS A PROVINCIA, AGENCIA SHALOM Y CLAVE DE RETIRO (REGLA MANDATORIA):
-- Cuando el cliente indique que se encuentra en provincia, o proporcione su ciudad, distrito, calle o dirección (ej: Sullana, Arequipa, Chiclayo, Trujillo, Huancayo, Piura, etc.):
-  1. Identifica qué agencia de Shalom le queda más cercana usando la herramienta \`buscar_agencia_shalom\` (o revisa la sugerencia en tu sección CONTEXTO).
-  2. Proponle SIEMPRE esa agencia Shalom como primera opción de forma inmediata y natural:
-     Ejemplo: "Veo que te ubicas por [zona/calle]. Te sugiero enviarlo a la **Agencia Shalom [Nombre]** ([Dirección]), que es la más cercana a tu ubicación. ¿Te parece bien que lo programemos a esa agencia o prefieres otra?"
-  3. No dejes al cliente adivinando ni le hagas buscar: sugiérele la más cercana tú primero.
+- OBLIGACIÓN DE REGISTRAR LA SEDE / AGENCIA EXACTA DE SHALOM (PROHIBIDO "SHALOM GENÉRICA"):
+  ⚠️ ESTÁ ESTRICTAMENTE PROHIBIDO registrar, cerrar o confirmar un pedido para provincia usando únicamente el nombre general de la ciudad o una agencia genérica (como "Shalom Pucallpa", "Shalom Trujillo", "Shalom Arequipa", "Shalom Chiclayo", "Shalom Piura", etc.). En casi todas las ciudades de provincia existen 2, 3 o más agencias de Shalom en diferentes distritos y avenidas.
+  1. Si el cliente solo menciona su ciudad o departamento (ej: "Pucallpa") sin indicar la sede o calle exacta:
+     Usa la herramienta \`buscar_agencia_shalom\` o revisa la sección CONTEXTO. DEBES listar las agencias disponibles en esa ciudad y pedirle explícitamente a cuál prefiere que se le envíe:
+     Ejemplo: "En Pucallpa contamos con varias agencias Shalom: por ejemplo en Jr. José Gálvez 147 (Callería), Av. Sáenz Peña 229, Av. Centenario Km 4.2 (frente a Real Plaza), Yarinacocha (Av. Universitaria) o Manantay (Av. Aguaytía). ¿A cuál de ellas te queda más cómodo recoger tu pedido?"
+  2. Si el cliente ya realizó el adelanto de S/20 pero NO ha definido la agencia exacta:
+     DEBES agradecer el abono e INSISTIR DE FORMA OBLIGATORIA Y AMABLE en definir la agencia exacta antes de despachar:
+     Ejemplo: "¡Muchas gracias por tu abono de S/20, [Nombre]! Ya registré tu pago en el sistema. Para emitir tu guía de remisión oficial de Shalom necesitamos saber a qué agencia exacta deseas que llegue tu paquete. ¿Cuál de las agencias te queda más cerca para programarlo de inmediato?"
+  3. No des un pedido de provincia por listo para despacho hasta tener completos: Nombre completo, número de DNI, teléfono y AGENCIA EXACTA (con sede o dirección/distrito).
 - SISTEMA DE PAGO Y RETIRO EN SHALOM CON CLAVE SECRETA:
   1. Adelanto de S/20: Por Yape (951365418 - Gerardo Huaynalaya) para emitir la guía oficial de Shalom con su DNI y despachar el paquete.
   2. Rastreo: Con su N° de guía y código rastrea su envío en tiempo real en la web de Shalom (https://shalom.com.pe/rastrea/).
@@ -299,7 +303,23 @@ export async function renderContexto(contactId: string): Promise<string> {
         distrito,
         direccion: textoDireccionOProvincia,
       });
-      if (shalomRes.mejorOpcion) {
+      if (shalomRes.multiplesAgenciasEnCiudad && shalomRes.todasDeCiudad && shalomRes.todasDeCiudad.length > 1) {
+        const opcionesTxt = shalomRes.todasDeCiudad
+          .map((ag) => {
+            const ref = ag.referencia ? ` - ref: ${ag.referencia}` : "";
+            return `  • *${ag.nombre}* (${ag.direccion}${ref})`;
+          })
+          .join("\n");
+        partes.push(
+          `## ATENCIÓN MANDATORIA: CIUDAD CON MÚLTIPLES AGENCIAS SHALOM (${shalomRes.ciudadDetectada?.toUpperCase() || "PROVINCIA"})\n` +
+            `- El cliente se encuentra en ${shalomRes.ciudadDetectada || "provincia"}, donde existen ${shalomRes.todasDeCiudad.length} agencias de Shalom.\n` +
+            "- REGLA DE ORO DE GERENCIA:\n" +
+            `  ⚠️ ESTÁ ESTRICTAMENTE PROHIBIDO registrar o asumir "Shalom ${shalomRes.ciudadDetectada}" de forma genérica.\n` +
+            "  DEBES PREGUNTARLE EXPLÍCITAMENTE al cliente cuál de estas agencias le queda más cómoda o cercana para recoger:\n" +
+            `${opcionesTxt}\n` +
+            "  Si el cliente ya transfirió el adelanto de S/20, agradécele el pago e INSISTE OBLIGATORIAMENTE en que elija la sede exacta para poder emitir su guía de remisión oficial y despachar."
+        );
+      } else if (shalomRes.mejorOpcion) {
         const refTexto = shalomRes.mejorOpcion.referencia ? ` - ${shalomRes.mejorOpcion.referencia}` : "";
         partes.push(
           "## AGENCIA SHALOM MÁS CERCANA (OBLIGATORIO: PROPONER COMO PRIMERA OPCIÓN PARA PROVINCIA)\n" +

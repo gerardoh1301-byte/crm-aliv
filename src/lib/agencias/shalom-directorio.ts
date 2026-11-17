@@ -505,15 +505,55 @@ export const AGENCIAS_SHALOM_PERU: AgenciaShalom[] = [
 
   // --- UCAYALI / PUCALLPA ---
   {
+    id: "pucallpa-galvez",
+    nombre: "Shalom Pucallpa - Callería (Jr. José Gálvez)",
+    departamento: "Ucayali",
+    provincia: "Coronel Portillo",
+    distrito: "Callería",
+    direccion: "Jr. José Gálvez 147",
+    referencia: "A media cuadra de Av. Centenario / Cerca a Plaza de Armas",
+    principal: true,
+    coincidencias: ["pucallpa", "jose galvez", "galvez", "calleria", "centro pucallpa", "coronel portillo"],
+  },
+  {
+    id: "pucallpa-saenz-pena",
+    nombre: "Shalom Pucallpa - Callería (Av. Sáenz Peña)",
+    departamento: "Ucayali",
+    provincia: "Coronel Portillo",
+    distrito: "Callería",
+    direccion: "Av. Sáenz Peña 229",
+    referencia: "Cerca al Óvalo Federico Basadre y Sáenz Peña",
+    coincidencias: ["saenz pena", "ovalo basadre", "federico basadre", "pucallpa saenz"],
+  },
+  {
     id: "pucallpa-centenario",
-    nombre: "Shalom Pucallpa",
+    nombre: "Shalom Pucallpa - Av. Centenario (Real Plaza)",
     departamento: "Ucayali",
     provincia: "Coronel Portillo",
     distrito: "Callería",
     direccion: "Av. Centenario Km 4.2",
-    referencia: "Frente a Real Plaza Pucallpa / Yarinacocha",
-    principal: true,
-    coincidencias: ["pucallpa", "centenario", "calleria", "yarinacocha", "coronel portillo"],
+    referencia: "Frente a Real Plaza Pucallpa",
+    coincidencias: ["centenario", "real plaza pucallpa", "km 4.2", "km 4", "centenario pucallpa"],
+  },
+  {
+    id: "pucallpa-yarinacocha",
+    nombre: "Shalom Pucallpa - Yarinacocha",
+    departamento: "Ucayali",
+    provincia: "Coronel Portillo",
+    distrito: "Yarinacocha",
+    direccion: "Av. Universitaria Mz. A Lt. 6",
+    referencia: "Cerca a Laguna de Yarinacocha y Plaza Principal",
+    coincidencias: ["yarinacocha", "universitaria", "laguna yarinacocha", "puerto callao"],
+  },
+  {
+    id: "pucallpa-manantay",
+    nombre: "Shalom Pucallpa - Manantay",
+    departamento: "Ucayali",
+    provincia: "Coronel Portillo",
+    distrito: "Manantay",
+    direccion: "Av. Aguaytía Mz. 26 Lt. 20",
+    referencia: "A media cuadra del Nuevo Mercado San Fernando / Av. Túpac Amaru",
+    coincidencias: ["manantay", "aguaytia", "mercado san fernando", "san fernando", "tupac amaru pucallpa"],
   },
 
   // --- LORETO / IQUITOS ---
@@ -650,6 +690,15 @@ function normalizarTexto(txt: string | null | undefined): string {
     .trim();
 }
 
+export interface ResultadoBusquedaAgenciaShalom {
+  mejorOpcion: AgenciaShalom | null;
+  otrasOpciones: AgenciaShalom[];
+  propuestaMensaje: string | null;
+  multiplesAgenciasEnCiudad?: boolean;
+  ciudadDetectada?: string | null;
+  todasDeCiudad?: AgenciaShalom[];
+}
+
 /**
  * Busca y puntúa las agencias de Shalom más cercanas en base a ciudad, dirección o referencias.
  */
@@ -658,11 +707,7 @@ export function buscarAgenciaShalomCercana(params: {
   distrito?: string | null;
   direccion?: string | null;
   referencia?: string | null;
-}): {
-  mejorOpcion: AgenciaShalom | null;
-  otrasOpciones: AgenciaShalom[];
-  propuestaMensaje: string | null;
-} {
+}): ResultadoBusquedaAgenciaShalom {
   const ciudadNorm = normalizarTexto(params.ciudad);
   const distritoNorm = normalizarTexto(params.distrito);
   const direccionNorm = normalizarTexto(params.direccion);
@@ -680,12 +725,18 @@ export function buscarAgenciaShalomCercana(params: {
     const agDpto = normalizarTexto(ag.departamento);
     const agDist = normalizarTexto(ag.distrito);
     const agDir = normalizarTexto(ag.direccion);
-    const agNom = normalizarTexto(ag.nombre);
 
-    // 1. Coincidencia con la ciudad o provincia (soporta nombres cortos como "Ica")
+    // 1. Coincidencia con la ciudad o provincia (soporta nombres de capitales como Pucallpa / Coronel Portillo, Juliaca / San Román, etc.)
+    const agCoincidenciasNorm = (ag.coincidencias ?? []).map(normalizarTexto);
     const matchCiudad =
-      (ciudadNorm && (agCiudad.includes(ciudadNorm) || ciudadNorm.includes(agCiudad))) ||
-      new RegExp(`\\b${agCiudad}\\b`, "i").test(todoJunto);
+      (ciudadNorm && (
+        agCiudad.includes(ciudadNorm) ||
+        ciudadNorm.includes(agCiudad) ||
+        agCoincidenciasNorm.includes(ciudadNorm)
+      )) ||
+      new RegExp(`\\b${agCiudad}\\b`, "i").test(todoJunto) ||
+      agCoincidenciasNorm.some((c) => c.length >= 4 && new RegExp(`\\b${c}\\b`, "i").test(todoJunto));
+
     const matchDpto =
       (ciudadNorm && (agDpto.includes(ciudadNorm) || ciudadNorm.includes(agDpto))) ||
       new RegExp(`\\b${agDpto}\\b`, "i").test(todoJunto);
@@ -705,8 +756,8 @@ export function buscarAgenciaShalomCercana(params: {
     for (const token of ag.coincidencias ?? []) {
       const tNorm = normalizarTexto(token);
       if (tNorm.length >= 3 && todoJunto.includes(tNorm)) {
-        // Si el token es solo el nombre de la ciudad ya sumado, da un bono menor; si es calle/zona da 40
-        if (tNorm === agCiudad || tNorm === agDpto) {
+        // Si el token coincide con la ciudad o dpto, o con la ciudad buscada por el usuario
+        if (tNorm === agCiudad || tNorm === agDpto || (ciudadNorm && tNorm.includes(ciudadNorm)) || (ciudadNorm && ciudadNorm.includes(tNorm))) {
           score += 10;
         } else {
           score += 45;
@@ -737,12 +788,43 @@ export function buscarAgenciaShalomCercana(params: {
   const mejorOpcion = puntuadas[0].agencia;
   const otrasOpciones = puntuadas.slice(1, 4).map((p) => p.agencia);
 
-  const refTxt = mejorOpcion.referencia ? ` (ref: ${mejorOpcion.referencia})` : "";
-  const propuestaMensaje = `Me parece que la agencia Shalom más cercana a tu dirección es *${mejorOpcion.nombre}* (${mejorOpcion.direccion}${refTxt}). ¿Te parece bien que lo programemos a esa agencia o prefieres otra?`;
+  // Detectar si la ciudad tiene múltiples agencias y el cliente NO especificó calle o distrito puntual
+  const agCiudadNorm = normalizarTexto(mejorOpcion.provincia);
+  const agDptoNorm = normalizarTexto(mejorOpcion.departamento);
+  const todasDeCiudad = AGENCIAS_SHALOM_PERU.filter((ag) => {
+    const p = normalizarTexto(ag.provincia);
+    const d = normalizarTexto(ag.departamento);
+    const c = (ag.coincidencias || []).map(normalizarTexto);
+    return p === agCiudadNorm || d === agDptoNorm || (ciudadNorm && c.includes(ciudadNorm));
+  });
+
+  const hayMultiples = todasDeCiudad.length > 1;
+  const dioUbicacionEspecifica = Boolean(
+    (distritoNorm && distritoNorm !== agCiudadNorm && distritoNorm.length >= 4) ||
+    (direccionNorm && direccionNorm.length > 8 && !direccionNorm.includes(agCiudadNorm)) ||
+    (puntuadas.length > 1 && (puntuadas[0].score - puntuadas[1].score) >= 35)
+  );
+
+  const esAmbiguo = hayMultiples && !dioUbicacionEspecifica;
+
+  let propuestaMensaje: string;
+  if (hayMultiples && esAmbiguo) {
+    const ciudadNombre = params.ciudad || mejorOpcion.provincia || mejorOpcion.departamento;
+    const listaOpciones = todasDeCiudad
+      .map((a) => `• *${a.nombre}* (${a.direccion}${a.referencia ? ` - ref: ${a.referencia}` : ""})`)
+      .join("\n");
+    propuestaMensaje = `En ${ciudadNombre} contamos con varias agencias de Shalom. ¿A cuál de ellas te queda más cómodo recoger tu pedido?\n${listaOpciones}\n¿Cuál de ellas te queda más cerca?`;
+  } else {
+    const refTxt = mejorOpcion.referencia ? ` (ref: ${mejorOpcion.referencia})` : "";
+    propuestaMensaje = `Me parece que la agencia Shalom más cercana a tu dirección es *${mejorOpcion.nombre}* (${mejorOpcion.direccion}${refTxt}). ¿Te parece bien que lo programemos a esa agencia o prefieres otra?`;
+  }
 
   return {
     mejorOpcion,
     otrasOpciones,
     propuestaMensaje,
+    multiplesAgenciasEnCiudad: hayMultiples && esAmbiguo,
+    ciudadDetectada: params.ciudad || mejorOpcion.provincia || mejorOpcion.departamento,
+    todasDeCiudad: hayMultiples ? todasDeCiudad : [mejorOpcion],
   };
 }
