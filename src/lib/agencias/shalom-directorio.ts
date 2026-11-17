@@ -16,10 +16,13 @@ export interface AgenciaShalom {
   telefono?: string;
   horario?: string;
   principal?: boolean;
+  curada?: boolean;
   coincidencias?: string[];
 }
 
-export const AGENCIAS_SHALOM_PERU: AgenciaShalom[] = [
+import { AGENCIAS_SHALOM_OFICIALES } from "./shalom-agencias-oficiales";
+
+const AGENCIAS_CURADAS: AgenciaShalom[] = [
   // --- PIURA / SULLANA / TALARA / PAITA ---
   {
     id: "sullana-santa-rosa",
@@ -690,6 +693,67 @@ function normalizarTexto(txt: string | null | undefined): string {
     .trim();
 }
 
+function capitalizarPalabra(str: string): string {
+  if (!str) return "";
+  return str
+    .toLowerCase()
+    .split(" ")
+    .map((w) => (w.length > 2 ? w.charAt(0).toUpperCase() + w.slice(1) : w))
+    .join(" ");
+}
+
+function normalizarDireccionClave(dir: string): string {
+  return (dir || "")
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/\b(nro|n|numero|s\/n|sn|mz|lt|lote|manzana|km)\b/g, " ")
+    .replace(/[^a-z0-9]/g, "")
+    .trim();
+}
+
+/**
+ * Construye el padrón maestro combinando las agencias curadas con el directorio
+ * oficial de más de 500 agencias de Shalom a nivel nacional en todo el Perú.
+ */
+function construirPadronCompleto(): AgenciaShalom[] {
+  const padron: AgenciaShalom[] = AGENCIAS_CURADAS.map((ag) => ({
+    ...ag,
+    curada: true,
+  }));
+
+  const direccionesExistentes = new Set(
+    AGENCIAS_CURADAS.map((a) => normalizarDireccionClave(a.direccion).slice(0, 15))
+  );
+
+  for (const ofc of AGENCIAS_SHALOM_OFICIALES) {
+    const dirNorm = normalizarDireccionClave(ofc.direccion).slice(0, 15);
+    if (!direccionesExistentes.has(dirNorm)) {
+      const zonaCap = capitalizarPalabra(ofc.zona || ofc.distrito || ofc.provincia);
+      const dirCap = capitalizarPalabra(ofc.direccion.split(",")[0]);
+
+      padron.push({
+        id: ofc.id,
+        nombre: `Shalom ${zonaCap} - ${dirCap}`,
+        departamento: capitalizarPalabra(ofc.departamento),
+        provincia: capitalizarPalabra(ofc.provincia),
+        distrito: capitalizarPalabra(ofc.distrito),
+        direccion: ofc.direccion,
+        referencia: ofc.referencia,
+        telefono: ofc.telefono || "(01) 500 7878",
+        horario: ofc.horario || "LUNES A VIERNES - 8AM A 8PM",
+        principal: false,
+        coincidencias: ofc.coincidencias || [],
+      });
+      direccionesExistentes.add(dirNorm);
+    }
+  }
+
+  return padron;
+}
+
+export const AGENCIAS_SHALOM_PERU: AgenciaShalom[] = construirPadronCompleto();
+
 export interface ResultadoBusquedaAgenciaShalom {
   mejorOpcion: AgenciaShalom | null;
   otrasOpciones: AgenciaShalom[];
@@ -768,18 +832,29 @@ export function buscarAgenciaShalomCercana(params: {
     // Coincidencia con partes de la dirección de la agencia (ej: "Santa Rosa", "Parra", "Bolognesi")
     const palabrasClave = agDir.split(" ").filter((w) => w.length > 4);
     for (const p of palabrasClave) {
+      if (p === agCiudad || p === agDpto || p === agDist || agDist.includes(p) || agCiudad.includes(p)) continue;
       if (todoJunto.includes(p)) score += 25;
+    }
+
+    // Puntos extra para agencias curadas con datos y aliases verificados
+    if (ag.curada) {
+      score += 60;
     }
 
     // Puntos extra para agencia principal de la ciudad como desempate si no hay match de zona
     if (ag.principal) {
-      score += 5;
+      score += 10;
     }
 
     return { agencia: ag, score };
   })
     .filter((item) => item.score > 25)
-    .sort((a, b) => b.score - a.score);
+    .sort((a, b) => {
+      if (b.score !== a.score) return b.score - a.score;
+      if (b.agencia.curada && !a.agencia.curada) return 1;
+      if (a.agencia.curada && !b.agencia.curada) return -1;
+      return 0;
+    });
 
   if (puntuadas.length === 0) {
     return { mejorOpcion: null, otrasOpciones: [], propuestaMensaje: null };
@@ -788,21 +863,26 @@ export function buscarAgenciaShalomCercana(params: {
   const mejorOpcion = puntuadas[0].agencia;
   const otrasOpciones = puntuadas.slice(1, 4).map((p) => p.agencia);
 
-  // Detectar si la ciudad tiene múltiples agencias y el cliente NO especificó calle o distrito puntual
+  // Detectar si la ciudad/provincia tiene múltiples agencias y el cliente NO especificó calle o distrito puntual
   const agCiudadNorm = normalizarTexto(mejorOpcion.provincia);
-  const agDptoNorm = normalizarTexto(mejorOpcion.departamento);
+  const agDistNorm = normalizarTexto(mejorOpcion.distrito);
   const todasDeCiudad = AGENCIAS_SHALOM_PERU.filter((ag) => {
     const p = normalizarTexto(ag.provincia);
-    const d = normalizarTexto(ag.departamento);
+    const dist = normalizarTexto(ag.distrito);
     const c = (ag.coincidencias || []).map(normalizarTexto);
-    return p === agCiudadNorm || d === agDptoNorm || (ciudadNorm && c.includes(ciudadNorm));
+
+    if (ciudadNorm) {
+      return c.includes(ciudadNorm) || p === ciudadNorm || dist === ciudadNorm;
+    }
+    return p === agCiudadNorm || (dist && dist === agDistNorm);
   });
 
   const hayMultiples = todasDeCiudad.length > 1;
   const dioUbicacionEspecifica = Boolean(
     (distritoNorm && distritoNorm !== agCiudadNorm && distritoNorm.length >= 4) ||
     (direccionNorm && direccionNorm.length > 8 && !direccionNorm.includes(agCiudadNorm)) ||
-    (puntuadas.length > 1 && (puntuadas[0].score - puntuadas[1].score) >= 35)
+    (direccionNorm && puntuadas.length > 1 && (puntuadas[0].score - puntuadas[1].score) >= 20) ||
+    (direccionNorm && puntuadas.length > 0 && puntuadas[0].score >= 70)
   );
 
   const esAmbiguo = hayMultiples && !dioUbicacionEspecifica;
@@ -810,10 +890,13 @@ export function buscarAgenciaShalomCercana(params: {
   let propuestaMensaje: string;
   if (hayMultiples && esAmbiguo) {
     const ciudadNombre = params.ciudad || mejorOpcion.provincia || mejorOpcion.departamento;
-    const listaOpciones = todasDeCiudad
+    // Mostrar hasta 6 opciones para no saturar el mensaje de WhatsApp si la ciudad tiene muchas sedes
+    const opcionesAMostrar = todasDeCiudad.slice(0, 6);
+    const listaOpciones = opcionesAMostrar
       .map((a) => `• *${a.nombre}* (${a.direccion}${a.referencia ? ` - ref: ${a.referencia}` : ""})`)
       .join("\n");
-    propuestaMensaje = `En ${ciudadNombre} contamos con varias agencias de Shalom. ¿A cuál de ellas te queda más cómodo recoger tu pedido?\n${listaOpciones}\n¿Cuál de ellas te queda más cerca?`;
+    const extraTxt = todasDeCiudad.length > 6 ? `\n(Y ${todasDeCiudad.length - 6} agencias más en la zona)` : "";
+    propuestaMensaje = `En ${ciudadNombre} contamos con varias agencias de Shalom. ¿A cuál de ellas te queda más cómodo recoger tu pedido?\n${listaOpciones}${extraTxt}\n¿Cuál de ellas te queda más cerca?`;
   } else {
     const refTxt = mejorOpcion.referencia ? ` (ref: ${mejorOpcion.referencia})` : "";
     propuestaMensaje = `Me parece que la agencia Shalom más cercana a tu dirección es *${mejorOpcion.nombre}* (${mejorOpcion.direccion}${refTxt}). ¿Te parece bien que lo programemos a esa agencia o prefieres otra?`;

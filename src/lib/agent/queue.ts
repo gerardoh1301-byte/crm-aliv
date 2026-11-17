@@ -1,6 +1,6 @@
 import { db } from "@/db";
 import { agentJobs, contacts, conversations } from "@/db/schema";
-import { and, eq, isNull, lte } from "drizzle-orm";
+import { and, eq, gte, isNull, lte, ne } from "drizzle-orm";
 
 const DEBOUNCE_MS = 6000;
 
@@ -87,6 +87,40 @@ export async function claimAgentJob(jobId: string): Promise<
   const now = Date.now();
   if (job.processAfter.getTime() > now) {
     return { ok: false, reason: "debounce_still_active" };
+  }
+
+  // Candado de concurrencia: evitar que 2 ejecuciones atiendan la misma conversación al mismo tiempo
+  // Si ya hay un job en status 'processing' activo (< 2 min), este job espera en serie.
+  const busyFilter = job.conversationId
+    ? and(
+        eq(agentJobs.conversationId, job.conversationId),
+        eq(agentJobs.status, "processing"),
+        ne(agentJobs.id, jobId),
+        gte(agentJobs.updatedAt, new Date(Date.now() - 2 * 60 * 1000))
+      )
+    : and(
+        eq(agentJobs.contactId, job.contactId),
+        isNull(agentJobs.conversationId),
+        eq(agentJobs.status, "processing"),
+        ne(agentJobs.id, jobId),
+        gte(agentJobs.updatedAt, new Date(Date.now() - 2 * 60 * 1000))
+      );
+
+  const [activeJob] = await db
+    .select({ id: agentJobs.id })
+    .from(agentJobs)
+    .where(busyFilter)
+    .limit(1);
+
+  if (activeJob) {
+    await db
+      .update(agentJobs)
+      .set({
+        processAfter: new Date(Date.now() + 4000),
+        updatedAt: new Date(),
+      })
+      .where(eq(agentJobs.id, jobId));
+    return { ok: false, reason: "conversation_busy_processing" };
   }
 
   // Pre-check rapido del contacto
