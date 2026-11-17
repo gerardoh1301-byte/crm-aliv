@@ -840,13 +840,13 @@ function toolsGenericas(): ToolAgente[] {
       definicion: definir(
         "enviar_imagen_referencia",
         "Envía una imagen o infografía de referencia oficial al cliente por WhatsApp hospedada en Google Drive CDN (sin recargar el servidor del CRM). " +
-          "Claves válidas: 'termix_tobillera' (foto en pie), 'termix_promocion' (banner precios), 'termix_foto_real' (en mano encendida), 'termix_contenido_caja' (unboxing), 'termix_caracteristicas' (grafeno/masaje), 'termix_comparativa' (vs comunes), 'nac600_frasco', 'nac600_beneficios', 'yape_adelanto'.",
+          "Claves válidas: 'termix_tobillera' (foto en pie), 'termix_promocion' (banner precios), 'termix_foto_real' (en mano encendida), 'termix_contenido_caja' (unboxing), 'termix_caracteristicas' (grafeno/masaje), 'termix_comparativa' (vs comunes), 'nac600_frasco', 'nac600_beneficios', 'nac600_resena', 'yape_adelanto'.",
         {
           type: "object",
           properties: {
             clave: {
               type: "string",
-              description: "Identificador de la imagen: 'termix_tobillera', 'termix_promocion', 'termix_foto_real', 'termix_contenido_caja', 'termix_caracteristicas', 'termix_comparativa', 'nac600_frasco', 'nac600_beneficios' o 'yape_adelanto'.",
+              description: "Identificador de la imagen: 'termix_tobillera', 'termix_promocion', 'termix_foto_real', 'termix_contenido_caja', 'termix_caracteristicas', 'termix_comparativa', 'nac600_frasco', 'nac600_beneficios', 'nac600_resena' o 'yape_adelanto'.",
             },
             motivo: {
               type: "string",

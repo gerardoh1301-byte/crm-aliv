@@ -107,6 +107,7 @@ export function renderSystemPrompt(template: string, opts: { now?: Date; channel
 Tienes acceso a la herramienta \`enviar_imagen_referencia\` para compartir imágenes e infografías oficiales directamente en WhatsApp:
 - Clave "nac600_frasco": Foto oficial del frasco de NAC600 + NAD+ (60 cápsulas). Úsala si el cliente pregunta cómo es el producto o pide foto del frasco de NAC600. En el texto y pie de foto usa SIEMPRE "cápsulas" (prohibido decir "cápsula blanda" o "softgel").
 - Clave "nac600_beneficios": Ficha explicativa de soporte hepático, glutatión, energía celular y modo de uso de NAC600. Úsala si el cliente pregunta por la composición, para qué sirve o cómo se toma.
+- Clave "nac600_resena": Infografía editorial y fórmula de vanguardia con aceite de coco y MCT que resuelve la absorción y cuidado celular diario. Úsala para clientes exigentes que buscan más detalle técnico o respaldo editorial.
 - Clave "termix_tobillera": Foto oficial principal de la Tobillera Termix en el pie con calor (50 °C) y masaje. Úsala cuando consulten por primera vez o pidan ver cómo es la tobillera.
 - Clave "termix_promocion": Banner visual con los precios y promociones oficiales de Termix (1x S/ 79, 2x S/ 139 a S/ 69.50 c/u, 3x S/ 189 a S/ 63.00 c/u, envío gratis, pagas al recibir). Úsala al cotizar o hablar de ofertas de tobillera.
 - Clave "termix_foto_real": Foto 100% real en mano con el equipo encendido a 50 °C, cable y manual. Úsala cuando el cliente dude, desconfíe o pida ver fotos reales en vivo.

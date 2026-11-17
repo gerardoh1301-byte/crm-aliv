@@ -35,6 +35,14 @@ export const IMAGENES_REFERENCIA: ImagenReferencia[] = [
     url: "https://cdn.shopify.com/s/files/1/0853/5579/0548/files/Gemini_Generated_Image_c0w967c0w967c0w9.jpg?v=1788538755",
     categoria: "beneficios",
   },
+  {
+    id: "nac600_resena",
+    alias: ["nac600_editorial", "nac600_mct", "nac600_formula", "11.png"],
+    titulo: "Reseña Editorial y Fórmula de Vanguardia NAC600 + NAD+",
+    descripcion: "Infografía editorial que destaca la combinación de NAC y NAD+ en suspensión de aceite de coco y MCT para absorción y cuidado celular diario.",
+    url: googleDriveCdnUrl("1aDmJHkLqMUUvCZK710AYt2n04W_FkESX"),
+    categoria: "beneficios",
+  },
 
   // --- TOBILLERA TERMIX (Hospedadas en Google Drive CDN - Cero carga al CRM) ---
   {
