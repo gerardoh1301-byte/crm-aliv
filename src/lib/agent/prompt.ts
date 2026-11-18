@@ -103,8 +103,11 @@ export function renderSystemPrompt(template: string, opts: { now?: Date; channel
   const hint = CHANNEL_HINTS[channel];
   const conCanal = hint ? `${rendered}\n\n# CANAL\n${hint}` : rendered;
 
-  const bloqueImagenesYAgencias = `\n\n# IMAGENES DE APOYO Y REFERENCIA (HOSPEDADAS EN GOOGLE DRIVE CDN)
-Tienes acceso a la herramienta \`enviar_imagen_referencia\` para compartir imágenes e infografías oficiales directamente en WhatsApp:
+  const bloqueImagenesYAgencias = `\n\n# RECURSOS MULTIMEDIA DE APOYO Y REFERENCIA (FOTOS Y VIDEOS HOSPEDADOS EN GOOGLE DRIVE CDN)
+Tienes acceso a la herramienta \`enviar_imagen_referencia\` para compartir imágenes, infografías y videos oficiales directamente en WhatsApp:
+- Clave "nac600_video": Video demostrativo oficial del producto NAC600 + NAD+. Muestra el frasco real, presentación, etiquetado y cápsulas. ¡ÚSALA INMEDIATAMENTE SI EL CLIENTE PIDE UN VIDEO ("quiero ver un video", "envíame un video", "tienes video", etc.)! NUNCA digas que no tienes videos ni ofrezcas solo fotos si el cliente pidió video.
+- Clave "termix_video": Video real completo de unboxing en mano (35s) de la Tobillera Termix mostrando desempaque, accesorios, encendido y funcionamiento. ¡Úsala inmediatamente si el cliente pide video de la tobillera!
+- Clave "termix_video_loop": Video corto / loop de unboxing de la Tobillera Termix (7s).
 - Clave "nac600_frasco": Foto oficial del frasco de NAC600 + NAD+ (60 cápsulas). Úsala si el cliente pregunta cómo es el producto o pide foto del frasco de NAC600. En el texto y pie de foto usa SIEMPRE "cápsulas" (prohibido decir "cápsula blanda" o "softgel").
 - Clave "nac600_beneficios": Ficha explicativa de soporte hepático, glutatión, energía celular y modo de uso de NAC600. Úsala si el cliente pregunta por la composición, para qué sirve o cómo se toma.
 - Clave "nac600_resena": Infografía editorial y fórmula de vanguardia con aceite de coco y MCT que resuelve la absorción y cuidado celular diario. Úsala para clientes exigentes que buscan más detalle técnico o respaldo editorial.
@@ -116,11 +119,12 @@ Tienes acceso a la herramienta \`enviar_imagen_referencia\` para compartir imág
 - Clave "termix_comparativa": Tabla comparativa de Termix frente a tobilleras comunes / vendas elásticas pasivas.
 - Clave "yape_adelanto": Datos y comprobante oficial de Yape / Plin (951365418 - Gerardo Huaynalaya). Úsala cuando un cliente de provincia solicite los datos de pago para su adelanto de S/ 20.
 
-REGLAS ESTRICTAS DE SELECCIÓN DE IMÁGENES (ANTI-CRUCE):
-- ⚠️ PROHIBIDO TERMINANTEMENTE enviar fotos o infografías de Termix Tobillera cuando el cliente esté preguntando o conversando sobre NAC600.
-- ⚠️ PROHIBIDO TERMINANTEMENTE enviar fotos de NAC600 cuando el cliente esté preguntando o conversando sobre la Tobillera Termix.
-- Cada imagen enviada debe corresponder al 100% al producto que el cliente tiene en interés o está consultando en ese instante.
-- El parámetro \`motivo\` de la herramienta actúa como pie de foto (caption) en WhatsApp. Escribe una frase breve, cordial y vendedora (ej: "¡Aquí te comparto la foto de nuestro NAC600 + NAD+! 🌿✨").
+REGLAS ESTRICTAS DE SELECCIÓN MULTIMEDIA (ANTI-CRUCE Y SOLICITUD DE VIDEOS):
+- ⚠️ SOLICITUDES DE VIDEO OBLIGATORIAS: Si el cliente pide explícitamente ver un video del producto (ej: "quiero ver un video", "envíame un video del producto", "¿tienes video?"), DEBES llamar inmediatamente a \`enviar_imagen_referencia\` con \`clave: "nac600_video"\` (para NAC600) o \`clave: "termix_video"\` (para Termix). ESTÁ TERMINANTEMENTE PROHIBIDO responder que "por el momento solo enviamos fotos" o preguntar si quiere que se lo envíes en vez de enviarlo. ¡Mándalo de inmediato!
+- ⚠️ PROHIBIDO TERMINANTEMENTE enviar fotos, videos o infografías de Termix Tobillera cuando el cliente esté preguntando o conversando sobre NAC600.
+- ⚠️ PROHIBIDO TERMINANTEMENTE enviar fotos, videos de NAC600 cuando el cliente esté preguntando o conversando sobre la Tobillera Termix.
+- Cada recurso multimedia enviado debe corresponder al 100% al producto que el cliente tiene en interés o está consultando en ese instante.
+- El parámetro \`motivo\` de la herramienta actúa como pie de foto o pie de video (caption) en WhatsApp. Escribe una frase breve, cordial y vendedora (ej: "¡Aquí te comparto el video oficial de nuestro NAC600 + NAD+! 🌿✨").
 - En NAC600, describe siempre el producto como "cápsulas" (PROHIBIDO usar los términos "cápsula blanda", "cápsulas blandas", "softgel" o "softgels").
 - NUNCA respondas con el texto literal "Foto de referencia" ni dejes el mensaje como texto suelto sin contexto.
 

@@ -5,6 +5,7 @@ export interface ImagenReferencia {
   descripcion: string;
   url: string;
   categoria: "producto" | "beneficios" | "pago" | "promocion";
+  tipo?: "image" | "video";
 }
 
 /**
@@ -37,6 +38,15 @@ export const IMAGENES_REFERENCIA: ImagenReferencia[] = [
     descripcion: "Infografía editorial oficial: respaldo científico de absorción de NAC y NAD+ en suspensión de MCT, salud celular y antioxidante maestro.",
     url: "https://lh3.googleusercontent.com/d/1aDmJHkLqMUUvCZK710AYt2n04W_FkESX",
     categoria: "beneficios",
+  },
+  {
+    id: "nac600_video",
+    alias: ["video_nac600", "nac600_video_crudo", "video_producto_nac600", "video_nac", "video_nac_600"],
+    titulo: "Video Demostrativo Oficial NAC600 + NAD+",
+    descripcion: "Video real del producto en mano mostrando presentación, frasco, etiquetado y cápsulas de NAC600 + NAD+.",
+    url: "https://drive.usercontent.google.com/download?id=1aC5l0GNusjxa3gKTUWRu4hC86xcWnu0X&export=download",
+    categoria: "producto",
+    tipo: "video",
   },
 
   // =========================================================================
@@ -116,6 +126,24 @@ export const IMAGENES_REFERENCIA: ImagenReferencia[] = [
     url: "https://lh3.googleusercontent.com/d/1oJ4I3s26vvp32hPWmY-dDgFFoKpst_Uo",
     categoria: "producto",
   },
+  {
+    id: "termix_video",
+    alias: ["video_termix", "termix_video_unboxing", "10_termix_video_real_unboxing_en_mano", "video_real_termix", "video_tobillera"],
+    titulo: "Video Real Unboxing Tobillera Termix",
+    descripcion: "Video real de 35s mostrando el desempaque, accesorios, encendido y funcionamiento de la Tobillera Termix.",
+    url: "https://drive.usercontent.google.com/download?id=1yM-G9IZUGRAMK77CswFdU6EQ58-mt8k9&export=download",
+    categoria: "producto",
+    tipo: "video",
+  },
+  {
+    id: "termix_video_loop",
+    alias: ["termix_video_corto", "11_termix_video_loop_corto_unboxing", "loop_termix"],
+    titulo: "Video Corto Unboxing Termix",
+    descripcion: "Video ligero (7s) en bucle mostrando la caja y tobillera Termix.",
+    url: "https://drive.usercontent.google.com/download?id=1uVp7AByUPxMP-YM5Yu7QikLvTzY-b_in&export=download",
+    categoria: "producto",
+    tipo: "video",
+  },
 
   // =========================================================================
   // --- 3. DATOS DE PAGO ---
@@ -177,6 +205,9 @@ export function resolverMejorImagen(params: {
   const esTemaTermix = termixMatches > 0 && (termixMatches > nacMatches || motivoMencionaTermix);
   const esTemaPago =
     /\b(yape|plin|adelanto|s\/20|cuenta|transferencia|banco)\b/i.test(textoCombinado);
+  const pideVideo =
+    /\b(video|videos|grabaci[oó]n|filmaci[oó]n|filme|unboxing video)\b/i.test(textoCombinado) ||
+    claveRaw.includes("video");
 
   let claveEfectiva = claveRaw;
 
@@ -186,7 +217,7 @@ export function resolverMejorImagen(params: {
     (motivoMencionaNac || (nacMatches > 0 && termixMatches === 0) || (nacMatches > 0 && !motivoMencionaTermix && !esAmbos))
   ) {
     const esBeneficios = /\b(beneficio|para que sirve|como se toma|dosis|ingredientes|composicion|ficha)\b/i.test(textoCombinado);
-    claveEfectiva = esBeneficios ? "nac600_beneficios" : "nac600_frasco";
+    claveEfectiva = pideVideo ? "nac600_video" : esBeneficios ? "nac600_beneficios" : "nac600_frasco";
     const imgCorregida = buscarImagenReferencia(claveEfectiva) || IMAGENES_REFERENCIA[0];
     return {
       imagen: imgCorregida,
@@ -202,8 +233,17 @@ export function resolverMejorImagen(params: {
   ) {
     const esPromocion = /\b(precio|cuanto|cuesta|oferta|promo|promocion|pack|packs)\b/i.test(textoCombinado);
     const esFotoReal = /\b(real|en mano|original|confianza|desconfi)\b/i.test(textoCombinado);
-    claveEfectiva = esPromocion ? "termix_promocion" : esFotoReal ? "termix_foto_real" : "termix_tobillera";
-    const imgCorregida = buscarImagenReferencia(claveEfectiva) || IMAGENES_REFERENCIA[2];
+    const esLoop = /\b(loop|corto|rapido)\b/i.test(textoCombinado);
+    claveEfectiva = pideVideo
+      ? esLoop
+        ? "termix_video_loop"
+        : "termix_video"
+      : esPromocion
+      ? "termix_promocion"
+      : esFotoReal
+      ? "termix_foto_real"
+      : "termix_tobillera";
+    const imgCorregida = buscarImagenReferencia(claveEfectiva) || IMAGENES_REFERENCIA[3];
     return {
       imagen: imgCorregida,
       corregida: true,
@@ -211,9 +251,26 @@ export function resolverMejorImagen(params: {
     };
   }
 
-  // 3. Selección inteligente si la clave no vino o no fue exacta
+  // 3. Si el cliente o motivo pide video explícitamente y la clave no es de video, actualizar a video correspondiente
+  if (pideVideo && !claveEfectiva.includes("video")) {
+    if (esTemaTermix) {
+      const esLoop = /\b(loop|corto|rapido)\b/i.test(textoCombinado);
+      claveEfectiva = esLoop ? "termix_video_loop" : "termix_video";
+    } else {
+      claveEfectiva = "nac600_video";
+    }
+  }
+
+  // 4. Selección inteligente si la clave no vino o no fue exacta
   if (!claveEfectiva || !buscarImagenReferencia(claveEfectiva)) {
-    if (esTemaPago) {
+    if (pideVideo) {
+      if (esTemaTermix) {
+        const esLoop = /\b(loop|corto|rapido)\b/i.test(textoCombinado);
+        claveEfectiva = esLoop ? "termix_video_loop" : "termix_video";
+      } else {
+        claveEfectiva = "nac600_video";
+      }
+    } else if (esTemaPago) {
       claveEfectiva = "yape_adelanto";
     } else if (esTemaNac) {
       const esBeneficios = /\b(beneficio|para que sirve|como se toma|dosis|ingredientes|composicion|ficha)\b/i.test(textoCombinado);

@@ -95,4 +95,48 @@ describe("Selección de Fotos y Blindaje Anti-Cruce de Productos", () => {
 
     expect(res.imagen.id).toBe("yape_adelanto");
   });
+
+  it("RECURSOS VIDEO: encuentra y despacha video oficial cuando el cliente pide video de NAC600", () => {
+    const nacVideo = buscarImagenReferencia("nac600_video");
+    expect(nacVideo).toBeDefined();
+    expect(nacVideo?.tipo).toBe("video");
+    expect(nacVideo?.url).toContain("drive.usercontent.google.com");
+
+    // Cuando el cliente pide 'quiero ver un video' o 'envíame un video del producto'
+    const res = resolverMejorImagen({
+      claveSolicitada: "nac600_frasco",
+      motivo: "Video oficial de NAC600",
+      textoContexto: "Quiero ver un video del producto NAC600 + NAD+",
+    });
+
+    expect(res.imagen.id).toBe("nac600_video");
+    expect(res.imagen.tipo).toBe("video");
+  });
+
+  it("RECURSOS VIDEO: despacha video de unboxing cuando el cliente pide video de Tobillera Termix", () => {
+    const termixVideo = buscarImagenReferencia("termix_video");
+    expect(termixVideo).toBeDefined();
+    expect(termixVideo?.tipo).toBe("video");
+
+    const res = resolverMejorImagen({
+      claveSolicitada: "termix_tobillera",
+      motivo: "Video demostrativo de la tobillera",
+      textoContexto: "¿Tienes video de la tobillera en funcionamiento?",
+    });
+
+    expect(res.imagen.id).toBe("termix_video");
+    expect(res.imagen.tipo).toBe("video");
+  });
+
+  it("BLINDAJE VIDEO: Cruce detectado con video -> corrige al video del producto correcto", () => {
+    const res = resolverMejorImagen({
+      claveSolicitada: "termix_tobillera",
+      motivo: "Video del producto",
+      textoContexto: "Envíame un video del producto NAC600 para ver las cápsulas",
+    });
+
+    expect(res.corregida).toBe(true);
+    expect(res.imagen.id).toBe("nac600_video");
+    expect(res.imagen.tipo).toBe("video");
+  });
 });

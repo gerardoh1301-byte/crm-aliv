@@ -541,7 +541,7 @@ async function enviarImagenReferencia(
       text: caption,
       attachments: [
         {
-          type: "image",
+          type: (img.tipo ?? "image") as "image" | "video",
           url: img.url,
           name: img.titulo,
         },
@@ -839,25 +839,25 @@ function toolsGenericas(): ToolAgente[] {
     {
       definicion: definir(
         "enviar_imagen_referencia",
-        "Envía una imagen o infografía de referencia oficial al cliente por WhatsApp hospedada en Google Drive CDN (sin recargar el servidor del CRM). " +
-          "Claves válidas: 'termix_tobillera' (foto en pie), 'termix_promocion' (banner precios), 'termix_foto_real' (en mano encendida), 'termix_contenido_caja' (unboxing), 'termix_caracteristicas' (grafeno/masaje), 'termix_comparativa' (vs comunes), 'nac600_frasco', 'nac600_beneficios', 'nac600_resena', 'yape_adelanto'.",
+        "Envía una imagen, infografía o video oficial al cliente por WhatsApp hospedado en Google Drive CDN (sin recargar el servidor del CRM). " +
+          "Claves válidas: 'nac600_video' (video oficial del frasco en mano), 'termix_video' (video unboxing de la tobillera), 'termix_video_loop' (video corto), 'nac600_frasco', 'nac600_beneficios', 'nac600_resena', 'termix_tobillera' (foto en pie), 'termix_promocion' (banner precios), 'termix_foto_real' (en mano encendida), 'termix_contenido_caja' (unboxing), 'termix_caracteristicas' (grafeno/masaje), 'termix_comparativa' (vs comunes), 'yape_adelanto'.",
         {
           type: "object",
           properties: {
             clave: {
               type: "string",
-              description: "Identificador de la imagen: 'termix_tobillera', 'termix_promocion', 'termix_foto_real', 'termix_contenido_caja', 'termix_caracteristicas', 'termix_comparativa', 'nac600_frasco', 'nac600_beneficios', 'nac600_resena' o 'yape_adelanto'.",
+              description: "Identificador del recurso multimedia: 'nac600_video', 'termix_video', 'termix_video_loop', 'nac600_frasco', 'nac600_beneficios', 'nac600_resena', 'termix_tobillera', 'termix_promocion', 'termix_foto_real', 'termix_contenido_caja', 'termix_caracteristicas', 'termix_comparativa' o 'yape_adelanto'.",
             },
             motivo: {
               type: "string",
-              description: "Pie de foto (caption) breve y cordial para acompañar la imagen en WhatsApp (opcional).",
+              description: "Pie de foto/video (caption) breve y cordial para acompañar el multimedia en WhatsApp (opcional).",
             },
           },
           required: ["clave"],
           additionalProperties: false,
         }
       ),
-      descripcionUI: "Permite al agente enviar fotos oficiales de productos, infografías de beneficios y datos de pago directamente por WhatsApp desde Google Drive CDN.",
+      descripcionUI: "Permite al agente enviar fotos y videos oficiales de productos, infografías de beneficios y datos de pago directamente por WhatsApp desde Google Drive CDN.",
       ejecutar: (a, ctx) => enviarImagenReferencia(a as { clave?: string; motivo?: string }, ctx),
     },
     {

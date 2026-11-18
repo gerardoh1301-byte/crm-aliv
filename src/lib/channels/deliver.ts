@@ -145,7 +145,7 @@ export async function deliverMessage(
       provider: conversation.provider,
       direction: "out",
       origin,
-      type: msgToSend.attachments?.length ? "image" : msgToSend.template ? "template" : "text",
+      type: msgToSend.attachments?.length ? (msgToSend.attachments[0].type ?? "image") : msgToSend.template ? "template" : "text",
       body,
       rawPayload: (msgToSend.attachments?.length || msgToSend.replyTo || msgToSend.quotedText) ? {
         ...(msgToSend.attachments?.length ? { attachments: msgToSend.attachments } : {}),
