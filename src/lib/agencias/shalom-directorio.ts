@@ -321,15 +321,27 @@ const AGENCIAS_CURADAS: AgenciaShalom[] = [
 
   // --- ICA / CHINCHA / PISCO / NAZCA ---
   {
-    id: "ica-cutervo",
-    nombre: "Shalom Ica - Av. Cutervo",
+    id: "shalom-405-cvoa",
+    nombre: "Shalom Ica - Av. J.J. Elías (Cutervo)",
     departamento: "Ica",
     provincia: "Ica",
     distrito: "Ica",
-    direccion: "Av. Cutervo 180",
-    referencia: "Frente a Plaza del Sol Ica",
+    direccion: "Manzana B, Sub-lote 02 del Fundo La Palma",
+    referencia: "Cruce de Av. Cutervo con Av. J.J. Elías (Frente a Plaza del Sol)",
     principal: true,
-    coincidencias: ["ica", "cutervo", "plaza del sol", "centro ica", "panamericana sur ica"],
+    coincidencias: [
+      "ica",
+      "cutervo",
+      "av cutervo",
+      "jj elias",
+      "j.j elias",
+      "elias",
+      "cvoa",
+      "plaza del sol",
+      "centro ica",
+      "fundo la palma",
+      "panamericana sur ica",
+    ],
   },
   {
     id: "chincha-benavides",

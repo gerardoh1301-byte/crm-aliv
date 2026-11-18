@@ -331,12 +331,28 @@ export function DealCard({
       ? ordenItems.map((it: any) => `${it.cantidad ?? 1}x ${it.titulo ?? it.title ?? "Producto"}`).join(", ")
       : title,
     productos: Array.isArray(ordenItems) && ordenItems.length > 0
-      ? ordenItems.map((it: any) => ({
-          nombre: it.titulo ?? it.title ?? it.nombre ?? "NAC600",
-          cantidad: Number(it.cantidad ?? it.quantity ?? 1) || 1,
-          precioUnitario: Number(it.precio ?? it.price ?? 0) || 0,
-        }))
-      : undefined,
+      ? ordenItems.map((it: any) => {
+          let cant = Number(it.cantidad ?? it.quantity ?? 1) || 1;
+          const tot = ordenTotal ? Number(ordenTotal) : (value ? (value > 500 ? value / 100 : value) : 0);
+          // Si es oferta 3x NAC600 a S/ 199 y venía cantidad 1, asignar 3
+          if (tot === 199 && cant === 1 && (title?.toLowerCase().includes("nac") || it.titulo?.toLowerCase().includes("nac"))) {
+            cant = 3;
+          }
+          return {
+            nombre: it.titulo ?? it.title ?? it.nombre ?? "NAC600",
+            cantidad: cant,
+            precioUnitario: Number(it.precioUnitario ?? it.precio ?? it.price ?? 0) || (tot > 0 ? Math.round((tot / cant) * 100) / 100 : 0),
+          };
+        })
+      : (() => {
+          const tot = ordenTotal ? Number(ordenTotal) : (value ? (value > 500 ? value / 100 : value) : 119);
+          const cant = tot === 199 ? 3 : tot === 189 ? 2 : 1;
+          return [{
+            nombre: "NAC600",
+            cantidad: cant,
+            precioUnitario: Math.round((tot / cant) * 100) / 100,
+          }];
+        })(),
   };
 
   const handleContactNavigate = (e: React.MouseEvent) => {

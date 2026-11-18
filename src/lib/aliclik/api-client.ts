@@ -60,6 +60,116 @@ export async function resolveAliclikToken(): Promise<string> {
   return TOKEN_INTEGRATION_FALLBACK;
 }
 
+/**
+ * Calcula la fecha de envío más cercana activa para Alidriver / Shalom Drop.
+ * Horario de corte Drop Shalom en Almacén WANKLIC GROUP 2: 12:00h (mediodía hora Perú).
+ * Si la hora actual en Lima es >= 12:00 o domingo, avanza al día hábil siguiente en formato DD/MM/YYYY.
+ */
+export function calcularFechaEnvioShalom(): string {
+  const ahora = new Date();
+  // Hora local Perú (UTC-5)
+  const offsetPeru = -5 * 60;
+  const fechaPeru = new Date(
+    ahora.getTime() + (ahora.getTimezoneOffset() + offsetPeru) * 60000
+  );
+  const hora = fechaPeru.getHours();
+
+  const fechaEnvio = new Date(fechaPeru);
+  if (hora >= 12) {
+    fechaEnvio.setDate(fechaEnvio.getDate() + 1);
+  }
+  // Si cae domingo (0), pasar a lunes
+  if (fechaEnvio.getDay() === 0) {
+    fechaEnvio.setDate(fechaEnvio.getDate() + 1);
+  }
+
+  const dd = String(fechaEnvio.getDate()).padStart(2, "0");
+  const mm = String(fechaEnvio.getMonth() + 1).padStart(2, "0");
+  const yyyy = fechaEnvio.getFullYear();
+  return `${dd}/${mm}/${yyyy}`;
+}
+
+/**
+ * Normaliza y resuelve la denominación oficial de la agencia Shalom y su DropShalomId
+ * para AliClik y Shalom PRO a partir de nombres coloquiales o referencias.
+ */
+export function normalizarAgenciaShalomAliclik(
+  texto: string,
+  depto?: string | null
+): {
+  dropShalomId: number | null;
+  agencyDestination: string;
+  agencyAddress: string;
+  departmentName: string;
+  provinceName: string;
+  districtName: string;
+} {
+  const norm = (texto || "").toLowerCase().trim();
+  const normDepto = (depto || "").toLowerCase().trim();
+
+  // Caso especial crítico: Ica Av. Cutervo -> Denominación oficial Shalom: ICA AV. JJ ELIAS (DropShalomId: 405)
+  if (
+    (norm.includes("cutervo") || norm.includes("elias")) &&
+    (norm.includes("ica") || normDepto.includes("ica"))
+  ) {
+    return {
+      dropShalomId: 405,
+      agencyDestination: "ICA / ICA / ICA / ICA AV. JJ ELIAS",
+      agencyAddress:
+        "MANZANA B, SUB-LOTE 02 DEL FUNDO LA PALMA ICA, REF. CRUCE DE AV. CUTERVO CON AV. J.J ELIAS",
+      departmentName: "ICA",
+      provinceName: "ICA",
+      districtName: "ICA",
+    };
+  }
+
+  // Pisco Centro
+  if (norm.includes("pisco")) {
+    return {
+      dropShalomId: 404,
+      agencyDestination: "ICA / PISCO / PISCO / PISCO CENTRO",
+      agencyAddress: "AV. SAN MARTIN 450 PISCO",
+      departmentName: "ICA",
+      provinceName: "PISCO",
+      districtName: "PISCO",
+    };
+  }
+
+  // Chincha
+  if (norm.includes("chincha")) {
+    return {
+      dropShalomId: 406,
+      agencyDestination: "ICA / CHINCHA / CHINCHA ALTA / CHINCHA",
+      agencyAddress: "AV. OSCAR R. BENAVIDES 620",
+      departmentName: "ICA",
+      provinceName: "CHINCHA",
+      districtName: "CHINCHA ALTA",
+    };
+  }
+
+  // Arequipa Parra
+  if (norm.includes("arequipa") && (norm.includes("parra") || norm.includes("centro"))) {
+    return {
+      dropShalomId: 410,
+      agencyDestination: "AREQUIPA / AREQUIPA / AREQUIPA / AV PARRA 379",
+      agencyAddress: "AV. PARRA 379 AREQUIPA",
+      departmentName: "AREQUIPA",
+      provinceName: "AREQUIPA",
+      districtName: "AREQUIPA",
+    };
+  }
+
+  // Fallback genérico manteniendo el texto recibido
+  return {
+    dropShalomId: null,
+    agencyDestination: texto,
+    agencyAddress: texto,
+    departmentName: depto || "PROVINCIA",
+    provinceName: depto || "PROVINCIA",
+    districtName: depto || "PROVINCIA",
+  };
+}
+
 export interface CrearOrdenAgenciaParams {
   clienteNombre: string;
   clienteTelefono: string;
@@ -67,7 +177,11 @@ export interface CrearOrdenAgenciaParams {
   departamento?: string;
   provincia?: string;
   distrito?: string;
-  agenciaShalomNombre: string; // ej. "Shalom Ica - Av. Cutervo"
+  agenciaShalomNombre: string; // ej. "ICA / ICA / ICA / ICA AV. JJ ELIAS"
+  agenciaShalomDireccion?: string;
+  dropShalomId?: number;
+  fechaEnvio?: string; // ej. "19/11/2026"
+  tipoMercancia?: string; // ej. "Caja Paquete XS"
   productos: Array<{
     nombre: string;
     cantidad: number;
@@ -99,18 +213,59 @@ export async function crearOrdenAgenciaServicioCompleto(params: CrearOrdenAgenci
   const orderNumber = `${ALICLIK_COMPANY_PREFIX}${String(Date.now()).slice(-7)}`;
   const idempotencyKey = crypto.randomUUID();
 
-  // Formato descriptivo de productos para AliClik
+  // 1. Normalizar agencia Shalom e ID oficial
+  const agenciaNormalizada = normalizarAgenciaShalomAliclik(
+    params.agenciaShalomNombre,
+    params.departamento
+  );
+  const dropShalomIdFinal = params.dropShalomId || agenciaNormalizada.dropShalomId;
+  const agenciaDestinoFinal = agenciaNormalizada.agencyDestination;
+  const agenciaDireccionFinal =
+    params.agenciaShalomDireccion || agenciaNormalizada.agencyAddress;
+  const departamentoFinal = params.departamento || agenciaNormalizada.departmentName;
+  const provinciaFinal = params.provincia || agenciaNormalizada.provinceName;
+  const distritoFinal = params.distrito || agenciaNormalizada.districtName;
+
+  // 2. Fecha de envío más cercana activa (si no se proporciona)
+  const fechaEnvioTexto = params.fechaEnvio || calcularFechaEnvioShalom();
+  // El backend de AliClik exige formato ISO (ej. 2026-11-19T00:00:00.000Z)
+  let scheduleDateIso = fechaEnvioTexto;
+  if (/^\d{2}\/\d{2}\/\d{4}$/.test(fechaEnvioTexto)) {
+    const [d, m, y] = fechaEnvioTexto.split("/");
+    scheduleDateIso = `${y}-${m}-${d}T00:00:00.000Z`;
+  } else if (/^\d{4}-\d{2}-\d{2}$/.test(fechaEnvioTexto)) {
+    scheduleDateIso = `${fechaEnvioTexto}T00:00:00.000Z`;
+  }
+
+  // 3. Tipo de mercancía (por defecto "Caja Paquete XS" para frascos NAC600)
+  const tipoMercanciaFinal = params.tipoMercancia || "Caja Paquete XS";
+
+  // 4. Calcular cantidades y subtotales asegurando que sumen exactamente el total
+  const cantidadTotal = params.productos.reduce((acc, p) => acc + (p.cantidad || 1), 0);
+  const precioUnitarioProrrateado =
+    cantidadTotal > 0
+      ? Math.round((params.total / cantidadTotal) * 100) / 100
+      : params.total;
+
+  // Formato descriptivo de productos para AliClik (ej. "3 NAC600")
   const productDetail = params.productos
     .map((p) => `${p.cantidad} ${p.nombre}`)
     .join(", ");
 
   // Mapear cada producto con su SKU y Almacén oficial verificado en AliClik
-  const orderDetails = params.productos.map((p) => {
+  let subtotalAcumulado = 0;
+  const orderDetails = params.productos.map((p, idx) => {
     const info = resolverSkuAliclik(p.nombre);
+    const esUltimo = idx === params.productos.length - 1;
+    const subtotal = esUltimo
+      ? params.total - subtotalAcumulado
+      : Math.round(p.cantidad * precioUnitarioProrrateado * 100) / 100;
+    subtotalAcumulado += subtotal;
+
     return {
-      price: p.precioUnitario,
+      price: precioUnitarioProrrateado,
       quantity: p.cantidad,
-      subtotal: p.cantidad * p.precioUnitario,
+      subtotal,
       skuId: info.skuId,
       warehouseId: info.warehouseId,
       companyId: info.companyId,
@@ -127,7 +282,9 @@ export async function crearOrdenAgenciaServicioCompleto(params: CrearOrdenAgenci
     userId: ALICLIK_USER_ID,
     total: params.total,
     prefixPhone: "51",
-    note: params.nota || `Pedido registrado automáticamente desde CRM Aliv - Servicio Completo Shalom`,
+    note:
+      params.nota ||
+      `Pedido registrado automáticamente desde CRM Aliv - Servicio Completo Shalom (${tipoMercanciaFinal})`,
     channel: "WhatsApp CRM",
     status: "PENDING_DELIVERY",
     commissionCod: 0,
@@ -144,6 +301,7 @@ export async function crearOrdenAgenciaServicioCompleto(params: CrearOrdenAgenci
     flagAliShalom: true, // "Lo hace AliClik (Servicio completo)" -> Generan guía y rótulo Shalom PRO
     flagCourierToAgency: true, // "Courier Alidriver" -> Recoge en almacén y lleva a Shalom
     productDetail,
+    merchandiseShalom: tipoMercanciaFinal, // "Caja Paquete XS"
     warehouseName: primarySku.warehouseName,
     warehouseId: primarySku.warehouseId,
     customer: {
@@ -155,28 +313,31 @@ export async function crearOrdenAgenciaServicioCompleto(params: CrearOrdenAgenci
     orderDetails,
     preOrderHistory: {},
     shipping: {
-      address1: params.agenciaShalomNombre,
+      scheduleDate: scheduleDateIso, // Formato ISO requerido por el backend de AliClik
+      DropShalomId: dropShalomIdFinal || void 0, // ID numérico de la agencia en catálogo Shalom
+      agencyDestination: agenciaDestinoFinal,
+      agencyAddress: agenciaDireccionFinal,
+      addressPickUp: agenciaDestinoFinal,
+      address1: agenciaDestinoFinal,
       address2: "",
-      reference: params.agenciaShalomNombre,
+      reference: agenciaDireccionFinal,
       countryName: "Perú",
       countryCode: "PER",
       firstName: params.clienteNombre,
       firstLastName: "",
       secondLastName: "",
-      departmentName: params.departamento || null,
+      departmentName: departamentoFinal,
       departmentCode: null,
-      provinceName: params.provincia || null,
+      provinceName: provinciaFinal,
       provinceCode: null,
-      districtName: params.distrito || null,
+      districtName: distritoFinal,
       districtCode: null,
       shippingByAgency: true,
       agencyName: "SHALOM",
-      agencyAddress: params.agenciaShalomNombre,
       contactName: params.clienteNombre,
       contactPhone: params.clienteTelefono.replace(/\D/g, ""),
       contactDocumenType: "DNI",
       contactDocumentNumber: params.clienteDni || "",
-      addressPickUp: params.agenciaShalomNombre,
       shippingCost: 0,
       senderContact: params.clienteDni || "",
       senderPhone: params.clienteTelefono.replace(/\D/g, ""),
@@ -211,6 +372,9 @@ export async function crearOrdenAgenciaServicioCompleto(params: CrearOrdenAgenci
     ok: true,
     orderNumber,
     id: result?.id,
+    fechaEnvio: fechaEnvioTexto,
+    tipoMercancia: tipoMercanciaFinal,
+    agenciaDestino: agenciaDestinoFinal,
     result,
   };
 }
