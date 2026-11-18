@@ -31,6 +31,24 @@ export interface ResultadoNotificacionLlegada {
   }>;
 }
 
+function esHorarioSeguroMensajes(): boolean {
+  try {
+    const formateador = new Intl.DateTimeFormat("en-US", {
+      timeZone: "America/Lima",
+      hour: "numeric",
+      minute: "numeric",
+      hour12: false,
+    });
+    const partes = formateador.formatToParts(new Date());
+    const hora = parseInt(partes.find((p) => p.type === "hour")?.value ?? "0", 10);
+    const minuto = parseInt(partes.find((p) => p.type === "minute")?.value ?? "0", 10);
+    const decimal = hora + minuto / 60;
+    return decimal >= 8.5 && decimal <= 19.5;
+  } catch {
+    return true;
+  }
+}
+
 /**
  * Escanea los pedidos en camino con guía Shalom, verifica su estado en tiempo real
  * con los servidores de Shalom, y si el paquete ya llegó a la agencia de destino,
@@ -204,6 +222,22 @@ export async function verificarYNotificarLlegadasShalom(
           estadoLive: "En destino",
           notificado: false,
           motivoNoNotificado: "No se encontró conversación activa para enviar WhatsApp",
+        });
+        continue;
+      }
+
+      // Si estamos fuera de horario comercial seguro y no se fuerza manualmente, diferir el mensaje
+      if (!forzar && !esHorarioSeguroMensajes()) {
+        detalles.push({
+          numeroOrden: c.numeroOrden,
+          cliente: c.contactName,
+          phone: c.contactPhone,
+          guia: c.numeroGuia,
+          agencia: agenciaNombre,
+          saldo: saldoSoles,
+          estadoLive: "En destino (esperando horario comercial)",
+          notificado: false,
+          motivoNoNotificado: "Fuera de horario seguro (08:30 a 19:30). Se enviará en la mañana.",
         });
         continue;
       }

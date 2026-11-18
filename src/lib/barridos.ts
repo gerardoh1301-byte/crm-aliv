@@ -18,6 +18,8 @@ const ENDPOINTS = [
   "/api/alertas",
   // Auditoría automática de chats abandonados para rescate de ventas caídas
   "/api/agent/rescate",
+  // Rastreo automático de envíos Shalom y avisos de llegada/recordatorio
+  "/api/shalom/verificar-envios",
 ];
 
 declare global {
