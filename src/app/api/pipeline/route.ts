@@ -3,7 +3,7 @@ import { setDealStage } from "@/lib/deals/stage";
 import { db } from "@/db";
 import { pipelineStages, pipelines, deals, contacts, teamMembers } from "@/db/schema";
 import { pedidosOrdenes } from "../../../../modules/pedidos/tabla";
-import { eq, asc, or } from "drizzle-orm";
+import { eq, asc } from "drizzle-orm";
 import { requireMember } from "@/lib/api-auth";
 import { ownerFilter, canAccessContactId } from "@/lib/team";
 import { countDocumentsByContact } from "@/lib/documents";
@@ -52,17 +52,36 @@ export async function GET() {
     .from(deals)
     .leftJoin(contacts, eq(deals.contactId, contacts.id))
     .leftJoin(teamMembers, eq(contacts.ownerId, teamMembers.id))
-    .leftJoin(pedidosOrdenes, or(eq(deals.id, pedidosOrdenes.dealId), eq(deals.contactId, pedidosOrdenes.contactId)))
+    // A4: Unir el pedido con la operación únicamente por dealId para evitar duplicar tarjetas
+    .leftJoin(pedidosOrdenes, eq(deals.id, pedidosOrdenes.dealId))
     .where(ownerFilter(auth.member));
 
-  const docCounts = await countDocumentsByContact([...new Set(allDeals.map((d) => d.contactId))]);
+  // Deduplicar por deal.id en caso de que un mismo dealId aparezca en más de una orden
+  const seenDealIds = new Set<string>();
+  const uniqueDeals = allDeals.filter((d) => {
+    if (seenDealIds.has(d.id)) return false;
+    seenDealIds.add(d.id);
+    return true;
+  });
 
-  const pipeline = stages.map((stage) => ({
-    ...stage,
-    deals: allDeals
-      .filter((d) => d.stageId === stage.id)
-      .map((d) => ({ ...d, docCount: docCounts[d.contactId] ?? 0 })),
-  }));
+  const docCounts = await countDocumentsByContact([...new Set(uniqueDeals.map((d) => d.contactId))]);
+
+  const pipeline = stages.map((stage) => {
+    const esConsulta =
+      stage.key === "consulta_catalogo" ||
+      stage.name.toLowerCase().includes("consulta");
+    return {
+      ...stage,
+      deals: uniqueDeals
+        .filter((d) => d.stageId === stage.id)
+        .map((d) => ({
+          ...d,
+          // A5: Poner valor 0 a las consultas (leads sin pedido) para no inflar el valor del pipeline
+          value: esConsulta && !d.ordenId ? 0 : d.value,
+          docCount: docCounts[d.contactId] ?? 0,
+        })),
+    };
+  });
 
   return NextResponse.json(pipeline);
 }

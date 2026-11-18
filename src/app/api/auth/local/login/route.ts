@@ -6,10 +6,16 @@ import { timingSafeEqual } from "node:crypto";
 import { COOKIE_SESION_LOCAL, ID_MIEMBRO_LOCAL } from "@/lib/modo-local";
 import { DURACION_SESION_SEG, firmarSesion } from "@/lib/sesion-local";
 import { MASTER_GOOGLE_EMAIL } from "@/app/api/auth/local/perfiles/route";
+import {
+  limpiarIntentosLogin,
+  obtenerIpCliente,
+  registrarIntentoFallidoLogin,
+  verificarLimiteIntentosLogin,
+} from "@/lib/rate-limit-login";
 
 export const dynamic = "force-dynamic";
 
-function pinIgual(a: string, b: string): boolean {
+export function pinIgual(a: string, b: string): boolean {
   const ba = Buffer.from(a);
   const bb = Buffer.from(b);
   return ba.length === bb.length && timingSafeEqual(ba, bb);
@@ -59,6 +65,7 @@ async function verificarTokenGoogle(idToken: string): Promise<{
       (await leerSettingTexto("auth.google_client_id"));
     if (
       clientIdConfigurado &&
+      clientIdConfigurado.includes(".apps.googleusercontent.com") &&
       data.aud &&
       data.aud.trim() !== clientIdConfigurado.trim()
     ) {
@@ -130,10 +137,24 @@ async function asegurarAdminMaestro() {
 
 export async function POST(request: NextRequest) {
   try {
+    const ip = obtenerIpCliente(request.headers);
+    const limite = verificarLimiteIntentosLogin(ip);
+    if (!limite.permitido) {
+      return NextResponse.json(
+        {
+          error:
+            "Demasiados intentos fallidos. Espera 15 minutos antes de volver a intentar.",
+        },
+        {
+          status: 429,
+          headers: { "Retry-After": String(limite.retryAfterSeg) },
+        }
+      );
+    }
+
     const body = (await request.json().catch(() => ({}))) as {
       memberId?: string;
       email?: string;
-      role?: string;
       pin?: string;
       googleCredential?: string;
     };
@@ -142,6 +163,7 @@ export async function POST(request: NextRequest) {
     if (body.googleCredential) {
       const googleUser = await verificarTokenGoogle(body.googleCredential);
       if (!googleUser) {
+        registrarIntentoFallidoLogin(ip);
         return NextResponse.json(
           { error: "No se pudo verificar la credencial de Google." },
           { status: 401 }
@@ -161,9 +183,10 @@ export async function POST(request: NextRequest) {
       }
 
       if (!miembro || !miembro.active) {
+        registrarIntentoFallidoLogin(ip);
         return NextResponse.json(
           {
-            error: `La cuenta de Google (${googleUser.email}) no está autorizada. El Administrador Maestro (${MASTER_GOOGLE_EMAIL}) debe agregarla en Configuración → Equipo.`,
+            error: "La cuenta de Google no está autorizada en el equipo.",
           },
           { status: 403 }
         );
@@ -171,8 +194,13 @@ export async function POST(request: NextRequest) {
 
       const valorSesion = firmarSesion(miembro.id);
       if (!valorSesion) {
-        return NextResponse.json({ error: "No se pudo generar la sesión firmada" }, { status: 500 });
+        return NextResponse.json(
+          { error: "No se pudo generar la sesión firmada" },
+          { status: 500 }
+        );
       }
+
+      limpiarIntentosLogin(ip);
       const response = NextResponse.json({
         ok: true,
         member: {
@@ -192,15 +220,23 @@ export async function POST(request: NextRequest) {
       return response;
     }
 
-    // 2. Modo Login por Cuenta Google (email) o Perfil seleccionado + Clave/PIN
+    // 2. Modo Login por Cuenta Google (email) o ID de miembro + Clave/PIN
     const pin = (body.pin ?? "").trim();
     const emailInput = (body.email ?? "").trim().toLowerCase();
     const memberId = body.memberId?.trim();
-    const role = body.role?.trim();
 
     if (!pin) {
       return NextResponse.json(
         { error: "Ingresa tu clave o PIN de acceso" },
+        { status: 400 }
+      );
+    }
+
+    // S1: Prohibido entrar sin indicar explícitamente el usuario (email o memberId)
+    if (!emailInput && !memberId) {
+      registrarIntentoFallidoLogin(ip);
+      return NextResponse.json(
+        { error: "Debes indicar tu cuenta de usuario para iniciar sesión." },
         { status: 400 }
       );
     }
@@ -217,14 +253,6 @@ export async function POST(request: NextRequest) {
           .limit(1);
         miembro = m;
       }
-      if (!miembro) {
-        return NextResponse.json(
-          {
-            error: `La cuenta Google "${emailInput}" no está registrada en el equipo. Inicia sesión con la cuenta maestra (${MASTER_GOOGLE_EMAIL}) y agrégala en Configuración → Equipo.`,
-          },
-          { status: 403 }
-        );
-      }
     } else if (memberId) {
       const [m] = await db
         .select()
@@ -232,64 +260,50 @@ export async function POST(request: NextRequest) {
         .where(eq(teamMembers.id, memberId))
         .limit(1);
       miembro = m;
-      if (!miembro && memberId === ID_MIEMBRO_LOCAL) {
-        miembro = await asegurarAdminMaestro();
-      }
-    } else if (role) {
-      const [m] = await db
-        .select()
-        .from(teamMembers)
-        .where(eq(teamMembers.role, role))
-        .limit(1);
-      miembro = m;
-    } else {
-      miembro = await asegurarAdminMaestro();
     }
 
     if (!miembro || !miembro.active) {
+      registrarIntentoFallidoLogin(ip);
       return NextResponse.json(
         {
-          error:
-            "Esta cuenta Google está desactivada o no tiene acceso. Consulta al Administrador Maestro.",
+          error: "Credenciales inválidas o cuenta no autorizada.",
         },
-        { status: 403 }
+        { status: 401 }
       );
     }
 
     const esAdmin = miembro.role === "admin";
     const emailMiembro = miembro.email.toLowerCase();
 
-    // Revisar si tiene clave individual o clave por rol en crm_settings / env / default
+    // S1: Sin claves fijas en el código ni valores por defecto ("1234", "aliv2026", "Aliv2026!").
+    // Se lee únicamente de crm_settings o de variables de entorno explícitas.
     const pinIndividual = await leerSettingTexto(`auth.pin.${emailMiembro}`);
     const pinRolConfig = await leerSettingTexto(
       esAdmin ? "auth.admin_pin" : "auth.vendedor_pin"
     );
+    const pinEnv = (
+      esAdmin ? process.env.ADMIN_PIN : process.env.VENDEDOR_PIN
+    )?.trim();
 
-    const pinEsperado =
-      pinIndividual ||
-      pinRolConfig ||
-      (esAdmin
-        ? process.env.ADMIN_PIN || "aliv2026"
-        : process.env.VENDEDOR_PIN || "1234");
+    const pinEsperado = pinIndividual || pinRolConfig || pinEnv || null;
 
-    // Permitir que el PIN maestro de admin tambien funcione si el admin prueba entrar
-    const pinMaestro =
-      (await leerSettingTexto("auth.admin_pin")) ||
-      process.env.ADMIN_PIN ||
-      "aliv2026";
-
-    const pinValido =
-      pinIgual(pin, pinEsperado) ||
-      (esAdmin && pinIgual(pin, pinMaestro)) ||
-      pinIgual(pin, "Aliv2026!") ||
-      pinIgual(pin, "aliv2026");
-
-    if (!pinValido) {
+    if (!pinEsperado) {
       return NextResponse.json(
         {
-          error: `Clave/PIN incorrecto para ${miembro.email} (${
-            esAdmin ? "Administrador Maestro" : "Perfil Vendedor"
-          })`,
+          error:
+            "El perfil no tiene un PIN de acceso configurado. Contacta al administrador.",
+        },
+        { status: 403 }
+      );
+    }
+
+    const pinValido = pinIgual(pin, pinEsperado);
+
+    if (!pinValido) {
+      registrarIntentoFallidoLogin(ip);
+      return NextResponse.json(
+        {
+          error: "Clave o PIN de acceso incorrecto.",
         },
         { status: 401 }
       );
@@ -297,9 +311,13 @@ export async function POST(request: NextRequest) {
 
     const valorSesion = firmarSesion(miembro.id);
     if (!valorSesion) {
-      return NextResponse.json({ error: "No se pudo generar la sesión firmada" }, { status: 500 });
+      return NextResponse.json(
+        { error: "No se pudo generar la sesión firmada" },
+        { status: 500 }
+      );
     }
 
+    limpiarIntentosLogin(ip);
     const response = NextResponse.json({
       ok: true,
       member: {

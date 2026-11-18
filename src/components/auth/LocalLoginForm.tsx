@@ -345,16 +345,16 @@ export function LocalLoginForm() {
               </label>
               <span className="text-[11px] text-muted-foreground">
                 {esCuentaMaestra
-                  ? "Maestro: aliv2026"
-                  : "Vendedor: 1234"}
+                  ? "Perfil Administrador"
+                  : "Perfil Vendedor"}
               </span>
             </div>
             <Input
               type="password"
               placeholder={
                 esCuentaMaestra
-                  ? "Clave Maestra (aliv2026)"
-                  : "Clave de Vendedor (1234)"
+                  ? "Ingresa tu clave de administrador"
+                  : "Ingresa tu PIN de vendedor"
               }
               value={pin}
               onChange={(e) => setPin(e.target.value)}

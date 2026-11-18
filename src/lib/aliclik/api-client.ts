@@ -5,15 +5,31 @@
  * 2. Contra Entrega a Provincia / Domicilio para las ciudades con cobertura.
  */
 
+import { db } from "@/db";
+import { crmSettings } from "@/db/schema";
+import { eq } from "drizzle-orm";
+
 const BASE_URL = "https://aliclik-api-release-f6985904c9e2.herokuapp.com";
 
-// Credenciales fijas de la tienda ALIVPERU (ERGONOVA / ID 57390)
+// Credenciales de la tienda ALIVPERU (ERGONOVA / ID 57390)
 const COMPANY_ID = 57390;
 const USER_ID = 45168;
 const COMPANY_PREFIX = "ERG";
-const REFRESH_TOKEN =
-  process.env.ALICLIK_REFRESH_TOKEN ||
-  "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOjQ1MTY4LCJjb21wYW55SWQiOjU3MzkwLCJpYXQiOjE3OTQ5NDExMTEsImV4cCI6MTc5NTAyNzUxMX0.Eb7zQ7QWVqIuX9u2QFb5hHPs-TNXfkPKngxN3sIHqTs";
+
+async function resolveRefreshToken(): Promise<string> {
+  if (process.env.ALICLIK_REFRESH_TOKEN?.trim()) {
+    return process.env.ALICLIK_REFRESH_TOKEN.trim();
+  }
+  const [row] = await db
+    .select()
+    .from(crmSettings)
+    .where(eq(crmSettings.key, "aliclik.refresh_token"))
+    .limit(1);
+  if (typeof row?.value === "string" && row.value.trim()) {
+    return row.value.trim();
+  }
+  throw new Error("ALICLIK_REFRESH_TOKEN no configurado en entorno ni en crm_settings");
+}
 
 let cachedAccessToken: string | null = null;
 let tokenExpiresAt = 0;
@@ -27,6 +43,7 @@ export async function getAliclikAccessToken(): Promise<string> {
     return cachedAccessToken;
   }
 
+  const refreshToken = await resolveRefreshToken();
   const res = await fetch(`${BASE_URL}/auth/refresh`, {
     method: "POST",
     headers: {
@@ -40,7 +57,7 @@ export async function getAliclikAccessToken(): Promise<string> {
       "x-aliclik-origin": "aliclik-web",
       "X-Device-Id": "0a9b5a6e-9dee-4ce4-b246-732988e4497d",
     },
-    body: JSON.stringify({ refreshToken: REFRESH_TOKEN }),
+    body: JSON.stringify({ refreshToken }),
   });
 
   if (!res.ok) {

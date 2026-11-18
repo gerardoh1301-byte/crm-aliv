@@ -26,6 +26,10 @@ import {
   type EstadoPedido,
 } from "./tipos";
 import { PedidosPage } from "./componentes/PedidosPage";
+import {
+  validarDepartamentoODestino,
+  validarTelefonoPeruano,
+} from "@/lib/pedidos/validacion-datos";
 
 const MAPA_ESTADO_A_ETAPA: Record<EstadoPedido, string> = {
   por_confirmar_cod: "agendar_entrega",
@@ -36,19 +40,23 @@ const MAPA_ESTADO_A_ETAPA: Record<EstadoPedido, string> = {
   cancelado: "cancelado_rechazado",
 };
 
+// A6: Usar una sola serie numérica (#1151, #1152...) para todos los canales, sin choques entre #1049 y #ALIV-1049
 async function generarNumeroOrden(): Promise<string> {
-  const [row] = await db
-    .select({ total: sql<number>`count(*)::int` })
+  const rows = await db
+    .select({ numeroOrden: pedidosOrdenes.numeroOrden })
     .from(pedidosOrdenes);
-  const siguiente = 1001 + (Number(row?.total) || 0);
-  const candidato = `#ALIV-${siguiente}`;
-  const [existe] = await db
-    .select({ id: pedidosOrdenes.id })
-    .from(pedidosOrdenes)
-    .where(eq(pedidosOrdenes.numeroOrden, candidato))
-    .limit(1);
-  if (!existe) return candidato;
-  return `#ALIV-${siguiente}-${Math.floor(100 + Math.random() * 900)}`;
+  let maxNum = 1150;
+  for (const r of rows) {
+    const raw = String(r.numeroOrden || "");
+    if (/^#?LEG-/i.test(raw)) continue;
+    const digits = raw.replace(/\D/g, "");
+    const n = parseInt(digits, 10);
+    if (Number.isFinite(n) && n >= 1000 && n < 90000 && n > maxNum) {
+      maxNum = n;
+    }
+  }
+  const siguiente = maxNum + 1;
+  return `#${siguiente}`;
 }
 
 export async function sincronizarEtapaPipeline(
@@ -283,6 +291,32 @@ const crear: HandlerModulo = async (req, { member }) => {
       : "por_confirmar_cod"
   ) as EstadoPedido;
 
+  const [contactoCheck] = await db
+    .select({ name: contacts.name, phone: contacts.phone })
+    .from(contacts)
+    .where(eq(contacts.id, contactId))
+    .limit(1);
+
+  // M2: Validar teléfono (9 dígitos que empiecen con 9) y departamento/destino antes de confirmar un pedido
+  if (typeof body.ciudad === "string" && body.ciudad.trim()) {
+    const valCiudad = validarDepartamentoODestino(body.ciudad);
+    if (!valCiudad.valido) {
+      return NextResponse.json({ error: valCiudad.error }, { status: 400 });
+    }
+  }
+  if (estado === "confirmado" || estado === "enviado") {
+    const valTel = validarTelefonoPeruano(contactoCheck?.phone);
+    if (!valTel.valido) {
+      return NextResponse.json({ error: valTel.error }, { status: 400 });
+    }
+    const valDep = validarDepartamentoODestino(
+      typeof body.ciudad === "string" ? body.ciudad : ""
+    );
+    if (!valDep.valido) {
+      return NextResponse.json({ error: valDep.error }, { status: 400 });
+    }
+  }
+
   const numeroOrden = await generarNumeroOrden();
   const dealId = await sincronizarEtapaPipeline(
     contactId,
@@ -378,7 +412,40 @@ const actualizar: HandlerModulo = async (req, { member, params }) => {
     updates.direccionEnvio = body.direccionEnvio ? String(body.direccionEnvio) : null;
   }
   if (body.ciudad !== undefined) {
+    if (body.ciudad && String(body.ciudad).trim()) {
+      const checkDep = validarDepartamentoODestino(String(body.ciudad));
+      if (!checkDep.valido) {
+        return NextResponse.json({ error: checkDep.error }, { status: 400 });
+      }
+    }
     updates.ciudad = body.ciudad ? String(body.ciudad) : null;
+  }
+
+  // M2: Si se confirma el pedido, validar que el teléfono del cliente (9 dígitos empezando con 9) y el departamento sean válidos
+  if (nuevoEstado === "confirmado" || nuevoEstado === "enviado") {
+    const [contactoPedido] = await db
+      .select({ phone: contacts.phone })
+      .from(contacts)
+      .where(eq(contacts.id, actual.contactId))
+      .limit(1);
+    const checkTel = validarTelefonoPeruano(contactoPedido?.phone);
+    if (!checkTel.valido) {
+      return NextResponse.json({ error: checkTel.error }, { status: 400 });
+    }
+    const ciudadFinal =
+      updates.ciudad !== undefined
+        ? updates.ciudad
+        : (
+            await db
+              .select({ ciudad: pedidosOrdenes.ciudad })
+              .from(pedidosOrdenes)
+              .where(eq(pedidosOrdenes.id, actual.id))
+              .limit(1)
+          )[0]?.ciudad;
+    const checkDep = validarDepartamentoODestino(ciudadFinal);
+    if (!checkDep.valido) {
+      return NextResponse.json({ error: checkDep.error }, { status: 400 });
+    }
   }
   if (body.distrito !== undefined) {
     updates.distrito = body.distrito ? String(body.distrito) : null;
@@ -701,6 +768,25 @@ const tools: ToolModulo[] = [
         typeof args.modalidad_pago === "string" ? args.modalidad_pago : "contraentrega";
       const notas = args.notas ? String(args.notas).trim() : null;
 
+      // M2: Validar que el departamento/ciudad sea válido y que el teléfono sea un celular peruano (9 dígitos empezando con 9)
+      const checkDepChat = validarDepartamentoODestino(ciudad);
+      if (!checkDepChat.valido) {
+        return {
+          ok: false,
+          error: checkDepChat.error,
+        };
+      }
+      if (ctx.contactPhone) {
+        const checkTelChat = validarTelefonoPeruano(ctx.contactPhone);
+        if (!checkTelChat.valido) {
+          return {
+            ok: false,
+            error:
+              "El número de teléfono actual del contacto no es un celular peruano válido de 9 dígitos (puede ser un ID de Meta). Pídele al cliente su número de celular de 9 dígitos (empezando con 9) y actualízalo antes de confirmar el pedido.",
+          };
+        }
+      }
+
       // Sin calle y numero (Lima) o sin agencia (provincia) el motorizado no puede entregar:
       // el bot debe pedir la direccion antes de registrar (paso en simulaciones: pedido con
       // direccion "San Juan de Lurigancho").
@@ -815,7 +901,7 @@ const tools: ToolModulo[] = [
       function: {
         name: "consultar_pedido",
         description:
-          "Consulta el estado actual, productos, monto en Soles, empresa de envio (Motorizado Lima o Shalom), numero de guia y clave de recojo de los pedidos del cliente.",
+          "Consulta el estado actual, productos, monto en Soles, empresa de envio (Motorizado Lima o Shalom) y numero de guia de los pedidos del cliente.",
         parameters: {
           type: "object",
           properties: {
@@ -870,7 +956,7 @@ const tools: ToolModulo[] = [
             destino: [p.direccionEnvio, p.distrito, p.ciudad].filter(Boolean).join(", "),
             empresa_envio: p.transportadora ?? "Pendiente de asignación de reparto",
             numero_guia: p.numeroGuia ?? "Aún en preparación en almacén",
-            clave_recojo: p.claveRecojo ?? null,
+            // C2: Jamás exponer claveRecojo al modelo IA; la clave solo la entrega un humano
             fecha_registro: p.createdAt,
           })),
         },

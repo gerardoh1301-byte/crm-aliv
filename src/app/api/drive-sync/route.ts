@@ -1,9 +1,13 @@
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import { sincronizarConGoogleDrive } from "@/lib/drive-sync";
+import { autorizadoPorSecreto } from "@/lib/secreto-worker";
 
 export const dynamic = "force-dynamic";
 
-export async function GET() {
+export async function GET(request: NextRequest) {
+  if (!autorizadoPorSecreto(request)) {
+    return NextResponse.json({ ok: false, error: "Unauthorized" }, { status: 401 });
+  }
   try {
     const res = await sincronizarConGoogleDrive();
     return NextResponse.json(res);
@@ -15,7 +19,10 @@ export async function GET() {
   }
 }
 
-export async function POST() {
+export async function POST(request: NextRequest) {
+  if (!autorizadoPorSecreto(request)) {
+    return NextResponse.json({ ok: false, error: "Unauthorized" }, { status: 401 });
+  }
   try {
     const res = await sincronizarConGoogleDrive();
     return NextResponse.json(res);

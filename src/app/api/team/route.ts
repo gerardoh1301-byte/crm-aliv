@@ -158,10 +158,11 @@ export async function POST(request: NextRequest) {
   if (!userId) {
     try {
       const admin = createAdminClient();
+      const { randomBytes } = await import("node:crypto");
       const supabasePassword =
         password && password.length >= 8
           ? password
-          : `${password || "1234"}Aliv2026!`;
+          : randomBytes(16).toString("hex");
       const { data, error } = await admin.auth.admin.createUser({
         email,
         password: supabasePassword,

@@ -182,10 +182,10 @@ export async function autoClasificarYEtiquetarConversacion(params: {
   let etiquetaObjetivo: string | null = null;
   let motivo = "";
 
-  // SEÑAL A: Cancelación explícita
+  // SEÑAL A: Cancelación explícita (A8: se excluye "no gracias" para no marcar como cancelado a quien responde una pregunta de cierre)
   const esCancelacion =
-    /\b(cancela|cancelar|ya no deseo|no deseo|no quiero|no voy a comprar|anula|anular|no me interesa|no gracias)\b/.test(userMsg);
-  if (esCancelacion) {
+    /\b(cancela|cancelar|ya no deseo|no deseo|no quiero|no voy a comprar|anula|anular|no me interesa)\b/.test(userMsg);
+  if (esCancelacion && pedido?.estado !== "enviado" && pedido?.estado !== "entregado") {
     etiquetaObjetivo = "Cancelado";
     motivo = "Cliente indicó cancelación o rechazo";
   }
