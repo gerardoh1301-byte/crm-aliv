@@ -148,14 +148,24 @@ export async function sincronizarPipeline(opts?: { borrarSobrantes?: boolean }) 
         .limit(1);
 
       if (deal) {
-        // No retroceder si ya fue entregado o está en camino
+        // No retroceder ni reactivar si ya fue entregado, está en camino o fue cancelado/rechazado
         const [dealStage] = await db
-          .select({ key: pipelineStages.key, isWon: pipelineStages.isWon })
+          .select({
+            key: pipelineStages.key,
+            isWon: pipelineStages.isWon,
+            isLost: pipelineStages.isLost,
+          })
           .from(pipelineStages)
           .where(eq(pipelineStages.id, deal.stageId))
           .limit(1);
 
-        if (dealStage?.isWon || dealStage?.key === "en_reparto" || dealStage?.key === "entregado") {
+        if (
+          dealStage?.isWon ||
+          dealStage?.isLost ||
+          dealStage?.key === "en_reparto" ||
+          dealStage?.key === "entregado" ||
+          dealStage?.key === "cancelado_rechazado"
+        ) {
           continue;
         }
 
