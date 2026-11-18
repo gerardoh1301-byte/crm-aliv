@@ -14,6 +14,7 @@ import { CHANNEL_LABELS, type Channel } from "@/lib/channels/types";
 import { CHANNEL_COLORS, ChannelIcon } from "@/components/icons/channels";
 import { OwnerSelect } from "@/components/contacts/OwnerSelect";
 import { AdelantoConfirmadoPanel } from "./AdelantoConfirmadoPanel";
+import { DatosEntregaPanel } from "./DatosEntregaPanel";
 import { CamposPersonalizadosLista } from "@/components/contacts/CamposPersonalizados";
 import { camposContacto } from "@/lib/config";
 import {
@@ -383,6 +384,13 @@ export function ContactDetailPanel({
           </Label>
           <OwnerSelect contactId={contact.id} value={contact.ownerId ?? null} compact />
         </div>
+
+        <DatosEntregaPanel
+          contactId={contact.id}
+          contactName={contact.name}
+          contactPhone={contact.phone}
+          customFields={contact.customFields}
+        />
 
         {camposContacto().length > 0 && (
           <div className="px-4 py-5 border-b border-border space-y-2.5">

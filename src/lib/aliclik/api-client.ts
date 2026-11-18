@@ -123,6 +123,22 @@ export function normalizarAgenciaShalomAliclik(
     };
   }
 
+  // Huancayo Jr. Ica (DropShalomId: 2147)
+  if (
+    norm.includes("huancayo") ||
+    (norm.includes("ica") && (normDepto.includes("huancayo") || normDepto.includes("junin")))
+  ) {
+    return {
+      dropShalomId: 2147,
+      agencyDestination: "JUNIN / HUANCAYO / HUANCAYO / HUANCAYO JR. ICA",
+      agencyAddress:
+        "JR. ICA Nº 1143 - HUANCAYO, REFERENCIA: ENTRE EL JR. ICA Y EL JR. TACNA",
+      departmentName: "JUNIN",
+      provinceName: "HUANCAYO",
+      districtName: "HUANCAYO",
+    };
+  }
+
   // Pisco Centro
   if (norm.includes("pisco")) {
     return {

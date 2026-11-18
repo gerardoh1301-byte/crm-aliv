@@ -74,12 +74,20 @@ export async function GET() {
       ...stage,
       deals: uniqueDeals
         .filter((d) => d.stageId === stage.id)
-        .map((d) => ({
-          ...d,
-          // A5: Poner valor 0 a las consultas (leads sin pedido) para no inflar el valor del pipeline
-          value: esConsulta && !d.ordenId ? 0 : d.value,
-          docCount: docCounts[d.contactId] ?? 0,
-        })),
+        .map((d) => {
+          const custom = (d.contactCustomFields as Record<string, unknown> | null) ?? {};
+          return {
+            ...d,
+            ciudad: d.ordenCiudad || (custom.departamento_ciudad as string) || (custom.ciudad as string) || null,
+            distrito: d.ordenDistrito || (custom.distrito as string) || null,
+            direccion: d.ordenDireccion || (custom.direccion_envio as string) || (custom.agencia_shalom as string) || null,
+            numeroOrden: d.ordenNumero || null,
+            dniCliente: (custom.dni_ruc as string) || (custom.dni as string) || null,
+            // A5: Poner valor 0 a las consultas (leads sin pedido) para no inflar el valor del pipeline
+            value: esConsulta && !d.ordenId ? 0 : d.value,
+            docCount: docCounts[d.contactId] ?? 0,
+          };
+        }),
     };
   });
 
