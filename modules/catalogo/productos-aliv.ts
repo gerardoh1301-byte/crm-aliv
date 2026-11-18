@@ -45,7 +45,7 @@ export const CATALOGO_ALIV_BASE: ProductoSemilla[] = [
     moneda: "PEN",
     stock: 45,
     disponible: true,
-    imagenUrl: "https://cdn.shopify.com/s/files/1/0853/5579/0548/files/NACProduct1.webp?v=1792254070",
+    imagenUrl: "https://lh3.googleusercontent.com/d/1gXS80zywom16BfpJPPKQ0jdNVmW7F2KV",
     publicUrl: "https://alivstore.shop/products/nac600",
   },
   {
@@ -65,7 +65,7 @@ export const CATALOGO_ALIV_BASE: ProductoSemilla[] = [
     moneda: "PEN",
     stock: 35,
     disponible: true,
-    imagenUrl: "https://cdn.shopify.com/s/files/1/0853/5579/0548/files/1-r.jpg?v=1791918500",
+    imagenUrl: "https://lh3.googleusercontent.com/d/1ftuRgrJwGtWZf_a6g-7hY2wDswOG0RDB",
     publicUrl: "https://alivstore.shop/products/termix-tobillera",
   },
   {
@@ -85,7 +85,7 @@ export const CATALOGO_ALIV_BASE: ProductoSemilla[] = [
     moneda: "PEN",
     stock: 0,
     disponible: false,
-    imagenUrl: "https://cdn.shopify.com/s/files/1/0853/5579/0548/files/Gemini_Generated_Image_c0w967c0w967c0w9.jpg?v=1788538755",
+    imagenUrl: "",
     publicUrl: "https://alivstore.shop/products/termix-hombrera-termica-con-calor-vibracion-y-luz-roja",
   },
   {

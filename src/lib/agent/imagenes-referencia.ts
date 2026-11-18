@@ -18,33 +18,32 @@ export function googleDriveCdnUrl(idOrUrl: string): string {
 }
 
 export const IMAGENES_REFERENCIA: ImagenReferencia[] = [
-  // --- NAC600 ---
+  // =========================================================================
+  // --- 1. NAC600 + NAD+ (Carpeta Oficial Google Drive) ---
+  // https://drive.google.com/drive/folders/1sHgU1gqGAF2_qfYqoZRPpsrXqpP9559-
+  // =========================================================================
   {
     id: "nac600_frasco",
-    alias: ["nac600", "frasco_nac600", "nac600_foto"],
-    titulo: "Frasco NAC600 + NAD+ (60 cápsulas)",
-    descripcion: "Foto oficial del frasco de NAC600 + NAD+ de Aliv Perú, mostrando etiqueta y presentación de 60 cápsulas.",
-    url: "https://cdn.shopify.com/s/files/1/0853/5579/0548/files/NACProduct1.webp?v=1792254070",
+    alias: ["nac600", "frasco_nac600", "nac600_foto", "nac600_producto", "empaque_nac600", "foto_nac600"],
+    titulo: "Foto Oficial Producto NAC600 + NAD+ (The Modern Formula)",
+    descripcion: "Foto oficial del empaque/frasco de NAC 600 mg con NAD+ en aceite de coco y MCT, 60 cápsulas, The Modern Formula, Non-GMO, Gluten Free.",
+    url: "https://lh3.googleusercontent.com/d/1gXS80zywom16BfpJPPKQ0jdNVmW7F2KV",
     categoria: "producto",
   },
   {
     id: "nac600_beneficios",
-    alias: ["beneficios_nac600", "nac600_ficha"],
-    titulo: "Beneficios de NAC600 + NAD+ y Modo de Uso",
-    descripcion: "Ficha explicativa de soporte hepático (glutatión), claridad mental, energía celular y cómo tomar 2 cápsulas al día con agua en el desayuno.",
-    url: "https://cdn.shopify.com/s/files/1/0853/5579/0548/files/Gemini_Generated_Image_c0w967c0w967c0w9.jpg?v=1788538755",
-    categoria: "beneficios",
-  },
-  {
-    id: "nac600_resena",
-    alias: ["nac600_editorial", "nac600_mct", "nac600_formula", "11.png"],
-    titulo: "Reseña Editorial y Fórmula de Vanguardia NAC600 + NAD+",
-    descripcion: "Infografía editorial que destaca la combinación de NAC y NAD+ en suspensión de aceite de coco y MCT para absorción y cuidado celular diario.",
-    url: googleDriveCdnUrl("1aDmJHkLqMUUvCZK710AYt2n04W_FkESX"),
+    alias: ["beneficios_nac600", "nac600_ficha", "nac600_resena", "nac600_infografia", "nac600_formula", "11.png"],
+    titulo: "Reseña Editorial e Infografía de Beneficios NAC600 + NAD+",
+    descripcion: "Infografía editorial oficial: respaldo científico de absorción de NAC y NAD+ en suspensión de MCT, salud celular y antioxidante maestro.",
+    url: "https://lh3.googleusercontent.com/d/1aDmJHkLqMUUvCZK710AYt2n04W_FkESX",
     categoria: "beneficios",
   },
 
-  // --- TOBILLERA TERMIX (Hospedadas en Google Drive CDN - Cero carga al CRM) ---
+  // =========================================================================
+  // --- 2. TOBILLERA TERMIX (Carpeta Oficial Google Drive) ---
+  // https://drive.google.com/drive/folders/1_TAUXWd7QW0By2Vo-GUmw_EKvzBn9jCT
+  // Según GUIA_PIEZAS_BOT.txt
+  // =========================================================================
   {
     id: "termix_tobillera",
     alias: ["termix", "termix_foto", "termix_hero", "01_termix_foto_principal_producto"],
@@ -118,7 +117,9 @@ export const IMAGENES_REFERENCIA: ImagenReferencia[] = [
     categoria: "producto",
   },
 
-  // --- DATOS DE PAGO ---
+  // =========================================================================
+  // --- 3. DATOS DE PAGO ---
+  // =========================================================================
   {
     id: "yape_adelanto",
     alias: ["yape", "plin", "adelanto_yape"],
