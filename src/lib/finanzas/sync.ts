@@ -202,10 +202,10 @@ export async function sincronizarCrmConFinanzasErp(): Promise<ResumenFinanzasSyn
       entregadosMonto: totalCobrado,
       transitoMonto: totalTransito,
       kardex: {
-        lotesNac: 300,
+        lotesNac: 200,
         entregadosNac,
         transitoNac,
-        disponibleNac: 300 - entregadosNac - transitoNac,
+        disponibleNac: 200 - entregadosNac - transitoNac,
       },
       cloudSynced,
     };
@@ -217,7 +217,7 @@ export async function sincronizarCrmConFinanzasErp(): Promise<ResumenFinanzasSyn
       totalPedidosErp: 0,
       entregadosMonto: 0,
       transitoMonto: 0,
-      kardex: { lotesNac: 300, entregadosNac: 0, transitoNac: 0, disponibleNac: 300 },
+      kardex: { lotesNac: 200, entregadosNac: 0, transitoNac: 0, disponibleNac: 200 },
       cloudSynced: false,
       error: err.message,
     };
