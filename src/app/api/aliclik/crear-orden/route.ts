@@ -119,27 +119,42 @@ export async function POST(req: NextRequest) {
     }
 
     // A10: Verificar idempotencia (si la operación o el pedido ya tienen orden en AliClik, rechazar)
-    let dealActual: { id: string; notes: string | null } | null = null;
+    let dealActual: { id: string; title: string | null; notes: string | null } | null = null;
     if (dealId) {
       const [d] = await db
-        .select({ id: deals.id, notes: deals.notes })
+        .select({ id: deals.id, title: deals.title, notes: deals.notes })
         .from(deals)
         .where(eq(deals.id, dealId))
         .limit(1);
       dealActual = d ?? null;
     }
 
-    let pedidoActual: { id: string; notas: string | null } | null = null;
+    let pedidoActual: {
+      id: string;
+      notas: string | null;
+      items: unknown;
+      total: string | null;
+    } | null = null;
     if (pedidoId) {
       const [p] = await db
-        .select({ id: pedidosOrdenes.id, notas: pedidosOrdenes.notas })
+        .select({
+          id: pedidosOrdenes.id,
+          notas: pedidosOrdenes.notas,
+          items: pedidosOrdenes.items,
+          total: pedidosOrdenes.total,
+        })
         .from(pedidosOrdenes)
         .where(eq(pedidosOrdenes.id, pedidoId))
         .limit(1);
       pedidoActual = p ?? null;
     } else if (dealId) {
       const [p] = await db
-        .select({ id: pedidosOrdenes.id, notas: pedidosOrdenes.notas })
+        .select({
+          id: pedidosOrdenes.id,
+          notas: pedidosOrdenes.notas,
+          items: pedidosOrdenes.items,
+          total: pedidosOrdenes.total,
+        })
         .from(pedidosOrdenes)
         .where(eq(pedidosOrdenes.dealId, dealId))
         .orderBy(desc(pedidosOrdenes.createdAt))
@@ -147,7 +162,12 @@ export async function POST(req: NextRequest) {
       pedidoActual = p ?? null;
     } else if (contactId) {
       const [p] = await db
-        .select({ id: pedidosOrdenes.id, notas: pedidosOrdenes.notas })
+        .select({
+          id: pedidosOrdenes.id,
+          notas: pedidosOrdenes.notas,
+          items: pedidosOrdenes.items,
+          total: pedidosOrdenes.total,
+        })
         .from(pedidosOrdenes)
         .where(eq(pedidosOrdenes.contactId, contactId))
         .orderBy(desc(pedidosOrdenes.createdAt))
@@ -175,6 +195,45 @@ export async function POST(req: NextRequest) {
         ? Number(total)
         : items.reduce((acc, it) => acc + it.cantidad * it.precioUnitario, 0);
 
+    // Validación cruzada de seguridad contra el pedido real en BD para evitar enviar NAC600 x1 cuando el pedido es Termix x2
+    const dbItems = Array.isArray(pedidoActual?.items)
+      ? (pedidoActual.items as Array<{ titulo?: string; cantidad?: number }>)
+      : [];
+    const textoPedidoBD = `${dbItems.map((i) => i.titulo || "").join(" ")} ${dealActual?.title || ""}`.toLowerCase();
+    const esTermixEnBD =
+      textoPedidoBD.includes("termix") ||
+      textoPedidoBD.includes("tobill") ||
+      Math.round(montoTotal) === 79 ||
+      Math.round(montoTotal) === 139;
+
+    const itemsVerificados = items.map((it) => {
+      let nombre = it.nombre;
+      let cantidad = it.cantidad;
+      // Si el pedido en BD es Termix Tobillera pero el cliente envió NAC600 por error de fallback, corregirlo
+      if (esTermixEnBD && !/termix|tobill/i.test(nombre)) {
+        nombre = "TERMIX TOBILLERA";
+      }
+      // Si vino cantidad 1 pero en BD tiene más unidades o el monto corresponde a un pack
+      const cantBD = dbItems.reduce((acc, d) => acc + (Number(d.cantidad) || 0), 0);
+      if (cantidad === 1) {
+        if (cantBD > 1) {
+          cantidad = cantBD;
+        } else if (/termix|tobill/i.test(nombre)) {
+          if (Math.round(montoTotal) === 139) cantidad = 2;
+          else if (Math.round(montoTotal) === 189) cantidad = 3;
+        } else {
+          if (Math.round(montoTotal) === 199) cantidad = 3;
+          else if (Math.round(montoTotal) === 189) cantidad = 2;
+        }
+      }
+      return {
+        nombre,
+        cantidad,
+        precioUnitario:
+          cantidad > 0 ? Math.round((montoTotal / cantidad) * 100) / 100 : montoTotal,
+      };
+    });
+
     // 1. Crear la orden en AliClik con servicio completo
     const resultAliclik = await crearOrdenAgenciaServicioCompleto({
       clienteNombre,
@@ -188,7 +247,7 @@ export async function POST(req: NextRequest) {
       dropShalomId: Number(dropShalomId) || undefined,
       fechaEnvio,
       tipoMercancia: tipoMercancia || "Caja Paquete XS",
-      productos: items,
+      productos: itemsVerificados,
       total: montoTotal,
       nota,
     });

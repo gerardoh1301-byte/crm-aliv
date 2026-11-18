@@ -224,12 +224,48 @@ export async function POST(req: NextRequest) {
     contactId = creado.id;
   }
 
-  const items: ItemPedido[] = (payload.line_items ?? []).map((li) => ({
-    sku: li.sku || "ALIV-NAC600",
-    titulo: li.title || "NAC600 + NAD+ (60 cápsulas)",
-    cantidad: Math.max(1, Number(li.quantity) || 1),
-    precioUnitario: Math.max(0, Number(li.price) || 0),
-  }));
+  const items: ItemPedido[] = (payload.line_items ?? []).map((li) => {
+    const titulo = li.title || "NAC600 + NAD+ (60 cápsulas)";
+    const esTermix = /termix|tobill/i.test(titulo);
+    const precio = Math.max(0, Number(li.price) || 0);
+    let cant = Math.max(1, Number(li.quantity) || 1);
+    // Si EasySell envió bundle como quantity=1 pero el precio o título indica 2x o 3x
+    if (cant === 1) {
+      const mCant = titulo.match(/(\d+)\s*(?:x|unid|tobill|frasc)/i);
+      if (mCant) cant = parseInt(mCant[1], 10) || 1;
+      else if (esTermix && Math.round(precio) === 139) cant = 2;
+      else if (esTermix && Math.round(precio) === 189) cant = 3;
+      else if (!esTermix && Math.round(precio) === 199) cant = 3;
+      else if (!esTermix && Math.round(precio) === 189) cant = 2;
+    }
+    return {
+      sku: li.sku || (esTermix ? "ALIV-TERMIX" : "ALIV-NAC600"),
+      titulo,
+      cantidad: cant,
+      precioUnitario: cant > 0 ? Math.round((precio / cant) * 100) / 100 : precio,
+    };
+  });
+
+  // Guardar producto_interes en customFields del contacto
+  if (contactId && items.length > 0) {
+    const resumenProd = items.map((i) => `${i.cantidad}x ${i.titulo}`).join(", ");
+    const [cRow] = await db
+      .select({ customFields: contacts.customFields })
+      .from(contacts)
+      .where(eq(contacts.id, contactId))
+      .limit(1);
+    if (cRow) {
+      await db
+        .update(contacts)
+        .set({
+          customFields: {
+            ...((cRow.customFields as Record<string, unknown>) || {}),
+            producto_interes: resumenProd,
+          },
+        })
+        .where(eq(contacts.id, contactId));
+    }
+  }
 
   const numeroOrden = payload.name
     ? String(payload.name).startsWith("#")

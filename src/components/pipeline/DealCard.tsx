@@ -332,6 +332,19 @@ export function DealCard({
     estadoPedido: estadoPedido || null,
   };
 
+  const parsedOrdenItems: any[] = (() => {
+    if (Array.isArray(ordenItems)) return ordenItems;
+    if (typeof ordenItems === "string") {
+      try {
+        const parsed = JSON.parse(ordenItems);
+        if (Array.isArray(parsed)) return parsed;
+      } catch {}
+    }
+    return [];
+  })();
+
+  const totAliclik = ordenTotal ? Number(ordenTotal) : (value ? (value > 500 ? value / 100 : value) : 119);
+
   const despacharAliclikData: DespacharAliclikModalData = {
     dealId: id,
     contactId: contactId || null,
@@ -343,31 +356,38 @@ export function DealCard({
     provincia: ciudad || null,
     distrito: distrito || null,
     agenciaShalom: currentDireccion || direccion || "",
-    total: ordenTotal ? Number(ordenTotal) : (value ? (value > 500 ? value / 100 : value) : 0),
-    productosResumen: Array.isArray(ordenItems)
-      ? ordenItems.map((it: any) => `${it.cantidad ?? 1}x ${it.titulo ?? it.title ?? "Producto"}`).join(", ")
+    total: totAliclik,
+    productosResumen: parsedOrdenItems.length > 0
+      ? parsedOrdenItems.map((it: any) => `${it.cantidad ?? 1}x ${it.titulo ?? it.title ?? "Producto"}`).join(", ")
       : title,
-    productos: Array.isArray(ordenItems) && ordenItems.length > 0
-      ? ordenItems.map((it: any) => {
+    productos: parsedOrdenItems.length > 0
+      ? parsedOrdenItems.map((it: any) => {
+          const rawNom = String(it.titulo ?? it.title ?? it.nombre ?? title ?? "");
+          const esTermix = /termix|tobill/i.test(rawNom) || Math.round(totAliclik) === 79 || Math.round(totAliclik) === 139;
+          const nombreOficial = esTermix ? "TERMIX TOBILLERA" : "NAC600";
           let cant = Number(it.cantidad ?? it.quantity ?? 1) || 1;
-          const tot = ordenTotal ? Number(ordenTotal) : (value ? (value > 500 ? value / 100 : value) : 0);
-          // Si es oferta 3x NAC600 a S/ 199 y venía cantidad 1, asignar 3
-          if (tot === 199 && cant === 1 && (title?.toLowerCase().includes("nac") || it.titulo?.toLowerCase().includes("nac"))) {
-            cant = 3;
+          if (cant === 1) {
+            if (esTermix && Math.round(totAliclik) === 139) cant = 2;
+            else if (esTermix && Math.round(totAliclik) === 189) cant = 3;
+            else if (!esTermix && Math.round(totAliclik) === 199) cant = 3;
+            else if (!esTermix && Math.round(totAliclik) === 189) cant = 2;
           }
           return {
-            nombre: it.titulo ?? it.title ?? it.nombre ?? "NAC600",
+            nombre: nombreOficial,
             cantidad: cant,
-            precioUnitario: Number(it.precioUnitario ?? it.precio ?? it.price ?? 0) || (tot > 0 ? Math.round((tot / cant) * 100) / 100 : 0),
+            precioUnitario: cant > 0 ? Math.round((totAliclik / cant) * 100) / 100 : totAliclik,
           };
         })
       : (() => {
-          const tot = ordenTotal ? Number(ordenTotal) : (value ? (value > 500 ? value / 100 : value) : 119);
-          const cant = tot === 199 ? 3 : tot === 189 ? 2 : 1;
+          const esTermix = /termix|tobill/i.test(title || "") || Math.round(totAliclik) === 79 || Math.round(totAliclik) === 139;
+          const nombreOficial = esTermix ? "TERMIX TOBILLERA" : "NAC600";
+          const cant = esTermix
+            ? (Math.round(totAliclik) === 139 ? 2 : Math.round(totAliclik) === 189 ? 3 : 1)
+            : (Math.round(totAliclik) === 199 ? 3 : Math.round(totAliclik) === 189 ? 2 : 1);
           return [{
-            nombre: "NAC600",
+            nombre: nombreOficial,
             cantidad: cant,
-            precioUnitario: Math.round((tot / cant) * 100) / 100,
+            precioUnitario: Math.round((totAliclik / cant) * 100) / 100,
           }];
         })(),
   };

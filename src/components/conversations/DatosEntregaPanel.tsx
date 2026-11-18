@@ -1,18 +1,33 @@
 "use client";
 
-import { useState, useEffect } from "react";
-import { MapPin, Save, CheckCircle2, Building2, User, Truck, Box } from "lucide-react";
+import { useState, useEffect, useCallback } from "react";
+import { MapPin, Save, Building2, User, Truck } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { toast } from "sonner";
-import { DespacharAliclikModal, type DespacharAliclikModalData } from "@/components/pipeline/DespacharAliclikModal";
+import {
+  DespacharAliclikModal,
+  type DespacharAliclikModalData,
+} from "@/components/pipeline/DespacharAliclikModal";
 
 interface Props {
   contactId: string;
   contactName: string;
   contactPhone: string | null;
   customFields?: Record<string, unknown> | null;
+}
+
+interface PedidoCargado {
+  id: string;
+  numeroOrden: string;
+  dealId: string | null;
+  total: string;
+  dniCliente: string | null;
+  ciudad: string | null;
+  distrito: string | null;
+  direccionEnvio: string | null;
+  items: Array<{ sku?: string; titulo?: string; cantidad?: number; precioUnitario?: number }> | null;
 }
 
 export function DatosEntregaPanel({
@@ -25,9 +40,10 @@ export function DatosEntregaPanel({
 
   const [agenciaShalom, setAgenciaShalom] = useState(
     (fields.agencia_shalom as string) ||
-    (fields.direccion_envio as string)?.includes("Shalom")
-      ? (fields.direccion_envio as string)
-      : ""
+      (typeof fields.direccion_envio === "string" &&
+      fields.direccion_envio.toLowerCase().includes("shalom")
+        ? fields.direccion_envio
+        : "")
   );
   const [dni, setDni] = useState(
     (fields.dni_ruc as string) || (fields.dni as string) || ""
@@ -40,19 +56,44 @@ export function DatosEntregaPanel({
   );
   const [saving, setSaving] = useState(false);
   const [modalAliclikOpen, setModalAliclikOpen] = useState(false);
+  const [pedidoActivo, setPedidoActivo] = useState<PedidoCargado | null>(null);
+
+  const cargarPedidoContacto = useCallback(async () => {
+    try {
+      const res = await fetch(
+        `/api/pedidos/adelanto?contactId=${encodeURIComponent(contactId)}`
+      );
+      if (!res.ok) return;
+      const data = await res.json();
+      const lista = (data.pedidos ?? []) as PedidoCargado[];
+      if (lista.length > 0) {
+        const p = lista[0];
+        setPedidoActivo(p);
+        if (p.dniCliente && !dni) setDni(p.dniCliente);
+        if (p.ciudad && !ciudad) setCiudad(p.ciudad);
+        if (p.direccionEnvio && !direccion) setDireccion(p.direccionEnvio);
+      } else {
+        setPedidoActivo(null);
+      }
+    } catch {
+      /* silencioso */
+    }
+  }, [contactId]);
 
   useEffect(() => {
     const f = customFields || {};
     const ag =
       (f.agencia_shalom as string) ||
-      (typeof f.direccion_envio === "string" && f.direccion_envio.toLowerCase().includes("shalom")
+      (typeof f.direccion_envio === "string" &&
+      f.direccion_envio.toLowerCase().includes("shalom")
         ? f.direccion_envio
         : "");
     setAgenciaShalom(ag);
     setDni((f.dni_ruc as string) || (f.dni as string) || "");
     setCiudad((f.departamento_ciudad as string) || (f.ciudad as string) || "");
     setDireccion((f.direccion_envio as string) || "");
-  }, [contactId, customFields]);
+    void cargarPedidoContacto();
+  }, [contactId, customFields, cargarPedidoContacto]);
 
   const guardarDatos = async () => {
     setSaving(true);
@@ -72,7 +113,10 @@ export function DatosEntregaPanel({
         throw new Error("No se pudo guardar la información de entrega");
       }
 
-      toast.success("✅ Datos de entrega y agencia Shalom actualizados en Pipeline y AliClik");
+      toast.success(
+        "✅ Datos de entrega y agencia Shalom actualizados en Pipeline y AliClik"
+      );
+      await cargarPedidoContacto();
       window.dispatchEvent(new Event("pipeline:refresh"));
       window.dispatchEvent(new Event("conversations:refresh"));
     } catch (err: unknown) {
@@ -82,17 +126,88 @@ export function DatosEntregaPanel({
     }
   };
 
+  // Resolver productos y total real del pedido del contacto
+  const totalPedido = pedidoActivo ? Number(pedidoActivo.total) || 139 : 139;
+  const prodInteres = (fields.producto_interes as string) || "";
+
+  const productosModal = (() => {
+    if (
+      pedidoActivo &&
+      Array.isArray(pedidoActivo.items) &&
+      pedidoActivo.items.length > 0
+    ) {
+      return pedidoActivo.items.map((it) => {
+        const rawTitle = String(it.titulo || prodInteres || "");
+        const esTermix =
+          /termix|tobill/i.test(rawTitle) ||
+          totalPedido === 79 ||
+          totalPedido === 139;
+        const nombreOficial = esTermix ? "TERMIX TOBILLERA" : "NAC600";
+        let cant = Number(it.cantidad) || 1;
+        if (cant === 1) {
+          if (esTermix && Math.round(totalPedido) === 139) cant = 2;
+          else if (esTermix && Math.round(totalPedido) === 189) cant = 3;
+          else if (!esTermix && Math.round(totalPedido) === 199) cant = 3;
+          else if (!esTermix && Math.round(totalPedido) === 189) cant = 2;
+        }
+        return {
+          nombre: nombreOficial,
+          cantidad: cant,
+          precioUnitario:
+            cant > 0
+              ? Math.round((totalPedido / cant) * 100) / 100
+              : totalPedido,
+        };
+      });
+    }
+
+    const esTermixFallback =
+      /termix|tobill/i.test(prodInteres) ||
+      totalPedido === 79 ||
+      totalPedido === 139;
+    const nombreOficial = esTermixFallback ? "TERMIX TOBILLERA" : "NAC600";
+    const cant = esTermixFallback
+      ? totalPedido === 139
+        ? 2
+        : totalPedido === 189
+          ? 3
+          : 1
+      : totalPedido === 199
+        ? 3
+        : totalPedido === 189
+          ? 2
+          : 1;
+    return [
+      {
+        nombre: nombreOficial,
+        cantidad: cant,
+        precioUnitario: Math.round((totalPedido / cant) * 100) / 100,
+      },
+    ];
+  })();
+
+  const resumenProdTexto = productosModal
+    .map((p) => `${p.cantidad}x ${p.nombre}`)
+    .join(", ");
+
   const modalAliclikData: DespacharAliclikModalData = {
+    dealId: pedidoActivo?.dealId || undefined,
     contactId,
+    numeroOrden: pedidoActivo?.numeroOrden || undefined,
     clienteNombre: contactName,
     telefono: contactPhone || "",
-    dni: dni.trim() || null,
-    departamento: ciudad.trim() || null,
-    provincia: ciudad.trim() || null,
-    distrito: null,
-    agenciaShalom: agenciaShalom.trim() || direccion.trim() || "",
-    total: 139, // Termix o el total actual del pedido
-    productosResumen: "2 Tobilleras Termix",
+    dni: dni.trim() || pedidoActivo?.dniCliente || null,
+    departamento: ciudad.trim() || pedidoActivo?.ciudad || null,
+    provincia: ciudad.trim() || pedidoActivo?.ciudad || null,
+    distrito: pedidoActivo?.distrito || null,
+    agenciaShalom:
+      agenciaShalom.trim() ||
+      direccion.trim() ||
+      pedidoActivo?.direccionEnvio ||
+      "",
+    total: totalPedido,
+    productosResumen: resumenProdTexto,
+    productos: productosModal,
   };
 
   return (
@@ -106,6 +221,15 @@ export function DatosEntregaPanel({
           Auto-sincronizado
         </span>
       </div>
+
+      {pedidoActivo && (
+        <div className="rounded border border-border/70 bg-background px-2.5 py-1.5 text-[11px] flex items-center justify-between">
+          <span className="font-semibold text-foreground">
+            {pedidoActivo.numeroOrden} · {resumenProdTexto}
+          </span>
+          <span className="font-bold text-primary">S/ {totalPedido.toFixed(2)}</span>
+        </div>
+      )}
 
       <div className="space-y-2">
         <div>
@@ -138,7 +262,9 @@ export function DatosEntregaPanel({
             </Label>
             <Input
               value={dni}
-              onChange={(e) => setDni(e.target.value.replace(/\D/g, "").slice(0, 8))}
+              onChange={(e) =>
+                setDni(e.target.value.replace(/\D/g, "").slice(0, 8))
+              }
               placeholder="8 dígitos"
               maxLength={8}
               className="h-8 text-xs bg-background"

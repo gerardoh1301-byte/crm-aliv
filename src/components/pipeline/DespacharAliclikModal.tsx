@@ -79,6 +79,7 @@ export function DespacharAliclikModal({
   const [agenciaShalom, setAgenciaShalom] = useState(data.agenciaShalom || "");
   const [departamento, setDepartamento] = useState(data.departamento || "");
   const [total, setTotal] = useState(normalizarMonto(data.total));
+  const [productoElegido, setProductoElegido] = useState<"NAC600" | "TERMIX TOBILLERA">("NAC600");
   const [cantidad, setCantidad] = useState(3);
   const [fechaEnvio, setFechaEnvio] = useState(calcularFechaEnvioDefecto());
   const [tipoMercancia, setTipoMercancia] = useState("Caja Paquete XS");
@@ -94,15 +95,41 @@ export function DespacharAliclikModal({
       const totNum = parseFloat(normalizarMonto(data.total)) || 119;
       setTotal(String(totNum));
 
-      // Determinar cantidad inicial
+      // 1. Determinar producto oficial (TERMIX TOBILLERA vs NAC600)
+      const textoProd = `${data.productos?.map((p) => p.nombre).join(" ") || ""} ${data.productosResumen || ""}`.toLowerCase();
+      const esTermix =
+        textoProd.includes("termix") ||
+        textoProd.includes("tobill") ||
+        Math.round(totNum) === 79 ||
+        Math.round(totNum) === 139;
+      setProductoElegido(esTermix ? "TERMIX TOBILLERA" : "NAC600");
+
+      // 2. Determinar cantidad real del pedido
       let cantInicial = 1;
       if (data.productos && data.productos.length > 0) {
-        cantInicial = data.productos.reduce((acc, p) => acc + (p.cantidad || 1), 0);
-      } else if (totNum === 199) {
-        cantInicial = 3;
-      } else if (totNum === 189) {
-        cantInicial = 2;
+        cantInicial = data.productos.reduce((acc, p) => acc + (Number(p.cantidad) || 1), 0);
+      } else {
+        const matchResumen = (data.productosResumen || "").match(/(\d+)\s*(?:x|unid|tobill|frasc)/i);
+        if (matchResumen) {
+          cantInicial = parseInt(matchResumen[1], 10) || 1;
+        }
       }
+
+      // Si vino cantidad 1 pero el monto o resumen corresponde a un pack de 2 o 3 unidades
+      if (cantInicial === 1) {
+        const matchResumen = (data.productosResumen || "").match(/(\d+)\s*(?:x|unid|tobill|frasc)/i);
+        if (matchResumen && parseInt(matchResumen[1], 10) > 1) {
+          cantInicial = parseInt(matchResumen[1], 10);
+        } else if (esTermix) {
+          if (Math.round(totNum) === 139) cantInicial = 2;
+          else if (Math.round(totNum) === 189) cantInicial = 3;
+        } else {
+          if (Math.round(totNum) === 199 || Math.round(totNum) === 169) cantInicial = 3;
+          else if (Math.round(totNum) === 189) cantInicial = 2;
+          else if (Math.round(totNum) >= 250) cantInicial = 4;
+        }
+      }
+
       setCantidad(cantInicial);
       setFechaEnvio(calcularFechaEnvioDefecto());
       setTipoMercancia("Caja Paquete XS");
@@ -124,7 +151,7 @@ export function DespacharAliclikModal({
     setLoading(true);
     try {
       const montoTotal = parseFloat(total) || 119;
-      const nombreProd = data.productos?.[0]?.nombre || "NAC600";
+      const nombreProd = productoElegido;
       const precioUnit = Math.round((montoTotal / (cantidad || 1)) * 100) / 100;
 
       const res = await fetch("/api/aliclik/crear-orden", {
@@ -222,6 +249,34 @@ export function DespacharAliclikModal({
                 className="h-8 text-xs mt-1"
                 placeholder="987654321"
               />
+            </div>
+          </div>
+
+          <div>
+            <Label className="text-xs font-semibold">Producto en Almacén AliClik (WANKLIC GROUP 2)</Label>
+            <div className="grid grid-cols-2 gap-2 mt-1">
+              <button
+                type="button"
+                onClick={() => setProductoElegido("NAC600")}
+                className={`h-8 px-2.5 rounded-md border text-xs font-semibold cursor-pointer transition-colors ${
+                  productoElegido === "NAC600"
+                    ? "border-primary bg-primary text-primary-foreground"
+                    : "border-border bg-background hover:bg-muted text-foreground"
+                }`}
+              >
+                💊 NAC600 (ERG)
+              </button>
+              <button
+                type="button"
+                onClick={() => setProductoElegido("TERMIX TOBILLERA")}
+                className={`h-8 px-2.5 rounded-md border text-xs font-semibold cursor-pointer transition-colors ${
+                  productoElegido === "TERMIX TOBILLERA"
+                    ? "border-primary bg-primary text-primary-foreground"
+                    : "border-border bg-background hover:bg-muted text-foreground"
+                }`}
+              >
+                🦵 TERMIX TOBILLERA (ERG)
+              </button>
             </div>
           </div>
 
