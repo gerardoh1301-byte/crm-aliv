@@ -65,11 +65,10 @@ export async function POST(req: NextRequest) {
       // Registrar actividad en el historial del contacto
       await db.insert(activities).values({
         contactId,
+        dealId: dealId || null,
         type: "note",
-        title: `🚀 Pedido despachado a AliClik (${ordenAliClik})`,
-        description: `Se registró la orden ${ordenAliClik} en AliClik con modalidad 'Lo hace AliClik (Servicio completo)' y Courier Alidriver. AliClik generará la guía en Shalom PRO y rotulará el paquete. Destino: ${agenciaShalomNombre}. DNI: ${clienteDni || "No indicado"}.`,
+        description: `🚀 [AliClik Despacho Auto] Orden ${ordenAliClik} creada con modalidad 'Lo hace AliClik (Servicio completo)' y Courier Alidriver. AliClik generará la guía en Shalom PRO y rotulará el paquete. Destino: ${agenciaShalomNombre}. DNI: ${clienteDni || "No indicado"}.`,
         createdAt: new Date(),
-        updatedAt: new Date(),
       });
     }
 
