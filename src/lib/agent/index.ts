@@ -6,7 +6,7 @@ import { deliverMessage, getConversationRow } from "@/lib/channels/deliver";
 import { isChannel, type Channel } from "@/lib/channels/types";
 import { displayName, listMembers } from "@/lib/team";
 import { alertarEquipo } from "./alertas";
-import { limpiarFormatoWhatsApp, removerSaludoRepetido } from "./formato";
+import { limpiarFormatoWhatsApp, removerMencionClaveSiYaEntregada, removerSaludoRepetido } from "./formato";
 import { getConfig } from "@/lib/config";
 import { getAgentConfig } from "./config";
 import { renderContexto, renderSystemPrompt } from "./prompt";
@@ -108,6 +108,20 @@ async function executeAgentTurn(
   const ordenActiva = construirOrdenVerificada(pedidoRecienteRows[0]);
   const deadlineMs = Date.now() + LIMITE_TOTAL_RESPUESTA_MS;
 
+  const rawFields = (contact.customFields as Record<string, unknown> | null) ?? {};
+  const chatTieneClavePrevia = Array.isArray(collapsed) && collapsed.some((m) =>
+    m.role === "assistant" &&
+    (/(?:clave(?:\s+secreta)?(?:\s+de\s+recojo|\s+de\s+retiro)?\s*(?:es|:)\s*\d+)|(?:c[oó]digo\s+de\s+recojo\s*(?:es|:)\s*\d+)|(?:clave\s*:\s*\*\d+\*)|(?:clave\s+de\s+recojo\s+en\s+agencia\s+shalom)/i.test(m.content) ||
+      /pago\s+del\s+saldo\s+de\s+S\/.*confirmado/i.test(m.content))
+  );
+  const claveYaEntregada = Boolean(
+    ordenActiva?.claveRecojo ||
+    rawFields.clave_recojo ||
+    rawFields.clave_retiro ||
+    rawFields.codigo_secreto ||
+    chatTieneClavePrevia
+  );
+
   // Si ya hubo mensajes salientes (del bot o de un asesor) en la conversación, está prohibido volver a saludar
   const [mensajePrevioSaliente] = await db
     .select({ id: messages.id })
@@ -204,6 +218,9 @@ async function executeAgentTurn(
       if (yaRespondio && reply) {
         reply = removerSaludoRepetido(reply);
       }
+      if (claveYaEntregada && reply) {
+        reply = removerMencionClaveSiYaEntregada(reply);
+      }
       if (!reply) {
         // A1: a veces el modelo cierra el turno sin texto. Se le pide una vez que responda
         // (las herramientas ya ejecutadas quedan en el historial, no se repiten).
@@ -280,6 +297,9 @@ async function executeAgentTurn(
     let textoFinal = limpiarFormatoWhatsApp(final.choices[0]?.message?.content?.trim() ?? "");
     if (yaRespondio && textoFinal) {
       textoFinal = removerSaludoRepetido(textoFinal);
+    }
+    if (claveYaEntregada && textoFinal) {
+      textoFinal = removerMencionClaveSiYaEntregada(textoFinal);
     }
     if (textoFinal) {
       const checkFinal = validarRespuestaBotContraOrden(textoFinal, ordenActiva);

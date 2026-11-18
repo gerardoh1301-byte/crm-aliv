@@ -143,10 +143,12 @@ REGLAS ESTRICTAS DE SELECCIÓN DE IMÁGENES (ANTI-CRUCE):
   4. ⛔ REGLA DE ORO DE SEGURIDAD ABSOLUTA - LA CLAVE SECRETA DE RETIRO ES 100% EXCLUSIVA DE GESTIÓN HUMANA:
      - ESTÁ TERMINANTEMENTE PROHIBIDO QUE EL BOT O LA IA ENVÍE, MENCIONE, REVELE O INVENTE CUALQUIER NÚMERO O CÓDIGO DE CLAVE DE RETIRO.
      - BAJO NINGUNA CIRCUNSTANCIA EL BOT TIENE O ENTREGA LA CLAVE, NI CALCULA SALDOS SOBRE PRODUCTOS QUE NO ESTÉN EXPLÍCITAMENTE EN LA SECCIÓN "Pedido EN CURSO de este cliente".
-     - Cuando el cliente pida su clave de recojo, o cuando envíe la constancia de pago del saldo:
+     - CUANDO EL CLIENTE RECIÉN ENVÍA EL VOUCHER DEL SALDO (y la clave AÚN NO ha sido enviada en el chat ni en el contexto):
        El bot ÚNICAMENTE debe responder: "Muchas gracias por tu constancia. Nuestro equipo de administración verificará tu abono en cuenta y un asesor humano te enviará de inmediato tu clave de retiro para que puedas recoger tu paquete en la agencia."
        Y de inmediato ejecutar avisar_asesor con motivo "abono_saldo_verificar_clave".
-     - NUNCA digas "como ya transferiste el saldo te enviamos la clave", y NUNCA des por verificado un pago.
+     - ⚠️ SI LA CLAVE YA FUE ENTREGADA POR EL ASESOR O EN EL CHAT (o si el cliente consulta sobre modo de uso, posología, dudas del producto o agradece):
+       ESTÁ TERMINANTEMENTE PROHIBIDO volver a decir que un asesor validará su abono o que le enviará la clave. Responde ÚNICAMENTE a lo que preguntó el cliente de forma directa, sin mencionar claves ni validaciones pendientes.
+     - NUNCA digas "como ya transferiste el saldo te enviamos la clave", y NUNCA des por verificado un pago antes de que el asesor lo confirme.
   ⚠️ PROHIBIDO DECIR "pagas en la agencia" o "pagas al retirar en ventanilla": Shalom no cobra el producto; el saldo nos lo pagan a nosotros y un asesor humano libera la clave de retiro.`;
 
   return `${conCanal}${bloqueImagenesYAgencias}`;
@@ -163,7 +165,14 @@ export async function renderContexto(contactId: string): Promise<string> {
 
   // BLINDAJE DE SEGURIDAD: Purgar cualquier clave de recojo para que la IA JAMÁS tenga acceso a ella
   const campos = camposContacto();
-  const fieldsSafe = { ...((contact.customFields as Record<string, unknown> | null) ?? {}) };
+  const rawFields = (contact.customFields as Record<string, unknown> | null) ?? {};
+  const tieneClaveEnCustomFields = Boolean(
+    rawFields.clave_recojo ||
+    rawFields.clave_retiro ||
+    rawFields.codigo_secreto ||
+    rawFields.clave
+  );
+  const fieldsSafe = { ...rawFields };
   delete fieldsSafe.clave_recojo;
   delete fieldsSafe.clave_retiro;
   delete fieldsSafe.codigo_secreto;
@@ -200,6 +209,7 @@ export async function renderContexto(contactId: string): Promise<string> {
 
   // R5: Cargar historial de pedidos anteriores para que el bot reconozca a clientes que vuelven
   let pedidosTxt = "";
+  let tieneClaveEnOrden = false;
   try {
     const prevOrders = await db
       .select({
@@ -210,6 +220,7 @@ export async function renderContexto(contactId: string): Promise<string> {
         direccionEnvio: pedidosOrdenes.direccionEnvio,
         distrito: pedidosOrdenes.distrito,
         ciudad: pedidosOrdenes.ciudad,
+        claveRecojo: pedidosOrdenes.claveRecojo,
         createdAt: pedidosOrdenes.createdAt,
       })
       .from(pedidosOrdenes)
@@ -217,6 +228,7 @@ export async function renderContexto(contactId: string): Promise<string> {
       .orderBy(desc(pedidosOrdenes.createdAt))
       .limit(3);
 
+    tieneClaveEnOrden = prevOrders.some((o) => Boolean(o.claveRecojo));
     pedidosTxt = renderPedidosCliente(prevOrders);
   } catch (err) {
     console.warn("[prompt] No se pudo cargar historial de pedidos:", err);
@@ -382,6 +394,30 @@ export async function renderContexto(contactId: string): Promise<string> {
           "ESTÁ TOTALMENTE PROHIBIDO decir simplemente 'ya avisé para despachar' si no tienes el DNI o la agencia exacta."
       );
     }
+  }
+
+  // Detección de clave ya entregada o saldo ya pagado
+  const chatTieneClaveEntregada = Boolean(
+    ultimosMensajesChat &&
+    ultimosMensajesChat.some(
+      (m) =>
+        m.direction === "out" &&
+        m.body &&
+        (/(?:clave(?:\s+secreta)?(?:\s+de\s+recojo|\s+de\s+retiro)?\s*(?:es|:)\s*\d+)|(?:c[oó]digo\s+de\s+recojo\s*(?:es|:)\s*\d+)|(?:clave\s*:\s*\*\d+\*)|(?:clave\s+de\s+recojo\s+en\s+agencia\s+shalom)/i.test(m.body) ||
+          /pago\s+del\s+saldo\s+de\s+S\/.*confirmado/i.test(m.body))
+    )
+  );
+  const claveYaEntregada = tieneClaveEnCustomFields || tieneClaveEnOrden || chatTieneClaveEntregada;
+
+  if (claveYaEntregada) {
+    partes.push(
+      "## 🟢 ESTADO DE CLAVE Y SALDO SHALOM: SALDO CANCELADO Y CLAVE YA ENTREGADA AL CLIENTE\n" +
+        "- Este cliente YA RECIBIÓ su clave de recojo de Shalom en el chat y/o su pago de saldo ya está verificado y confirmado.\n" +
+        "- ⛔ REGLAS ESTRICTAS DE ATENCIÓN:\n" +
+        "  1. ESTÁ TERMINANTEMENTE PROHIBIDO volver a decir que un asesor verificará su abono, que validará su pago o que le enviará su clave secreta. ¡LA CLAVE YA LE FUE ENTREGADA Y EL ABONO YA ESTÁ CONFIRMADO!\n" +
+        "  2. Si el cliente consulta sobre cómo tomar el producto, posología, modo de uso, ingredientes, o agradece, responde ÚNICA Y EXCLUSIVAMENTE a su consulta puntual sobre el producto de forma directa, amable y servicial.\n" +
+        "  3. NO agregues bajo ninguna circunstancia coletillas sobre claves, asesores, vouchers ni validaciones pendientes de pago."
+    );
   }
 
   if (llamadasTxt) partes.push(llamadasTxt);

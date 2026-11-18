@@ -141,3 +141,14 @@ export function aplicarGuardasDeVenta(texto: string): string {
   }
   return t;
 }
+
+/**
+ * Si la clave de recojo de Shalom ya fue entregada o el pago ya fue confirmado,
+ * remueve de forma determinista cualquier mención robótica anacrónica del bot que
+ * prometa que "un asesor te enviará la clave en breve tras validar tu abono".
+ */
+export function removerMencionClaveSiYaEntregada(texto: string): string {
+  if (!texto) return texto;
+  const regex = /(?:^|\s+)(?:tu\s+clave(?:\s+secreta)?(?:\s+te\s+la)?\s+(?:enviar|compartir)[aá][^.!?\n]*|nuestro\s+equipo\s+de\s+administraci[oó]n\s+verificar[aá][^.!?\n]*|un\s+asesor\s+(?:humano\s+)?(?:te\s+)?(?:enviar|compartir)[aá]\s+(?:de\s+inmediato\s+|en\s+breve\s+)?tu\s+clave[^.!?\n]*)[.!?\s]*/gi;
+  return texto.replace(regex, " ").replace(/[ \t]{2,}/g, " ").trim();
+}
