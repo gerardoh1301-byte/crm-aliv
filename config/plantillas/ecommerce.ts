@@ -31,6 +31,7 @@ export const plantillaEcommerce: ConfigClienteEntrada = {
       { clave: "consulta_catalogo", nombre: "Consulta de producto", color: "#64748b" },
       { clave: "carrito_armado", nombre: "Intencion de compra", color: "#2563eb" },
       { clave: "agendar_entrega", nombre: "Agendar entrega", color: "#8b5cf6" },
+      { clave: "adelanto_pagado", nombre: "Adelanto pagado", color: "#10b981" },
       { clave: "en_reparto", nombre: "En camino / Despachado", color: "#0ea5e9" },
       { clave: "entregado", nombre: "Entregado y Cobrado", color: "#16a34a", ganada: true },
       { clave: "cancelado_rechazado", nombre: "Cancelado / Rechazado", color: "#dc2626", perdida: true },

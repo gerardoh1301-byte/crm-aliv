@@ -162,6 +162,7 @@ export async function sincronizarPipeline(opts?: { borrarSobrantes?: boolean }) 
         if (
           dealStage?.isWon ||
           dealStage?.isLost ||
+          dealStage?.key === "adelanto_pagado" ||
           dealStage?.key === "en_reparto" ||
           dealStage?.key === "entregado" ||
           dealStage?.key === "cancelado_rechazado"
@@ -179,6 +180,69 @@ export async function sincronizarPipeline(opts?: { borrarSobrantes?: boolean }) 
         await db.insert(deals).values({
           title: c.name || "Operación",
           stageId: agendarStageId,
+          contactId: c.id,
+        });
+      }
+    }
+  }
+
+
+  // Colocar las operaciones de los contactos que tienen la etiqueta "adelanto pagado" en la etapa "adelanto_pagado"
+  const [stageAdelanto] = await db
+    .select({ id: pipelineStages.id })
+    .from(pipelineStages)
+    .where(and(eq(pipelineStages.pipelineId, principal.id), eq(pipelineStages.key, "adelanto_pagado")))
+    .limit(1);
+
+  if (stageAdelanto) {
+    const adelantoStageId = stageAdelanto.id;
+    const todosContactos = await db
+      .select({ id: contacts.id, name: contacts.name, tags: contacts.tags })
+      .from(contacts);
+
+    const contactosConAdelanto = todosContactos.filter((c) =>
+      (c.tags || []).some((t) => cleanStr(t) === "adelanto pagado")
+    );
+
+    for (const c of contactosConAdelanto) {
+      const [deal] = await db
+        .select({ id: deals.id, stageId: deals.stageId })
+        .from(deals)
+        .innerJoin(pipelineStages, eq(deals.stageId, pipelineStages.id))
+        .where(and(eq(deals.contactId, c.id), eq(pipelineStages.pipelineId, principal.id)))
+        .orderBy(desc(deals.updatedAt))
+        .limit(1);
+
+      if (deal) {
+        const [dealStage] = await db
+          .select({
+            key: pipelineStages.key,
+            isWon: pipelineStages.isWon,
+            isLost: pipelineStages.isLost,
+          })
+          .from(pipelineStages)
+          .where(eq(pipelineStages.id, deal.stageId))
+          .limit(1);
+
+        if (
+          dealStage?.isWon ||
+          dealStage?.isLost ||
+          dealStage?.key === "entregado" ||
+          dealStage?.key === "cancelado_rechazado"
+        ) {
+          continue;
+        }
+
+        if (deal.stageId !== adelantoStageId) {
+          await db
+            .update(deals)
+            .set({ stageId: adelantoStageId, updatedAt: new Date() })
+            .where(eq(deals.id, deal.id));
+        }
+      } else {
+        await db.insert(deals).values({
+          title: c.name || "Operación",
+          stageId: adelantoStageId,
           contactId: c.id,
         });
       }

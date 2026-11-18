@@ -56,6 +56,7 @@ export async function setDealStage(input: {
     const MAPA_ETAPA_A_ESTADO: Record<string, string> = {
       carrito_armado: "por_confirmar_cod",
       agendar_entrega: "confirmado",
+      adelanto_pagado: "preparando",
       en_reparto: "enviado",
       entregado: "entregado",
       cancelado_rechazado: "cancelado",

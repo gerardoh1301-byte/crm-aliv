@@ -188,6 +188,15 @@ export function obtenerEtiquetaDeEtapa(stage: {
     return "Orden en camino";
   }
 
+  // 2.5. Adelanto pagado
+  if (
+    k === "adelanto_pagado" ||
+    n === "adelanto pagado" ||
+    n.includes("adelanto pagado")
+  ) {
+    return "adelanto pagado";
+  }
+
   // 3. Agendar entrega / Pedido confirmado
   if (
     k === "agendar_entrega" ||
@@ -251,7 +260,10 @@ export function obtenerClaveEtapaDeEtiqueta(tag: string): string | null {
   if (n === "compra exitosa" || n.includes("entregado") || n.includes("cobrado")) {
     return "entregado";
   }
-  if (n === "agendar entrega" || n === "adelanto pagado" || n.includes("confirmado")) {
+  if (n === "adelanto pagado") {
+    return "adelanto_pagado";
+  }
+  if (n === "agendar entrega" || n.includes("confirmado")) {
     return "agendar_entrega";
   }
   if (n === "pendiente de adelanto" || n.includes("adelanto") || n.includes("por confirmar")) {
