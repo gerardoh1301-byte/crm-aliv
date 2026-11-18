@@ -41,7 +41,7 @@ export function getGeminiClient(specificKey?: string): OpenAI | null {
     client = new OpenAI({
       apiKey,
       baseURL: GEMINI_BASE_URL,
-      timeout: 30000, // 30s tiempo suficiente para turnos con herramientas y razonamiento
+      timeout: 12000, // A8: 12s máximo por llamada individual para respetar el tope global de 45s
       maxRetries: 0,  // Sin reintentos internos del SDK para que nuestro failover actúe de inmediato
     });
     geminiClients.set(apiKey, client);
@@ -105,25 +105,40 @@ export function hasOpenRouterKey(): boolean {
  * Si la clave actual recibe 429 (cuota de 15 RPM) o 503, se conmuta en 0 milisegundos
  * a la siguiente clave del pool para que el cliente reciba respuesta inmediata.
  */
+export const MAX_TOTAL_RESPONSE_TIMEOUT_MS = 45_000;
+
 export async function createChatCompletionWithFallback(
   params: OpenAI.Chat.Completions.ChatCompletionCreateParamsNonStreaming,
-  options?: { timeout?: number }
+  options?: { timeout?: number; totalTimeoutMs?: number }
 ): Promise<OpenAI.Chat.Completions.ChatCompletion> {
   const requestedModel = params.model || getAgentModel();
   const allKeys = getAllGeminiKeys();
 
-  const timeoutMs = options?.timeout ?? (params.tools && params.tools.length > 0 ? 30000 : 25000);
-  const reqOptions: OpenAI.RequestOptions = {
-    timeout: timeoutMs,
-    maxRetries: 0,
-  };
+  const totalBudgetMs = Math.min(
+    options?.totalTimeoutMs ?? MAX_TOTAL_RESPONSE_TIMEOUT_MS,
+    MAX_TOTAL_RESPONSE_TIMEOUT_MS
+  );
+  const deadline = Date.now() + totalBudgetMs;
+  const perCallBaseMs = options?.timeout ?? 12_000;
+
+  function buildReqOptions(): OpenAI.RequestOptions | null {
+    const remaining = deadline - Date.now();
+    if (remaining <= 800) return null;
+    return {
+      timeout: Math.min(perCallBaseMs, remaining),
+      maxRetries: 0,
+    };
+  }
 
   const triedKeys = new Set<string>();
   let lastErr: unknown = null;
 
-  // 1. Probar con las claves del pool de Gemini
-  const maxAttempts = Math.max(allKeys.length, 1);
+  // 1. Probar con hasta 3 claves del pool de Gemini antes de pasar a Groq para no agotar los 45s
+  const maxAttempts = Math.min(Math.max(allKeys.length, 1), 3);
   for (let attempt = 0; attempt < maxAttempts; attempt++) {
+    const reqOptions = buildReqOptions();
+    if (!reqOptions) break;
+
     const key = getNextGeminiKey();
     if (!key) break;
     if (triedKeys.has(key) && triedKeys.size >= allKeys.length) break;
@@ -165,6 +180,8 @@ export async function createChatCompletionWithFallback(
       if (status === 404) {
         for (const fallbackModel of GEMINI_FALLBACK_MODELS) {
           if (fallbackModel === requestedModel) continue;
+          const fbOpts = buildReqOptions();
+          if (!fbOpts) break;
           try {
             console.info(`[agent-llm] Intentando modelo Gemini alternativo ${fallbackModel}...`);
             return await client.chat.completions.create(
@@ -172,7 +189,7 @@ export async function createChatCompletionWithFallback(
                 ...params,
                 model: fallbackModel,
               },
-              reqOptions
+              fbOpts
             );
           } catch {
             // continuar
@@ -186,11 +203,13 @@ export async function createChatCompletionWithFallback(
     }
   }
 
-  // 2. Si todas las claves de Gemini fallaron o están agotadas, conmutar a Groq Cloud (Ultra-rápido)
+  // 2. Si las claves de Gemini fallaron o agotaron su ventana, conmutar a Groq Cloud dentro del presupuesto de 45s
   const groq = getGroqClient();
   if (groq) {
     const groqModels = ["openai/gpt-oss-20b", "openai/gpt-oss-120b", "qwen/qwen3.8-27b"];
     for (const gModel of groqModels) {
+      const reqOptions = buildReqOptions();
+      if (!reqOptions) break;
       try {
         console.info(`[agent-llm] Intentando failover Groq con ${gModel}...`);
         return await groq.chat.completions.create(
@@ -201,12 +220,13 @@ export async function createChatCompletionWithFallback(
           reqOptions
         );
       } catch (gErr) {
+        lastErr = gErr;
         console.warn(`[agent-llm] Falló Groq ${gModel}:`, gErr instanceof Error ? gErr.message : gErr);
       }
     }
   }
 
-  // 3. Si Gemini y Groq fallaron o no están, conmutar a OpenRouter si está configurado
+  // 3. Si Gemini y Groq fallaron o no están, conmutar a OpenRouter dentro del límite de 45s
   const openRouter = getOpenRouterClientOnly();
   if (openRouter) {
     const openRouterCandidates = [
@@ -215,6 +235,8 @@ export async function createChatCompletionWithFallback(
       "meta-llama/llama-3.3-70b-instruct",
     ];
     for (const orModel of openRouterCandidates) {
+      const reqOptions = buildReqOptions();
+      if (!reqOptions) break;
       try {
         console.info(`[agent-llm] Intentando failover OpenRouter con ${orModel}`);
         return await openRouter.chat.completions.create(
@@ -225,9 +247,14 @@ export async function createChatCompletionWithFallback(
           reqOptions
         );
       } catch (orErr) {
+        lastErr = orErr;
         console.warn(`[agent-llm] Falló OpenRouter ${orModel}`);
       }
     }
+  }
+
+  if (Date.now() >= deadline) {
+    throw new Error("Timeout de IA: límite máximo de 45s alcanzado");
   }
 
   // Si todos los respaldos fallaron, lanzar el error original para trazabilidad

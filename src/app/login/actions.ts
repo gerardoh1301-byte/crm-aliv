@@ -46,13 +46,14 @@ export async function signIn(formData: FormData) {
     const mapSettings = new Map(settings.map((s) => [s.key, s.value]));
 
     const pinIndividual = mapSettings.get(`auth.pin.${email}`)?.trim();
-    const pinAdmin = mapSettings.get("auth.admin_pin")?.trim() || process.env.ADMIN_PIN || "aliv2026";
-    const pinVendedor = mapSettings.get("auth.vendedor_pin")?.trim() || process.env.VENDEDOR_PIN || "1234";
+    const pinAdmin = mapSettings.get("auth.admin_pin")?.trim() || process.env.ADMIN_PIN?.trim() || null;
+    const pinVendedor = mapSettings.get("auth.vendedor_pin")?.trim() || process.env.VENDEDOR_PIN?.trim() || null;
 
-    const esValido =
-      (pinIndividual && password === pinIndividual) ||
-      (miembro.role === "admin" && (password === pinAdmin || password === "aliv2026" || password === "Aliv2026!")) ||
-      (miembro.role === "asesor" && (password === pinVendedor || password === "1234" || password === "1234Aliv2026!"));
+    const pinEsperado =
+      pinIndividual ||
+      (miembro.role === "admin" ? pinAdmin : pinVendedor);
+
+    const esValido = Boolean(pinEsperado && password === pinEsperado);
 
     if (esValido) {
       const sesion = firmarSesion(miembro.id);

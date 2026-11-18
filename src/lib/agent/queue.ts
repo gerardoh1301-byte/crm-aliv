@@ -1,8 +1,9 @@
 import { db } from "@/db";
 import { agentJobs, contacts, conversations } from "@/db/schema";
-import { and, eq, gte, isNull, lte, ne } from "drizzle-orm";
+import { and, eq, gte, isNull, lt, lte, ne, or } from "drizzle-orm";
 
 const DEBOUNCE_MS = 6000;
+const STALE_PROCESSING_MS = 3 * 60 * 1000; // A8: 3 minutos para rescatar trabajos atascados en processing
 
 /**
  * Encola un job para procesar el agente IA.
@@ -82,10 +83,18 @@ export async function claimAgentJob(jobId: string): Promise<
     .limit(1);
 
   if (!job) return { ok: false, reason: "job_not_found" };
-  if (job.status !== "pending") return { ok: false, reason: `status_${job.status}` };
 
   const now = Date.now();
-  if (job.processAfter.getTime() > now) {
+  const esStaleProcessing =
+    job.status === "processing" &&
+    job.updatedAt.getTime() <= now - STALE_PROCESSING_MS &&
+    job.attempts < 3;
+
+  if (job.status !== "pending" && !esStaleProcessing) {
+    return { ok: false, reason: `status_${job.status}` };
+  }
+
+  if (job.status === "pending" && job.processAfter.getTime() > now) {
     return { ok: false, reason: "debounce_still_active" };
   }
 
@@ -176,7 +185,7 @@ export async function claimAgentJob(jobId: string): Promise<
     }
   }
 
-  // Marcar processing (no usamos transacciones distribuidas; en MVP single-runner alcanza)
+  // Marcar processing (soporta también rescate de jobs colgados en processing > 3 min)
   const updated = await db
     .update(agentJobs)
     .set({
@@ -184,7 +193,18 @@ export async function claimAgentJob(jobId: string): Promise<
       attempts: job.attempts + 1,
       updatedAt: new Date(),
     })
-    .where(and(eq(agentJobs.id, jobId), eq(agentJobs.status, "pending")))
+    .where(
+      and(
+        eq(agentJobs.id, jobId),
+        or(
+          eq(agentJobs.status, "pending"),
+          and(
+            eq(agentJobs.status, "processing"),
+            lte(agentJobs.updatedAt, new Date(now - STALE_PROCESSING_MS))
+          )
+        )
+      )
+    )
     .returning({ id: agentJobs.id });
 
   if (updated.length === 0) {
@@ -228,12 +248,31 @@ export async function markJobFailed(
 }
 
 /**
- * Recoge jobs pendientes vencidos (por si setTimeout fallo o serverless killed
- * el worker). Pensado para llamarse desde un cron periodico.
+ * Recoge jobs pendientes vencidos y jobs colgados en 'processing' por más de 3 minutos
+ * (A8: por si Render se reinició a mitad de un turno). Pensado para llamarse desde un cron periódico.
  */
 export async function findStaleJobs(): Promise<
   Array<{ id: string; contactId: string; conversationId: string | null }>
 > {
+  const now = new Date();
+  const staleProcessingLimit = new Date(now.getTime() - STALE_PROCESSING_MS);
+
+  // Devolver a 'pending' los trabajos que quedaron atrapados en 'processing' > 3 min (máx 3 intentos)
+  await db
+    .update(agentJobs)
+    .set({
+      status: "pending",
+      processAfter: now,
+      updatedAt: now,
+    })
+    .where(
+      and(
+        eq(agentJobs.status, "processing"),
+        lte(agentJobs.updatedAt, staleProcessingLimit),
+        lt(agentJobs.attempts, 3)
+      )
+    );
+
   const rows = await db
     .select({
       id: agentJobs.id,
@@ -241,7 +280,16 @@ export async function findStaleJobs(): Promise<
       conversationId: agentJobs.conversationId,
     })
     .from(agentJobs)
-    .where(and(eq(agentJobs.status, "pending"), lte(agentJobs.processAfter, new Date())))
+    .where(
+      or(
+        and(eq(agentJobs.status, "pending"), lte(agentJobs.processAfter, now)),
+        and(
+          eq(agentJobs.status, "processing"),
+          lte(agentJobs.updatedAt, staleProcessingLimit),
+          lt(agentJobs.attempts, 3)
+        )
+      )
+    )
     .limit(50);
   return rows;
 }

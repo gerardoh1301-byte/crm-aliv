@@ -421,7 +421,7 @@ export function TeamSettings() {
               <Label className="text-xs">Nueva Clave Maestra (Admin)</Label>
               <Input
                 type="password"
-                placeholder="Actual: aliv2026"
+                placeholder="Nueva clave de administrador"
                 value={adminPin}
                 onChange={(e) => setAdminPin(e.target.value)}
                 className="h-9 text-xs"
@@ -431,7 +431,7 @@ export function TeamSettings() {
               <Label className="text-xs">Nueva Clave General Vendedores</Label>
               <Input
                 type="password"
-                placeholder="Actual: 1234"
+                placeholder="Nuevo PIN de vendedores"
                 value={vendedorPin}
                 onChange={(e) => setVendedorPin(e.target.value)}
                 className="h-9 text-xs"

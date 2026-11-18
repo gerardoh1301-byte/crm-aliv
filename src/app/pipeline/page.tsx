@@ -66,7 +66,15 @@ export default async function PipelinePage() {
     // Un asesor ve solo las operaciones de sus contactos.
     .where(ownerFilter(member));
 
-  const docCounts = await countDocumentsByContact([...new Set(dealRows.map((d) => d.contactId))]);
+  // A4: Garantizar 1 operación = 1 tarjeta
+  const seenDealIds = new Set<string>();
+  const uniqueDealRows = dealRows.filter((d) => {
+    if (seenDealIds.has(d.id)) return false;
+    seenDealIds.add(d.id);
+    return true;
+  });
+
+  const docCounts = await countDocumentsByContact([...new Set(uniqueDealRows.map((d) => d.contactId))]);
 
   const pipelinesWithStages: Pipeline[] = allPipelines.map((p) => ({
     id: p.id,
@@ -76,18 +84,22 @@ export default async function PipelinePage() {
     stages: allStages.filter((s) => s.pipelineId === p.id),
   }));
 
-  const dealsForClient: DealWithContact[] = dealRows.map((d) => {
+  const dealsForClient: DealWithContact[] = uniqueDealRows.map((d) => {
     const cf = (d.contactCustomFields || {}) as Record<string, any>;
     const ciudad = d.ordenCiudad || cf.departamento_ciudad || cf.ciudad || null;
     const distrito = d.ordenDistrito || cf.distrito || null;
     const direccion = d.ordenDireccion || cf.direccion_envio || cf.direccion || null;
     const dni = d.ordenDni || cf.dni_ruc || cf.dni || null;
     const stage = allStages.find((s) => s.id === d.stageId);
+    const esConsulta =
+      stage?.key === "consulta_catalogo" ||
+      Boolean(stage?.name && stage.name.toLowerCase().includes("consulta"));
 
     return {
       id: d.id,
       title: d.title,
-      value: d.value,
+      // A5: Leads en consulta sin pedido tienen valor 0
+      value: esConsulta && !d.ordenId ? 0 : d.value,
       stageId: d.stageId,
       contactId: d.contactId,
       expectedClose: d.expectedClose,

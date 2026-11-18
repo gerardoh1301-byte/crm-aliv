@@ -14,10 +14,13 @@ import { esSaludoAutomatico, renderOrigenAnuncio } from "./origen-anuncio";
 import { executeTool, getEnabledToolDefinitions, type ToolContext } from "./tools";
 import { getOpenRouterClient, getAgentModel, hasOpenRouterKey, createChatCompletionWithFallback } from "./openrouter";
 import { autoDetectarYAgendarHorario } from "./scheduler";
+import { pedidosOrdenes } from "../../../modules/pedidos/tabla";
+import { construirOrdenVerificada, validarRespuestaBotContraOrden } from "./guardrail-orden";
 
 const MAX_TOOL_ROUNDS = 6;
 const HISTORY_LIMIT = 14;
 const REINTENTO_MS = 20_000;
+const LIMITE_TOTAL_RESPUESTA_MS = 45_000; // A8: límite total de 45s por respuesta
 const MENSAJE_CORTESIA = "Disculpa la demora 🙏 En unos minutos te respondo por aquí.";
 
 export interface RunAgentResult {
@@ -86,10 +89,24 @@ async function executeAgentTurn(
   const tools = await getEnabledToolDefinitions(config.enabledTools);
   const puedeAsignar = tools.some((t) => t.type === "function" && t.function.name === "asignar_asesor");
 
-  const [contexto, equipo] = await Promise.all([
+  const [contexto, equipo, pedidoRecienteRows] = await Promise.all([
     renderContexto(contact.id),
     puedeAsignar ? renderTeamBlock(contact.ownerId) : Promise.resolve(""),
+    db
+      .select({
+        numeroOrden: pedidosOrdenes.numeroOrden,
+        total: pedidosOrdenes.total,
+        items: pedidosOrdenes.items,
+        claveRecojo: pedidosOrdenes.claveRecojo,
+        notas: pedidosOrdenes.notas,
+      })
+      .from(pedidosOrdenes)
+      .where(eq(pedidosOrdenes.contactId, contact.id))
+      .orderBy(desc(pedidosOrdenes.createdAt))
+      .limit(1),
   ]);
+  const ordenActiva = construirOrdenVerificada(pedidoRecienteRows[0]);
+  const deadlineMs = Date.now() + LIMITE_TOTAL_RESPUESTA_MS;
 
   // Si ya hubo mensajes salientes (del bot o de un asesor) en la conversación, está prohibido volver a saludar
   const [mensajePrevioSaliente] = await db
@@ -126,13 +143,20 @@ async function executeAgentTurn(
 
   try {
     for (let round = 0; round < MAX_TOOL_ROUNDS; round++) {
-      const completion = await createChatCompletionWithFallback({
-        model: config.model,
-        messages: llmMessages,
-        tools: tools.length > 0 ? tools : undefined,
-        tool_choice: tools.length > 0 ? "auto" : undefined,
-        max_completion_tokens: 1024,
-      });
+      const remainingBudget = deadlineMs - Date.now();
+      if (remainingBudget <= 1500) {
+        throw new Error("Timeout de IA: se alcanzó el límite total de 45s para la respuesta");
+      }
+      const completion = await createChatCompletionWithFallback(
+        {
+          model: config.model,
+          messages: llmMessages,
+          tools: tools.length > 0 ? tools : undefined,
+          tool_choice: tools.length > 0 ? "auto" : undefined,
+          max_completion_tokens: 1024,
+        },
+        { totalTimeoutMs: remainingBudget }
+      );
 
       const choice = completion.choices[0];
       const assistantMsg = choice.message;
@@ -191,6 +215,28 @@ async function executeAgentTurn(
         return avisarSinRespuesta(conversation.id, contact, "Respuesta vacía del modelo", "empty_reply", toolCalls);
       }
 
+      // C2: Validar determinísticamente que el bot nunca escriba una clave ni un monto/cantidad que contradiga la orden
+      const checkOrden = validarRespuestaBotContraOrden(reply, ordenActiva);
+      if (checkOrden.bloqueado) {
+        console.warn(`[guardrail-orden] Bloqueado en conv ${conversation.id}: ${checkOrden.motivo} - ${checkOrden.detalle}`);
+        reply = checkOrden.textoSeguro;
+        await Promise.all([
+          db.update(contacts).set({ needsHuman: true, updatedAt: new Date() }).where(eq(contacts.id, contact.id)),
+          db.update(conversations).set({ needsHuman: true, updatedAt: new Date() }).where(eq(conversations.id, conversation.id)),
+          db.insert(activities).values({
+            type: "note",
+            description: `[GUARDRAIL C2] Respuesta del bot intervenida (${checkOrden.motivo}): ${checkOrden.detalle}. Se derivó el chat a un asesor humano.`,
+            contactId: contact.id,
+          }),
+        ]);
+        await alertarEquipo({
+          contactId: contact.id,
+          conversationId: conversation.id,
+          titulo: `⚠️ Guardrail C2 (${contact.name})`,
+          cuerpo: `${checkOrden.detalle ?? "El bot intentó enviar clave o monto inválido"}. Se derivó a asesor humano.`,
+        });
+      }
+
       const entrega = await deliverMessage(conversation.id, { text: reply }, "agent");
       if (!entrega.ok) {
         return { ok: false, reason: `send_failed: ${entrega.error ?? "unknown"}`, toolCalls };
@@ -236,6 +282,14 @@ async function executeAgentTurn(
       textoFinal = removerSaludoRepetido(textoFinal);
     }
     if (textoFinal) {
+      const checkFinal = validarRespuestaBotContraOrden(textoFinal, ordenActiva);
+      if (checkFinal.bloqueado) {
+        textoFinal = checkFinal.textoSeguro;
+        await Promise.all([
+          db.update(contacts).set({ needsHuman: true, updatedAt: new Date() }).where(eq(contacts.id, contact.id)),
+          db.update(conversations).set({ needsHuman: true, updatedAt: new Date() }).where(eq(conversations.id, conversation.id)),
+        ]);
+      }
       const entrega = await deliverMessage(conversation.id, { text: textoFinal }, "agent");
       if (entrega.ok) {
         await db.update(contacts).set({ updatedAt: new Date() }).where(eq(contacts.id, contact.id));

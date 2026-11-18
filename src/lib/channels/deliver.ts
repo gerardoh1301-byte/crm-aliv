@@ -1,12 +1,23 @@
 import "server-only";
 import { db } from "@/db";
 import { conversations, messages } from "@/db/schema";
-import { eq } from "drizzle-orm";
+import { and, desc, eq, gte } from "drizzle-orm";
 import { getAccountById } from "./accounts";
 import { conectorParaConversacion } from "./conectores";
 import type { ConversationRow, OutboundMessage } from "./conector";
 import { touchConversation } from "./ingest";
 import type { Channel } from "./types";
+
+const VENTANA_DEDUP_MS = 10 * 60 * 1000; // A7: 10 minutos sin reenviar el mismo texto a la misma conversación
+const recentOutboundMemory = new Map<string, { normText: string; sentAt: number; messageId: string | null }>();
+
+export function normalizarTextoDedup(texto: string): string {
+  return texto.replace(/\s+/g, " ").trim().toLowerCase();
+}
+
+export function limpiarCacheDedupMensajes(): void {
+  recentOutboundMemory.clear();
+}
 
 /**
  * Unico camino de salida del sistema: envia por el conector de la conversacion y
@@ -70,6 +81,59 @@ export async function deliverMessage(
     body = body.replace(/\b\(?0011\)?\b/g, "[verificación humana]");
   }
 
+  // Asegurar que el mensaje saliente real lleve el body sanitizado
+  const msgToSend: OutboundMessage = msg.text ? { ...msg, text: body } : msg;
+
+  // A7: Evitar reenviar un mensaje con el mismo texto a la misma conversación dentro de 10 minutos
+  const normBody = normalizarTextoDedup(body);
+  const nowMs = Date.now();
+  const memPrev = recentOutboundMemory.get(conversationId);
+  if (memPrev && memPrev.normText === normBody && nowMs - memPrev.sentAt < VENTANA_DEDUP_MS) {
+    console.warn(`[deliverMessage] A7 Dedup (memoria): mensaje idéntico omitido en conversación ${conversationId}`);
+    return {
+      ok: true,
+      messageId: memPrev.messageId,
+      hint: "deduplicated_within_10m",
+    };
+  }
+
+  const hace10Min = new Date(nowMs - VENTANA_DEDUP_MS);
+  const recientesOut = await db
+    .select({ id: messages.id, body: messages.body, status: messages.status })
+    .from(messages)
+    .where(
+      and(
+        eq(messages.conversationId, conversation.id),
+        eq(messages.direction, "out"),
+        gte(messages.createdAt, hace10Min)
+      )
+    )
+    .orderBy(desc(messages.createdAt))
+    .limit(5);
+
+  const duplicadoReciente = recientesOut.find(
+    (m) => m.status !== "failed" && m.body && normalizarTextoDedup(m.body) === normBody
+  );
+  if (duplicadoReciente) {
+    recentOutboundMemory.set(conversationId, {
+      normText: normBody,
+      sentAt: nowMs,
+      messageId: duplicadoReciente.id,
+    });
+    console.warn(`[deliverMessage] A7 Dedup (BD): mensaje idéntico omitido en conversación ${conversationId}`);
+    return {
+      ok: true,
+      messageId: duplicadoReciente.id,
+      hint: "deduplicated_within_10m",
+    };
+  }
+
+  recentOutboundMemory.set(conversationId, {
+    normText: normBody,
+    sentAt: nowMs,
+    messageId: null,
+  });
+
   // Fila optimista antes de salir a la red: si el proveedor tarda o falla, el mensaje
   // ya esta en el hilo y el usuario ve el estado real en vez de que desaparezca.
   const [pending] = await db
@@ -81,14 +145,14 @@ export async function deliverMessage(
       provider: conversation.provider,
       direction: "out",
       origin,
-      type: msg.attachments?.length ? "image" : msg.template ? "template" : "text",
+      type: msgToSend.attachments?.length ? "image" : msgToSend.template ? "template" : "text",
       body,
-      rawPayload: (msg.attachments?.length || msg.replyTo || msg.quotedText) ? {
-        ...(msg.attachments?.length ? { attachments: msg.attachments } : {}),
-        ...(msg.replyTo ? { replyTo: msg.replyTo } : {}),
-        ...(msg.quotedText ? { quotedText: msg.quotedText, quotedSender: msg.quotedSender } : {}),
+      rawPayload: (msgToSend.attachments?.length || msgToSend.replyTo || msgToSend.quotedText) ? {
+        ...(msgToSend.attachments?.length ? { attachments: msgToSend.attachments } : {}),
+        ...(msgToSend.replyTo ? { replyTo: msgToSend.replyTo } : {}),
+        ...(msgToSend.quotedText ? { quotedText: msgToSend.quotedText, quotedSender: msgToSend.quotedSender } : {}),
       } : null,
-      templateName: msg.template?.name ?? null,
+      templateName: msgToSend.template?.name ?? null,
       status: "pending",
       tenantId: conversation.tenantId,
       toPhone:
@@ -101,10 +165,11 @@ export async function deliverMessage(
   const account = await getAccountById(conversation.accountId);
   const outcome = await conector.enviar(
     { conversation, account, channel: conversation.channel as Channel },
-    msg
+    msgToSend
   );
 
   if (!outcome.success) {
+    recentOutboundMemory.delete(conversationId);
     const errorText = outcome.error?.message ?? "error desconocido";
     await db
       .update(messages)

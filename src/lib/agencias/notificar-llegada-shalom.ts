@@ -71,6 +71,7 @@ export async function verificarYNotificarLlegadasShalom(
       total: pedidosOrdenes.total,
       ciudad: pedidosOrdenes.ciudad,
       estadoPedido: pedidosOrdenes.estado,
+      notasPedido: pedidosOrdenes.notas,
       dealId: pedidosOrdenes.dealId,
       contactId: contacts.id,
       contactName: contacts.name,
@@ -89,7 +90,16 @@ export async function verificarYNotificarLlegadasShalom(
       )
     );
 
-  const candidatos = await query;
+  const candidatosRaw = await query;
+  // A7: Deduplicar por pedidoId (si un contacto tiene 2 conversaciones, elegir preferiblemente WhatsApp y no enviar 2 veces al mismo pedido)
+  const porPedido = new Map<string, (typeof candidatosRaw)[number]>();
+  for (const row of candidatosRaw) {
+    const prev = porPedido.get(row.pedidoId);
+    if (!prev || (row.convChannel === "whatsapp" && prev.convChannel !== "whatsapp")) {
+      porPedido.set(row.pedidoId, row);
+    }
+  }
+  const candidatos = Array.from(porPedido.values());
   const filtrados = opts?.contactIdEspecifico
     ? candidatos.filter((c) => c.contactId === opts.contactIdEspecifico)
     : candidatos;
@@ -174,7 +184,12 @@ export async function verificarYNotificarLlegadasShalom(
       enDestinoListos++;
 
       const tags = (c.contactTags || []).map((t) => t.toLowerCase().trim());
-      const yaNotificado = tags.includes("en agencia shalom") || tags.includes("aviso_llegada_enviado");
+      const notasPed = (c.notasPedido || "").toLowerCase();
+      const yaNotificadoEnPedido = notasPed.includes("[aviso_llegada_enviado");
+      const yaNotificado =
+        yaNotificadoEnPedido ||
+        tags.includes("en agencia shalom") ||
+        tags.includes("aviso_llegada_enviado");
 
       // Si ya fue notificado y no se fuerza reenvío, verificar si han pasado más de 20 horas desde el último mensaje
       // para enviar recordatorio preventivo anti-devolución de Shalom.
@@ -289,6 +304,16 @@ Para enviarte tu *clave secreta de recojo* y puedas retirarlo hoy mismo con tu D
 
       if (entrega.ok) {
         notificacionesEnviadas++;
+
+        // A7: Guardar marca persistente «aviso de llegada enviado» directamente en el pedido
+        const marcaAviso = `[AVISO_LLEGADA_ENVIADO:${new Date().toISOString().slice(0, 16)} guia=${c.numeroGuia}]`;
+        const nuevasNotas = c.notasPedido
+          ? `${c.notasPedido}\n${marcaAviso}`
+          : marcaAviso;
+        await db
+          .update(pedidosOrdenes)
+          .set({ notas: nuevasNotas, updatedAt: new Date() })
+          .where(eq(pedidosOrdenes.id, c.pedidoId));
 
         // Aplicar etiquetas para trazabilidad y evitar spam
         await aplicarEtiquetaAContacto({
