@@ -88,8 +88,8 @@ export default async function PipelinePage() {
     const cf = (d.contactCustomFields || {}) as Record<string, any>;
     const ciudad = d.ordenCiudad || cf.departamento_ciudad || cf.ciudad || null;
     const distrito = d.ordenDistrito || cf.distrito || null;
-    const direccion = d.ordenDireccion || cf.direccion_envio || cf.direccion || null;
-    const dni = d.ordenDni || cf.dni_ruc || cf.dni || null;
+    const direccion = cf.agencia_shalom || d.ordenDireccion || cf.direccion_envio || cf.direccion || null;
+    const dni = cf.dni_ruc || d.ordenDni || cf.dni || null;
     const stage = allStages.find((s) => s.id === d.stageId);
     const esConsulta =
       stage?.key === "consulta_catalogo" ||

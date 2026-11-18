@@ -1,6 +1,7 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
 import {
   Dialog,
   DialogContent,
@@ -13,13 +14,12 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { toast } from "sonner";
-import { useRouter } from "next/navigation";
-import { Truck, CheckCircle2, PackageCheck } from "lucide-react";
+import { PackageCheck, Truck, CheckCircle2 } from "lucide-react";
 
 export interface DespacharAliclikModalData {
-  dealId: string;
+  dealId?: string;
   contactId?: string | null;
-  numeroOrden: string;
+  numeroOrden?: string;
   clienteNombre: string;
   telefono: string;
   dni?: string | null;
@@ -36,7 +36,14 @@ interface DespacharAliclikModalProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   data: DespacharAliclikModalData;
-  onSuccess?: (ordenAliClik: string) => void;
+  onSuccess?: (nuevaOrden: string) => void;
+}
+
+function normalizarMonto(rawTotal: number | undefined | null): string {
+  if (!rawTotal || isNaN(rawTotal)) return "119";
+  // Si viene en céntimos (ej. 19900 o 11900), dividir entre 100
+  const valor = rawTotal > 500 ? rawTotal / 100 : rawTotal;
+  return valor.toFixed(2).replace(/\.00$/, "");
 }
 
 export function DespacharAliclikModal({
@@ -52,7 +59,19 @@ export function DespacharAliclikModal({
   const [dni, setDni] = useState(data.dni || "");
   const [agenciaShalom, setAgenciaShalom] = useState(data.agenciaShalom || "");
   const [departamento, setDepartamento] = useState(data.departamento || "");
-  const [total, setTotal] = useState(String(data.total || 119));
+  const [total, setTotal] = useState(normalizarMonto(data.total));
+
+  // Sincronizar estado cuando se abre el modal o cambian los datos del trato seleccionado
+  useEffect(() => {
+    if (open) {
+      setClienteNombre(data.clienteNombre || "");
+      setTelefono(data.telefono || "");
+      setDni(data.dni || "");
+      setAgenciaShalom(data.agenciaShalom || "");
+      setDepartamento(data.departamento || "");
+      setTotal(normalizarMonto(data.total));
+    }
+  }, [open, data]);
 
   const handleDespachar = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -63,6 +82,7 @@ export function DespacharAliclikModal({
 
     setLoading(true);
     try {
+      const montoTotal = parseFloat(total) || 119;
       const res = await fetch("/api/aliclik/crear-orden", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -74,10 +94,10 @@ export function DespacharAliclikModal({
           clienteDni: dni,
           departamento,
           agenciaShalomNombre: agenciaShalom,
-          total: parseFloat(total) || 119,
+          total: montoTotal,
           productos: data.productos && data.productos.length > 0
             ? data.productos
-            : [{ nombre: data.productosResumen || "NAC600", cantidad: 1, precioUnitario: parseFloat(total) || 119 }],
+            : [{ nombre: data.productosResumen || "NAC600", cantidad: 1, precioUnitario: montoTotal }],
         }),
       });
 

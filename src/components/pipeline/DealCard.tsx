@@ -289,7 +289,7 @@ export function DealCard({
     modalidad: "TERRESTRE",
     tipoEntrega: "En agencia",
     telefono: contactPhone || null,
-    total: value || 0,
+    total: ordenTotal ? Number(ordenTotal) : (value ? (value > 500 ? value / 100 : value) : 0),
     productosResumen: Array.isArray(ordenItems)
       ? ordenItems.map((it: any) => `${it.cantidad ?? 1}x ${it.titulo ?? it.title ?? "Producto"}`).join(", ")
       : title,
@@ -326,10 +326,17 @@ export function DealCard({
     provincia: ciudad || null,
     distrito: distrito || null,
     agenciaShalom: currentDireccion || direccion || "",
-    total: value || 0,
+    total: ordenTotal ? Number(ordenTotal) : (value ? (value > 500 ? value / 100 : value) : 0),
     productosResumen: Array.isArray(ordenItems)
       ? ordenItems.map((it: any) => `${it.cantidad ?? 1}x ${it.titulo ?? it.title ?? "Producto"}`).join(", ")
       : title,
+    productos: Array.isArray(ordenItems) && ordenItems.length > 0
+      ? ordenItems.map((it: any) => ({
+          nombre: it.titulo ?? it.title ?? it.nombre ?? "NAC600",
+          cantidad: Number(it.cantidad ?? it.quantity ?? 1) || 1,
+          precioUnitario: Number(it.precio ?? it.price ?? 0) || 0,
+        }))
+      : undefined,
   };
 
   const handleContactNavigate = (e: React.MouseEvent) => {
