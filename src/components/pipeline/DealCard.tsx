@@ -21,6 +21,8 @@ import {
   Package,
   FileImage,
   PackageCheck,
+  Landmark,
+  CheckCircle2,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { avatarBg, getInitials } from "@/lib/avatar";
@@ -34,6 +36,7 @@ import {
 } from "./SeguimientoShalomModal";
 import { AsignarVendedorModal } from "./AsignarVendedorModal";
 import { DespacharAliclikModal, type DespacharAliclikModalData } from "./DespacharAliclikModal";
+import { LiquidarAliclikModal, type LiquidacionAliclikData } from "./LiquidarAliclikModal";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -74,6 +77,7 @@ export interface DealCardProps {
   ownerId?: string | null;
   ownerName?: string | null;
   tags?: string[];
+  liquidacionAliclik?: LiquidacionAliclikData | null;
 }
 
 export function DealCard({
@@ -106,6 +110,7 @@ export function DealCard({
   ownerId,
   ownerName,
   tags = [],
+  liquidacionAliclik,
 }: DealCardProps) {
   const router = useRouter();
   const [rotuloOpen, setRotuloOpen] = useState(false);
@@ -113,6 +118,10 @@ export function DealCard({
   const [shalomOpen, setShalomOpen] = useState(false);
   const [assignOpen, setAssignOpen] = useState(false);
   const [aliclikModalOpen, setAliclikModalOpen] = useState(false);
+  const [liquidarOpen, setLiquidarOpen] = useState(false);
+  const [currentLiquidacion, setCurrentLiquidacion] = useState<LiquidacionAliclikData | null>(
+    liquidacionAliclik ?? null
+  );
   const [currentOwnerId, setCurrentOwnerId] = useState<string | null>(ownerId ?? null);
   const [currentOwnerName, setCurrentOwnerName] = useState<string | null>(ownerName ?? null);
   const [currentNumeroGuia, setCurrentNumeroGuia] = useState<string | null>(numeroGuia ?? null);
@@ -120,6 +129,10 @@ export function DealCard({
   const [currentClaveRecojo, setCurrentClaveRecojo] = useState<string | null>(claveRecojo ?? null);
   const [currentDireccion, setCurrentDireccion] = useState<string | null>(direccion ?? null);
   const [currentTags, setCurrentTags] = useState<string[]>(tags || []);
+
+  useEffect(() => {
+    setCurrentLiquidacion(liquidacionAliclik ?? null);
+  }, [liquidacionAliclik]);
 
   useEffect(() => {
     setCurrentOwnerId(ownerId ?? null);
@@ -235,6 +248,10 @@ export function DealCard({
   // Aplica cuando la orden está confirmada, preparando o en reparto
   const stageKeyLower = (stageKey || "").toLowerCase();
   const stageNameLower = (stageName || "").toLowerCase();
+  const esEntregado =
+    stageKeyLower === "entregado" ||
+    stageNameLower.includes("entregado") ||
+    stageNameLower.includes("cobrado");
   const esConfirmadoODespacho =
     stageKeyLower.includes("confirmad") ||
     stageKeyLower.includes("reparto") ||
@@ -529,6 +546,58 @@ export function DealCard({
           </Button>
         )}
 
+        {/* Botón de Confirmación de Liquidación AliClik en BCP (para Contra Entrega) o resumen BCP Shalom */}
+        {(esEntregado || Boolean(currentLiquidacion)) && (
+          !esShalom || Boolean(currentLiquidacion) ? (
+            <Button
+              type="button"
+              size="sm"
+              variant="outline"
+              {...pararArrastre}
+              onClick={(e) => {
+                e.stopPropagation();
+                setLiquidarOpen(true);
+              }}
+              className={cn(
+                "w-full h-7 text-[11px] font-bold gap-1.5 shadow-none cursor-pointer",
+                currentLiquidacion
+                  ? "bg-emerald-600/15 hover:bg-emerald-600/25 text-emerald-800 dark:text-emerald-300 border-emerald-600/40"
+                  : "bg-amber-500/15 hover:bg-amber-500/25 text-amber-800 dark:text-amber-300 border-amber-500/40"
+              )}
+              title="Confirmar monto liquidado por AliClik y depositado en Cuenta BCP"
+            >
+              {currentLiquidacion ? (
+                <>
+                  <CheckCircle2 className="h-3.5 w-3.5 shrink-0 text-emerald-600" aria-hidden />
+                  <span className="truncate">
+                    Liquidado BCP: S/ {currentLiquidacion.montoNeto.toFixed(2)}
+                  </span>
+                </>
+              ) : (
+                <>
+                  <Landmark className="h-3.5 w-3.5 shrink-0 text-amber-600" aria-hidden />
+                  <span className="truncate">Confirmar Liquidación AliClik (BCP)</span>
+                </>
+              )}
+            </Button>
+          ) : (
+            <div className="rounded-md border border-emerald-500/30 bg-emerald-500/10 px-2 py-1 text-[10px] font-medium text-emerald-800 dark:text-emerald-300 flex items-center justify-between">
+              <span>
+                🏦 BCP: S/20 + Saldo S/
+                {Math.max(
+                  0,
+                  (ordenTotal
+                    ? Number(ordenTotal)
+                    : value > 500
+                      ? value / 100
+                      : value) - 20
+                ).toFixed(0)}
+              </span>
+              <span className="text-muted-foreground">Env. -S/2 · FF -S/3</span>
+            </div>
+          )
+        )}
+
         {/* Pie: contacto rapido, asesor y menu */}
         <div className="flex items-center gap-2.5 pt-2 border-t border-border/40 text-muted-foreground" onClick={(e) => e.stopPropagation()}>
           {contactPhone ? (
@@ -595,6 +664,9 @@ export function DealCard({
               )}
               <DropdownMenuItem onClick={() => setAliclikModalOpen(true)} className="text-emerald-700 dark:text-emerald-400 font-semibold cursor-pointer">
                 <PackageCheck className="h-4 w-4 text-emerald-600" /> Despachar con AliClik (Alidriver)
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={() => setLiquidarOpen(true)} className="text-amber-700 dark:text-amber-400 font-semibold cursor-pointer">
+                <Landmark className="h-4 w-4 text-amber-600" /> {currentLiquidacion ? `Editar Liquidación BCP (S/ ${currentLiquidacion.montoNeto.toFixed(2)})` : "Confirmar Liquidación AliClik (BCP)"}
               </DropdownMenuItem>
               <DropdownMenuItem onClick={togglePendienteCourier}>
                 <Truck className="h-4 w-4" /> {isPendienteCourier ? "Quitar pendiente de courier" : "Marcar pendiente de courier"}
@@ -674,6 +746,21 @@ export function DealCard({
         data={despacharAliclikData}
         onSuccess={(nuevaOrden) => {
           toast.success(`Orden ${nuevaOrden} creada en AliClik. Servicio de despacho y rotulado asignado a Alidriver.`);
+        }}
+      />
+
+      <LiquidarAliclikModal
+        open={liquidarOpen}
+        onOpenChange={setLiquidarOpen}
+        dealId={id}
+        pedidoId={pedidoId}
+        contactId={contactId}
+        numeroOrden={numeroOrdenLimpio}
+        clienteNombre={contactName || "Cliente Aliv"}
+        totalCobrado={ordenTotal ? Number(ordenTotal) : value}
+        liquidacionActual={currentLiquidacion}
+        onSuccess={(liq) => {
+          setCurrentLiquidacion(liq);
         }}
       />
     </Card>

@@ -7,6 +7,7 @@ import { eq, asc } from "drizzle-orm";
 import { requireMember } from "@/lib/api-auth";
 import { ownerFilter, canAccessContactId } from "@/lib/team";
 import { countDocumentsByContact } from "@/lib/documents";
+import { extraerLiquidacionAliclik } from "@/app/api/pedidos/liquidar-aliclik/route";
 
 export async function GET() {
   const auth = await requireMember();
@@ -48,6 +49,7 @@ export async function GET() {
       ordenClaveRecojo: pedidosOrdenes.claveRecojo,
       ordenModalidadPago: pedidosOrdenes.modalidadPago,
       ordenEstado: pedidosOrdenes.estado,
+      ordenNotas: pedidosOrdenes.notas,
     })
     .from(deals)
     .leftJoin(contacts, eq(deals.contactId, contacts.id))
@@ -76,13 +78,29 @@ export async function GET() {
         .filter((d) => d.stageId === stage.id)
         .map((d) => {
           const custom = (d.contactCustomFields as Record<string, unknown> | null) ?? {};
+          const notasCombinadas = [d.ordenNotas, d.notes].filter(Boolean).join("\n");
+          const liq = extraerLiquidacionAliclik(notasCombinadas);
           return {
             ...d,
+            stageKey: stage.key,
+            stageName: stage.name,
+            pedidoId: d.ordenId || null,
+            transportadora: d.ordenTransportadora || null,
+            numeroGuia: d.ordenNumeroGuia || (custom.guia_shalom as string) || null,
+            codigoRastreo: d.ordenCodigoRastreo || (custom.codigo_rastreo as string) || null,
+            claveRecojo: d.ordenClaveRecojo || (custom.clave_recojo as string) || null,
+            estadoPedido: d.ordenEstado || null,
             ciudad: d.ordenCiudad || (custom.departamento_ciudad as string) || (custom.ciudad as string) || null,
             distrito: d.ordenDistrito || (custom.distrito as string) || null,
             direccion: d.ordenDireccion || (custom.direccion_envio as string) || (custom.agencia_shalom as string) || null,
             numeroOrden: d.ordenNumero || null,
             dniCliente: (custom.dni_ruc as string) || (custom.dni as string) || null,
+            adelantoVerificado: Boolean(
+              notasCombinadas.includes("[ADELANTO VERIFICADO]") ||
+              stage.key === "adelanto_pagado" ||
+              d.ordenModalidadPago === "adelanto_agencia"
+            ),
+            liquidacionAliclik: liq,
             // A5: Poner valor 0 a las consultas (leads sin pedido) para no inflar el valor del pipeline
             value: esConsulta && !d.ordenId ? 0 : d.value,
             docCount: docCounts[d.contactId] ?? 0,
@@ -137,6 +155,23 @@ export async function PUT(request: NextRequest) {
       .from(deals)
       .where(eq(deals.id, body.dealId))
       .limit(1);
+
+    // Notificar al ERP para que actualice los ingresos/egresos de esta etapa en tiempo real
+    const erpUrl = process.env.ALIV_ERP_URL || "https://aliv-finanzas-erp.onrender.com";
+    const erpPin = process.env.ALIV_FINANZAS_PIN || process.env.ALIV_PIN || "";
+    fetch(`${erpUrl}/api/crm/sync-now`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        ...(erpPin ? { "x-aliv-pin": erpPin } : {}),
+      },
+      body: JSON.stringify({
+        origen: "crm-stage-change",
+        dealId: body.dealId,
+        stageId: body.stageId,
+      }),
+    }).catch(() => {});
+
     return NextResponse.json(result);
   }
 

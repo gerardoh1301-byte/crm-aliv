@@ -145,5 +145,23 @@ export async function POST(request: NextRequest) {
     .set({ needsHuman: false, needsHumanReason: null, needsHumanAt: null, updatedAt: ahora })
     .where(eq(contacts.id, actualizado.contactId));
 
+  // Notificar al ERP para que registre de inmediato el ingreso de S/ 20.00 directo a la cuenta BCP
+  const erpUrl = process.env.ALIV_ERP_URL || "https://aliv-finanzas-erp.onrender.com";
+  const erpPin = process.env.ALIV_FINANZAS_PIN || process.env.ALIV_PIN || "";
+  fetch(`${erpUrl}/api/crm/sync-now`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      ...(erpPin ? { "x-aliv-pin": erpPin } : {}),
+    },
+    body: JSON.stringify({
+      origen: "crm-adelanto-shalom",
+      pedidoId: actualizado.id,
+      dealId: actualizado.dealId,
+      numeroOrden: actualizado.numeroOrden,
+      montoAdelanto: 20,
+    }),
+  }).catch(() => {});
+
   return NextResponse.json({ ok: true, pedido: actualizado });
 }

@@ -118,6 +118,17 @@ export interface DealWithContact extends Deal {
   ownerName?: string | null;
   /** Etiquetas del contacto vinculadas a la operación */
   tags?: string[];
+  adelantoVerificado?: boolean;
+  liquidacionAliclik?: {
+    montoNeto: number;
+    montoBruto: number;
+    costoEnvio: number;
+    costoFulfillment: number;
+    comisionPos: number;
+    fecha: string;
+    metodoCobro: string;
+    nroOperacion: string;
+  } | null;
 }
 
 export interface ContactWithDeals extends Contact {
