@@ -218,7 +218,7 @@ export async function crearOrdenAgenciaServicioCompleto(params: CrearOrdenAgenci
     params.agenciaShalomNombre,
     params.departamento
   );
-  const dropShalomIdFinal = params.dropShalomId || agenciaNormalizada.dropShalomId;
+  const dropShalomIdFinal = params.dropShalomId || agenciaNormalizada.dropShalomId || 405;
   const agenciaDestinoFinal = agenciaNormalizada.agencyDestination;
   const agenciaDireccionFinal =
     params.agenciaShalomDireccion || agenciaNormalizada.agencyAddress;
@@ -228,7 +228,7 @@ export async function crearOrdenAgenciaServicioCompleto(params: CrearOrdenAgenci
 
   // 2. Fecha de envío más cercana activa (si no se proporciona)
   const fechaEnvioTexto = params.fechaEnvio || calcularFechaEnvioShalom();
-  // El backend de AliClik exige formato ISO (ej. 2026-11-19T00:00:00.000Z)
+  // Formato ISO requerido por el backend de AliClik
   let scheduleDateIso = fechaEnvioTexto;
   if (/^\d{2}\/\d{2}\/\d{4}$/.test(fechaEnvioTexto)) {
     const [d, m, y] = fechaEnvioTexto.split("/");
@@ -301,7 +301,7 @@ export async function crearOrdenAgenciaServicioCompleto(params: CrearOrdenAgenci
     flagAliShalom: true, // "Lo hace AliClik (Servicio completo)" -> Generan guía y rótulo Shalom PRO
     flagCourierToAgency: true, // "Courier Alidriver" -> Recoge en almacén y lleva a Shalom
     productDetail,
-    merchandiseShalom: tipoMercanciaFinal, // "Caja Paquete XS"
+    merchandiseShalom: tipoMercanciaFinal, // "Caja Paquete XS" en raíz
     warehouseName: primarySku.warehouseName,
     warehouseId: primarySku.warehouseId,
     customer: {
@@ -314,9 +314,10 @@ export async function crearOrdenAgenciaServicioCompleto(params: CrearOrdenAgenci
     preOrderHistory: {},
     shipping: {
       scheduleDate: scheduleDateIso, // Formato ISO requerido por el backend de AliClik
-      DropShalomId: dropShalomIdFinal || void 0, // ID numérico de la agencia en catálogo Shalom
-      agencyDestination: agenciaDestinoFinal,
-      agencyAddress: agenciaDireccionFinal,
+      DropShalomId: dropShalomIdFinal, // ID numérico de la agencia (ej. 405)
+      agencyDestination: String(dropShalomIdFinal), // En AliClik agencyDestination almacena el ID como string ('405')
+      agencySelected: agenciaDestinoFinal, // Nombre oficial (ej. 'ICA / ICA / ICA / ICA AV. JJ ELIAS')
+      agencyAddress: agenciaDireccionFinal, // Dirección oficial del Fundo La Palma
       addressPickUp: agenciaDestinoFinal,
       address1: agenciaDestinoFinal,
       address2: "",
@@ -341,6 +342,8 @@ export async function crearOrdenAgenciaServicioCompleto(params: CrearOrdenAgenci
       shippingCost: 0,
       senderContact: params.clienteDni || "",
       senderPhone: params.clienteTelefono.replace(/\D/g, ""),
+      merchandiseShalom: tipoMercanciaFinal, // "Caja Paquete XS" dentro de shipping
+      keyCode: "0000",
     },
   };
 
