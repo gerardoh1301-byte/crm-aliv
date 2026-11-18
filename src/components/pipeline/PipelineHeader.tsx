@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { ChevronDown, Plus, LayoutGrid, List, Settings2, Truck, FileSpreadsheet } from "lucide-react";
+import { ChevronDown, Plus, LayoutGrid, List, Settings2, Truck, FileSpreadsheet, Bell } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import {
@@ -67,16 +67,20 @@ export function PipelineHeader({
     }
   };
 
-  const handleVerificarShalom = async () => {
+  const handleVerificarShalom = async (forzar = false) => {
     setVerificandoShalom(true);
     try {
-      const res = await fetch("/api/shalom/verificar-envios", { method: "POST" });
+      const res = await fetch("/api/shalom/verificar-envios", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ forzarReenvio: forzar }),
+      });
       const json = await res.json();
       if (json.ok && json.data) {
         const { totalVerificados, enDestinoListos, notificacionesEnviadas, yaEntregados } = json.data;
         if (enDestinoListos > 0) {
           toast.success(
-            `Shalom: ${enDestinoListos} en destino (${notificacionesEnviadas} avisos enviados), ${yaEntregados} entregados`,
+            `Shalom: ${enDestinoListos} en agencia (${notificacionesEnviadas} mensajes/recordatorios enviados), ${yaEntregados} entregados`,
             { duration: 6000 }
           );
         } else {
@@ -187,18 +191,52 @@ export function PipelineHeader({
             {sincronizandoSheets ? "Sincronizando..." : "Respaldo Sheets"}
           </Button>
 
-          <Button
-            type="button"
-            variant="outline"
-            size="sm"
-            onClick={handleVerificarShalom}
-            disabled={verificandoShalom}
-            className="h-8 gap-1.5 text-xs font-semibold border-red-200 dark:border-red-900/40 text-red-700 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-950/30 cursor-pointer shadow-xs"
-            title="Verificar estado en vivo de todas las guías en Shalom y avisar automáticamente por WhatsApp a los clientes cuyos pedidos ya llegaron"
-          >
-            <Truck className={cn("h-3.5 w-3.5", verificandoShalom && "animate-pulse")} />
-            {verificandoShalom ? "Rastreando..." : "Rastrear Shalom"}
-          </Button>
+          <div className="inline-flex rounded-lg shadow-xs">
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={() => handleVerificarShalom(false)}
+              disabled={verificandoShalom}
+              className="h-8 gap-1.5 text-xs font-semibold rounded-r-none border-red-200 dark:border-red-900/40 text-red-700 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-950/30 cursor-pointer"
+              title="Verificar estado en vivo en Shalom y avisar a nuevas llegadas o recordatorios automáticos (> 20h)"
+            >
+              <Truck className={cn("h-3.5 w-3.5", verificandoShalom && "animate-pulse")} />
+              {verificandoShalom ? "Rastreando..." : "Rastrear Shalom"}
+            </Button>
+            <DropdownMenu>
+              <DropdownMenuTrigger
+                className="flex items-center justify-center h-8 px-1.5 rounded-r-lg border border-l-0 border-red-200 dark:border-red-900/40 text-red-700 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-950/30 cursor-pointer disabled:opacity-50"
+                disabled={verificandoShalom}
+                title="Opciones de rastreo y recordatorio"
+              >
+                <ChevronDown className="h-3.5 w-3.5" />
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" className="w-64">
+                <DropdownMenuItem
+                  onClick={() => handleVerificarShalom(false)}
+                  className="cursor-pointer text-xs"
+                >
+                  <Truck className="h-3.5 w-3.5 mr-2 text-red-600" />
+                  <div>
+                    <div className="font-medium">Rastrear estándar</div>
+                    <div className="text-[10px] text-muted-foreground">Nuevas llegadas y recordatorios (+20h)</div>
+                  </div>
+                </DropdownMenuItem>
+                <DropdownMenuSeparator />
+                <DropdownMenuItem
+                  onClick={() => handleVerificarShalom(true)}
+                  className="cursor-pointer text-xs text-red-700 dark:text-red-400 font-medium"
+                >
+                  <Bell className="h-3.5 w-3.5 mr-2" />
+                  <div>
+                    <div className="font-semibold">Re-recordar a TODOS</div>
+                    <div className="text-[10px] text-muted-foreground">Enviar aviso de urgencia a todos antes de devolución</div>
+                  </div>
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+          </div>
 
           <div className="inline-flex rounded-lg border border-border/60 bg-card p-0.5">
             <button

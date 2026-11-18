@@ -36,7 +36,27 @@ export interface RunAgentResult {
  * 4. Responde por `deliverMessage`, el unico camino de salida: el conector de la
  *    conversacion decide si eso es Zernio, Meta o el simulador.
  */
+// Candado de memoria para evitar carreras y dobles respuestas en la misma conversación
+const activeConversationLocks = new Set<string>();
+
 export async function runAgentForConversation(
+  conversationId: string,
+  opts: { reintento?: boolean } = {}
+): Promise<RunAgentResult> {
+  if (activeConversationLocks.has(conversationId)) {
+    console.log(`[agent] Conversación ${conversationId} ya tiene un turno en ejecución en memoria. Omitiendo ejecución concurrente.`);
+    return { ok: false, reason: "conversation_already_running" };
+  }
+  activeConversationLocks.add(conversationId);
+
+  try {
+    return await executeAgentTurn(conversationId, opts);
+  } finally {
+    activeConversationLocks.delete(conversationId);
+  }
+}
+
+async function executeAgentTurn(
   conversationId: string,
   opts: { reintento?: boolean } = {}
 ): Promise<RunAgentResult> {
@@ -272,7 +292,7 @@ export async function runAgentForConversation(
       console.warn(`[agent] Reintentando turno de ${conversation.id} en ${REINTENTO_MS / 1000}s tras: ${categoriaError}`);
       await new Promise((r) => setTimeout(r, REINTENTO_MS));
       // Si el segundo intento tambien falla, el mismo envia el mensaje de cortesia y avisa.
-      return runAgentForConversation(conversationId, { reintento: false });
+      return executeAgentTurn(conversationId, { reintento: false });
     }
 
     // R9b: si tampoco hubo suerte, cortesia + nota + aviso.

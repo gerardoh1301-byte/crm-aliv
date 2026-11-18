@@ -1,6 +1,6 @@
 import "server-only";
 import { db } from "@/db";
-import { activities, contacts, conversations, deals, pipelineStages, pipelines } from "@/db/schema";
+import { activities, contacts, conversations, deals, messages, pipelineStages, pipelines } from "@/db/schema";
 import { pedidosOrdenes } from "../../../modules/pedidos/tabla";
 import { and, desc, eq, inArray, isNotNull } from "drizzle-orm";
 import { consultarEstadoShalom } from "./shalom-rastreo";
@@ -158,19 +158,39 @@ export async function verificarYNotificarLlegadasShalom(
       const tags = (c.contactTags || []).map((t) => t.toLowerCase().trim());
       const yaNotificado = tags.includes("en agencia shalom") || tags.includes("aviso_llegada_enviado");
 
-      if (yaNotificado && !forzar) {
-        detalles.push({
-          numeroOrden: c.numeroOrden,
-          cliente: c.contactName,
-          phone: c.contactPhone,
-          guia: c.numeroGuia,
-          agencia: agenciaNombre,
-          saldo: saldoSoles,
-          estadoLive: "En destino (ya avisado antes)",
-          notificado: false,
-          motivoNoNotificado: "Cliente ya cuenta con etiqueta 'en agencia shalom' previa",
-        });
-        continue;
+      // Si ya fue notificado y no se fuerza reenvío, verificar si han pasado más de 20 horas desde el último mensaje
+      // para enviar recordatorio preventivo anti-devolución de Shalom.
+      let esRecordatorio = false;
+      if (yaNotificado) {
+        if (!forzar) {
+          // Consultar último mensaje en la conversación para no saturar si ya se habló hace poco (< 20 horas)
+          const [ultimoMsg] = await db
+            .select({ createdAt: messages.createdAt, direction: messages.direction })
+            .from(messages)
+            .where(eq(messages.conversationId, c.convId || ""))
+            .orderBy(desc(messages.createdAt))
+            .limit(1);
+
+          const horasDesdeUltimo = ultimoMsg?.createdAt
+            ? (Date.now() - new Date(ultimoMsg.createdAt).getTime()) / (1000 * 60 * 60)
+            : 999;
+
+          if (horasDesdeUltimo < 20) {
+            detalles.push({
+              numeroOrden: c.numeroOrden,
+              cliente: c.contactName,
+              phone: c.contactPhone,
+              guia: c.numeroGuia,
+              agencia: agenciaNombre,
+              saldo: saldoSoles,
+              estadoLive: "En destino (ya avisado recientemente)",
+              notificado: false,
+              motivoNoNotificado: `Avisado hace ${horasDesdeUltimo.toFixed(1)}h. Se recordará automáticamente si supera 20h.`,
+            });
+            continue;
+          }
+        }
+        esRecordatorio = true;
       }
 
       if (!c.convId) {
@@ -188,8 +208,21 @@ export async function verificarYNotificarLlegadasShalom(
         continue;
       }
 
-      // Redactar mensaje de aviso de llegada cálido y profesional
-      const mensajeAviso = `¡Hola, ${nombreLimpio}! 👋 Te saludamos de Aliv Perú 🌿🚚.
+      // Redactar mensaje: Primer aviso o Recordatorio Preventivo Anti-Devolución
+      const mensajeAviso = esRecordatorio
+        ? `¡Hola, ${nombreLimpio}! Te saludamos de Aliv Perú 🌿📦.
+
+Te recordamos con mucho aprecio que tu pedido sigue listo en ventanilla de la *Agencia Shalom ${agenciaNombre}* 🏢.
+
+• *N° de Orden Shalom:* ${c.numeroGuia}
+• *Código:* ${c.codigoRastreo}
+
+⏰ *Importante:* Recuerda que la agencia mantiene los paquetes por tiempo limitado antes de programar su devolución a almacén central.
+
+Para enviarte tu *clave secreta de recojo* y puedas retirarlo hoy mismo con tu DNI físico en ventanilla, confírmanos por aquí el abono del saldo restante de *S/ ${saldoSoles.toFixed(2)}* a nuestro Yape / Plin (*951365418* - Gerardo Huaynalaya).
+
+¿Nos confirmas si te acercas hoy a retirarlo? Quedamos a tu completa disposición. 🙌`
+        : `¡Hola, ${nombreLimpio}! 👋 Te saludamos de Aliv Perú 🌿🚚.
 
 ¡Buenas noticias! Te confirmamos que tu paquete ya llegó y se encuentra listo para retirar en la *Agencia Shalom ${agenciaNombre}* 📦✨.
 
@@ -228,14 +261,18 @@ Para enviarte tu *clave secreta de recojo* y puedas retirarlo hoy mismo con tu D
           contactId: c.contactId,
           etiqueta: "en agencia shalom",
           accion: "agregar",
-          motivo: "Paquete verificado en destino en Shalom listo para recojo",
+          motivo: esRecordatorio
+            ? "Recordatorio preventivo anti-devolución enviado"
+            : "Paquete verificado en destino en Shalom listo para recojo",
         });
 
         // Registrar actividad en la ficha del contacto
         try {
           await db.insert(activities).values({
             type: "note",
-            description: `[SHALOM LLEGADA] Notificación automática enviada: paquete listo para recojo en ${agenciaNombre}. Saldo pendiente: S/ ${saldoSoles.toFixed(2)}.`,
+            description: esRecordatorio
+              ? `[SHALOM RECORDATORIO] Recordatorio preventivo de recojo enviado: paquete en espera en ${agenciaNombre}. Saldo: S/ ${saldoSoles.toFixed(2)}.`
+              : `[SHALOM LLEGADA] Notificación automática enviada: paquete listo para recojo en ${agenciaNombre}. Saldo: S/ ${saldoSoles.toFixed(2)}.`,
             contactId: c.contactId,
             dealId: c.dealId,
           });
@@ -250,7 +287,7 @@ Para enviarte tu *clave secreta de recojo* y puedas retirarlo hoy mismo con tu D
           guia: c.numeroGuia,
           agencia: agenciaNombre,
           saldo: saldoSoles,
-          estadoLive: "En destino (Aviso enviado exitosamente)",
+          estadoLive: esRecordatorio ? "En destino (Recordatorio enviado)" : "En destino (Aviso enviado exitosamente)",
           notificado: true,
         });
       } else {
