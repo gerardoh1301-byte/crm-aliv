@@ -16,6 +16,7 @@ const PUBLIC_API_PREFIXES = [
   // Sistema integrado: cada ruta exige su propio Bearer (METRICAS_TOKEN / worker).
   "/api/metricas",
   "/api/alertas",
+  "/api/shalom/verificar-envios",
 ];
 
 export async function updateSession(request: NextRequest) {

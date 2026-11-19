@@ -1,12 +1,23 @@
 import "server-only";
 import { db } from "@/db";
-import { activities, contacts, conversations, deals, messages, pipelineStages, pipelines } from "@/db/schema";
+import {
+  activities,
+  contacts,
+  conversations,
+  deals,
+  messages,
+  notifications,
+  pipelineStages,
+  pipelines,
+  teamMembers,
+} from "@/db/schema";
 import { pedidosOrdenes } from "../../../modules/pedidos/tabla";
-import { and, desc, eq, inArray, isNotNull } from "drizzle-orm";
+import { and, desc, eq, gt, isNotNull, sql } from "drizzle-orm";
 import { consultarEstadoShalom } from "./shalom-rastreo";
 import { deliverMessage } from "@/lib/channels/deliver";
 import { aplicarEtiquetaAContacto } from "../agent/etiquetado";
 import { setDealStage } from "@/lib/deals/stage";
+import { notifyMember } from "@/lib/notifications";
 
 export interface OpcionesNotificarLlegada {
   forzarReenvio?: boolean;
@@ -18,6 +29,8 @@ export interface ResultadoNotificacionLlegada {
   enDestinoListos: number;
   yaEntregados: number;
   notificacionesEnviadas: number;
+  alertasCrmEnviadas: number;
+  excluidos: number;
   detalles: Array<{
     numeroOrden: string;
     cliente: string;
@@ -31,7 +44,33 @@ export interface ResultadoNotificacionLlegada {
   }>;
 }
 
-function esHorarioSeguroMensajes(): boolean {
+/**
+ * Casos excepcionales manejados de forma personal que deben quedar
+ * completamente al margen del rastreo/notificación/alerta automática Shalom.
+ */
+const TELEFONOS_EXCLUIDOS_SHALOM = ["980101006"];
+const ORDENES_EXCLUIDAS_SHALOM = ["1049"];
+
+function esPedidoExcluidoShalom(
+  phone: string | null | undefined,
+  numeroOrden: string | null | undefined,
+  notas: string | null | undefined
+): boolean {
+  const digits = (phone || "").replace(/\D/g, "");
+  if (digits && TELEFONOS_EXCLUIDOS_SHALOM.some((t) => digits.endsWith(t))) {
+    return true;
+  }
+  const ordenLimpia = (numeroOrden || "").replace(/^#/, "").trim();
+  if (ordenLimpia && ORDENES_EXCLUIDAS_SHALOM.includes(ordenLimpia)) {
+    return true;
+  }
+  if ((notas || "").toUpperCase().includes("[SHALOM_AUTO_EXCLUIDO]")) {
+    return true;
+  }
+  return false;
+}
+
+function horaDecimalLima(): number {
   try {
     const formateador = new Intl.DateTimeFormat("en-US", {
       timeZone: "America/Lima",
@@ -42,11 +81,31 @@ function esHorarioSeguroMensajes(): boolean {
     const partes = formateador.formatToParts(new Date());
     const hora = parseInt(partes.find((p) => p.type === "hour")?.value ?? "0", 10);
     const minuto = parseInt(partes.find((p) => p.type === "minute")?.value ?? "0", 10);
-    const decimal = hora + minuto / 60;
-    return decimal >= 8.5 && decimal <= 19.5;
+    return hora + minuto / 60;
   } catch {
-    return true;
+    return 12;
   }
+}
+
+function esHorarioSeguroMensajes(): boolean {
+  const decimal = horaDecimalLima();
+  return decimal >= 8.5 && decimal <= 19.5;
+}
+
+function esHorarioAlertaSupervisores(): boolean {
+  const decimal = horaDecimalLima();
+  return decimal >= 8 && decimal < 22;
+}
+
+function calcularHorasEnAgencia(fechaLlegadaDestino?: string): number | null {
+  if (!fechaLlegadaDestino) return null;
+  // Formato típico Shalom: "2026-11-17 10:12:02" (hora Perú -05:00)
+  const iso = fechaLlegadaDestino.includes("T")
+    ? fechaLlegadaDestino
+    : `${fechaLlegadaDestino.trim().replace(" ", "T")}-05:00`;
+  const ts = Date.parse(iso);
+  if (!Number.isFinite(ts)) return null;
+  return Math.max(0, (Date.now() - ts) / (1000 * 60 * 60));
 }
 
 /**
@@ -73,6 +132,7 @@ export async function verificarYNotificarLlegadasShalom(
       estadoPedido: pedidosOrdenes.estado,
       notasPedido: pedidosOrdenes.notas,
       dealId: pedidosOrdenes.dealId,
+      stageKey: pipelineStages.key,
       contactId: contacts.id,
       contactName: contacts.name,
       contactPhone: contacts.phone,
@@ -83,6 +143,8 @@ export async function verificarYNotificarLlegadasShalom(
     .from(pedidosOrdenes)
     .innerJoin(contacts, eq(pedidosOrdenes.contactId, contacts.id))
     .leftJoin(conversations, eq(conversations.contactId, contacts.id))
+    .leftJoin(deals, eq(deals.id, pedidosOrdenes.dealId))
+    .leftJoin(pipelineStages, eq(pipelineStages.id, deals.stageId))
     .where(
       and(
         isNotNull(pedidosOrdenes.numeroGuia),
@@ -107,7 +169,14 @@ export async function verificarYNotificarLlegadasShalom(
   let enDestinoListos = 0;
   let yaEntregados = 0;
   let notificacionesEnviadas = 0;
+  let alertasCrmEnviadas = 0;
+  let excluidos = 0;
   const detalles: ResultadoNotificacionLlegada["detalles"] = [];
+
+  const admins = await db
+    .select({ id: teamMembers.id })
+    .from(teamMembers)
+    .where(and(eq(teamMembers.role, "admin"), eq(teamMembers.active, true)));
 
   // Obtener stage de 'entregado' para mover si ya fue recogido
   const [pipeline] = await db
@@ -126,8 +195,39 @@ export async function verificarYNotificarLlegadasShalom(
     stageEntregadoId = stageEntregado?.id || null;
   }
 
+  const ESTADOS_CANCELADOS = new Set(["cancelado", "rechazado", "cancelado_rechazado", "anulado"]);
+
   for (const c of filtrados) {
     if (!c.numeroGuia || !c.codigoRastreo) continue;
+
+    // Casos excepcionales manejados personalmente (ej. Alberto Ugaz 980 101 006)
+    if (esPedidoExcluidoShalom(c.contactPhone, c.numeroOrden, c.notasPedido)) {
+      excluidos++;
+      detalles.push({
+        numeroOrden: c.numeroOrden,
+        cliente: c.contactName,
+        phone: c.contactPhone,
+        guia: c.numeroGuia,
+        agencia: c.ciudad || "-",
+        saldo: 0,
+        estadoLive: "Excluido (gestión personal)",
+        notificado: false,
+        motivoNoNotificado: "Pedido excluido del seguimiento automático por manejo personal",
+      });
+      continue;
+    }
+
+    // Omitir cancelados/rechazados o ya marcados como entregados tanto en pedido como en Pipeline
+    if (
+      ESTADOS_CANCELADOS.has((c.estadoPedido || "").toLowerCase()) ||
+      ESTADOS_CANCELADOS.has((c.stageKey || "").toLowerCase())
+    ) {
+      continue;
+    }
+    if (c.estadoPedido === "entregado" && (!c.dealId || c.stageKey === "entregado")) {
+      yaEntregados++;
+      continue;
+    }
 
     const rastro = await consultarEstadoShalom(c.numeroGuia, c.codigoRastreo);
     if (!rastro.ok) {
@@ -161,7 +261,7 @@ export async function verificarYNotificarLlegadasShalom(
           .set({ estado: "entregado", updatedAt: new Date() })
           .where(eq(pedidosOrdenes.id, c.pedidoId));
       }
-      if (c.dealId && stageEntregadoId) {
+      if (c.dealId && stageEntregadoId && c.stageKey !== "entregado") {
         await setDealStage({ dealId: c.dealId, stageId: stageEntregadoId });
       }
 
@@ -182,6 +282,92 @@ export async function verificarYNotificarLlegadasShalom(
     // CASO 2: Paquete en destino listo para recojo
     if (rastro.enDestinoListoParaRecojo) {
       enDestinoListos++;
+
+      const horasEnAgencia = calcularHorasEnAgencia(rastro.fechaLlegadaDestino);
+      const horasTxt =
+        horasEnAgencia !== null ? ` (${Math.round(horasEnAgencia)}h en agencia)` : "";
+
+      // Alerta automática en la campanita del CRM (y Web Push) para admins cuando el pedido
+      // está en agencia Shalom y aún NO ha sido marcado como entregado en Pipeline.
+      // Deduplicado: máximo 1 alerta cada 20 horas por contacto.
+      if (c.stageKey !== "entregado" && admins.length > 0) {
+        try {
+          const [alertaReciente] = await db
+            .select({ id: notifications.id })
+            .from(notifications)
+            .where(
+              and(
+                eq(notifications.kind, "shalom_en_agencia"),
+                eq(notifications.contactId, c.contactId),
+                gt(notifications.createdAt, sql`now() - interval '20 hours'`)
+              )
+            )
+            .limit(1);
+
+          if (!alertaReciente) {
+            for (const admin of admins) {
+              await notifyMember({
+                memberId: admin.id,
+                kind: "shalom_en_agencia",
+                title: `📦 En agencia Shalom sin entregar: ${c.contactName}`,
+                body: `Orden #${c.numeroOrden} (Guía ${c.numeroGuia}) en Shalom ${agenciaNombre}${horasTxt}. Aún en etapa "${c.stageKey || "en_reparto"}". Saldo: S/ ${saldoSoles.toFixed(2)}.`,
+                url: c.convId ? `/conversations/${c.convId}` : "/pipeline",
+                contactId: c.contactId,
+                tag: `shalom-agencia-${c.pedidoId}`,
+              }).catch((err) => console.warn("[notificar-llegada] Error campanita CRM:", err));
+            }
+            alertasCrmEnviadas++;
+          }
+        } catch (errNotif) {
+          console.warn("[notificar-llegada] Error verificando alerta CRM:", errNotif);
+        }
+      }
+
+      // Alerta crítica por WhatsApp a supervisores si lleva >=24h en agencia sin retirar
+      // (independiente de la ventana 08:30-19:30 del cliente, respetando 08:00-22:00 para supervisores).
+      if (
+        c.stageKey !== "entregado" &&
+        horasEnAgencia !== null &&
+        horasEnAgencia >= 24 &&
+        esHorarioAlertaSupervisores()
+      ) {
+        try {
+          const [supReciente] = await db
+            .select({ id: activities.id })
+            .from(activities)
+            .where(
+              and(
+                eq(activities.contactId, c.contactId),
+                sql`${activities.description} LIKE '[SHALOM ALERTA SUPERVISOR]%'`,
+                gt(activities.createdAt, sql`now() - interval '20 hours'`)
+              )
+            )
+            .limit(1);
+
+          if (!supReciente) {
+            const { notificarSupervisoresCritico } = await import("@/lib/alerts/supervisor-alerts");
+            const resSup = await notificarSupervisoresCritico({
+              tipo: "shalom_24h_retraso",
+              titulo: `Paquete >24h en Shalom: ${c.contactName}`,
+              detalle: `El pedido #${c.numeroOrden} (Guía Shalom: ${c.numeroGuia}) lleva ${Math.round(horasEnAgencia)} horas en espera en la agencia Shalom ${agenciaNombre} y aún no figura como entregado en Pipeline. Saldo pendiente: S/ ${saldoSoles.toFixed(2)}.`,
+              clienteNombre: c.contactName,
+              clienteTelefono: c.contactPhone,
+              contactId: c.contactId,
+              conversationId: c.convId,
+            });
+            if (resSup.notificados > 0) {
+              await db.insert(activities).values({
+                type: "note",
+                description: `[SHALOM ALERTA SUPERVISOR] Alerta enviada a ${resSup.notificados} supervisores: pedido #${c.numeroOrden} lleva ${Math.round(horasEnAgencia)}h en ${agenciaNombre}.`,
+                contactId: c.contactId,
+                dealId: c.dealId,
+              });
+            }
+          }
+        } catch (errSup) {
+          console.warn("[notificar-llegada] Error alertando a supervisores por Shalom >24h:", errSup);
+        }
+      }
 
       const tags = (c.contactTags || []).map((t) => t.toLowerCase().trim());
       const notasPed = (c.notasPedido || "").toLowerCase();
@@ -339,19 +525,41 @@ Para enviarte tu *clave secreta de recojo* y puedas retirarlo hoy mismo con tu D
           console.warn("[notificar-llegada] Error registrando actividad:", actErr);
         }
 
-        // Si lleva más de 24 horas en agencia sin retirar, alertar de inmediato a los supervisores
-        if (esRecordatorio) {
+        // Si lleva más de 24 horas en agencia sin retirar, alertar de inmediato a los supervisores (deduplicado 20h)
+        if (esRecordatorio && esHorarioAlertaSupervisores()) {
           try {
-            const { notificarSupervisoresCritico } = await import("@/lib/alerts/supervisor-alerts");
-            await notificarSupervisoresCritico({
-              tipo: "shalom_24h_retraso",
-              titulo: `Paquete >24h en Shalom: ${c.contactName}`,
-              detalle: `El pedido #${c.numeroOrden} (Guía Shalom: ${c.numeroGuia}) lleva más de 24 horas en espera en la agencia Shalom ${agenciaNombre} sin ser recogido. Saldo pendiente: S/ ${saldoSoles.toFixed(2)}.`,
-              clienteNombre: c.contactName,
-              clienteTelefono: c.contactPhone,
-              contactId: c.contactId,
-              conversationId: c.convId,
-            });
+            const [supReciente] = await db
+              .select({ id: activities.id })
+              .from(activities)
+              .where(
+                and(
+                  eq(activities.contactId, c.contactId),
+                  sql`${activities.description} LIKE '[SHALOM ALERTA SUPERVISOR]%'`,
+                  gt(activities.createdAt, sql`now() - interval '20 hours'`)
+                )
+              )
+              .limit(1);
+
+            if (!supReciente) {
+              const { notificarSupervisoresCritico } = await import("@/lib/alerts/supervisor-alerts");
+              const resSup = await notificarSupervisoresCritico({
+                tipo: "shalom_24h_retraso",
+                titulo: `Paquete >24h en Shalom: ${c.contactName}`,
+                detalle: `El pedido #${c.numeroOrden} (Guía Shalom: ${c.numeroGuia}) lleva más de 24 horas en espera en la agencia Shalom ${agenciaNombre} sin ser recogido. Saldo pendiente: S/ ${saldoSoles.toFixed(2)}.`,
+                clienteNombre: c.contactName,
+                clienteTelefono: c.contactPhone,
+                contactId: c.contactId,
+                conversationId: c.convId,
+              });
+              if (resSup.notificados > 0) {
+                await db.insert(activities).values({
+                  type: "note",
+                  description: `[SHALOM ALERTA SUPERVISOR] Alerta enviada a ${resSup.notificados} supervisores por recordatorio Shalom en ${agenciaNombre}.`,
+                  contactId: c.contactId,
+                  dealId: c.dealId,
+                });
+              }
+            }
           } catch (errSup) {
             console.warn("[notificar-llegada] Error alertando a supervisores por Shalom >24h:", errSup);
           }
@@ -401,6 +609,8 @@ Para enviarte tu *clave secreta de recojo* y puedas retirarlo hoy mismo con tu D
     enDestinoListos,
     yaEntregados,
     notificacionesEnviadas,
+    alertasCrmEnviadas,
+    excluidos,
     detalles,
   };
 }

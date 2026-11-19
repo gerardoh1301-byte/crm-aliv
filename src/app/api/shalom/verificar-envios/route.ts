@@ -1,8 +1,21 @@
 import "server-only";
 import { NextRequest, NextResponse } from "next/server";
 import { verificarYNotificarLlegadasShalom } from "@/lib/agencias/notificar-llegada-shalom";
+import { autorizadoPorSecreto } from "@/lib/secreto-worker";
+import { requireMember } from "@/lib/api-auth";
+
+export const dynamic = "force-dynamic";
+
+async function autorizar(req: NextRequest): Promise<NextResponse | null> {
+  if (autorizadoPorSecreto(req)) return null;
+  const auth = await requireMember();
+  if ("response" in auth) return auth.response;
+  return null;
+}
 
 export async function GET(req: NextRequest) {
+  const denied = await autorizar(req);
+  if (denied) return denied;
   try {
     const { searchParams } = new URL(req.url);
     const forzar = searchParams.get("forzar") === "true";
@@ -25,6 +38,8 @@ export async function GET(req: NextRequest) {
 }
 
 export async function POST(req: NextRequest) {
+  const denied = await autorizar(req);
+  if (denied) return denied;
   try {
     const body = await req.json().catch(() => ({}));
     const forzar = Boolean(body.forzarReenvio);
