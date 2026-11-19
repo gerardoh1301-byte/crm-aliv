@@ -14,6 +14,7 @@ import { CHANNEL_LABELS, type Channel } from "@/lib/channels/types";
 import { CHANNEL_COLORS, ChannelIcon } from "@/components/icons/channels";
 import { OwnerSelect } from "@/components/contacts/OwnerSelect";
 import { AdelantoConfirmadoPanel } from "./AdelantoConfirmadoPanel";
+import { ConfirmarVentaPanel } from "./ConfirmarVentaPanel";
 import { DatosEntregaPanel } from "./DatosEntregaPanel";
 import { CamposPersonalizadosLista } from "@/components/contacts/CamposPersonalizados";
 import { camposContacto } from "@/lib/config";
@@ -414,6 +415,13 @@ export function ContactDetailPanel({
             </Button>
           )}
         </div>
+
+        <ConfirmarVentaPanel
+          contactId={contact.id}
+          contactName={contact.name}
+          tags={tags}
+          customFields={contact.customFields}
+        />
 
         <AdelantoConfirmadoPanel contactId={contact.id} />
 
