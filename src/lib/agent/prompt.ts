@@ -5,6 +5,7 @@ import { camposContacto, getConfig } from "@/lib/config";
 import { resumirCampos } from "@/lib/config/campos";
 import { pedidosOrdenes } from "../../../modules/pedidos/tabla";
 import { analizarSolicitudLlamada } from "./llamadas";
+import { getBusinessRules, renderBusinessRulesPrompt } from "@/lib/settings/rules";
 
 export const SYSTEM_PROMPT_SETTINGS_KEY = "agent.system_prompt";
 
@@ -299,6 +300,9 @@ export async function renderContexto(contactId: string): Promise<string> {
     ? `- Nombre del cliente: ${infoNombre.nombreLimpio} (IMPORTANTE: es la persona que te contacta. Si menciona que su esposo, familiar o un tercero pagará o retirará, NUNCA cambies el nombre ni empieces a llamarla por el nombre del tercero; sigue tratándola como ${infoNombre.nombreLimpio})`
     : `- Nombre del cliente: Aún no confirmado (su perfil muestra "${contact.name}", que es un alias o código: ESTÁ PROHIBIDO llamarlo "${contact.name}"; háblale de tú con calidez sin usar ese alias hasta que indique su nombre real)`;
 
+  const { esNumeroEntrenador } = await import("@/lib/alerts/supervisor-alerts");
+  const esEntrenador = esNumeroEntrenador(contact.phone);
+
   const partes = [
     "\n\n# CONTEXTO",
     "## Cliente",
@@ -306,6 +310,15 @@ export async function renderContexto(contactId: string): Promise<string> {
     ...(conocidos.length ? [`- Datos conocidos: ${conocidos.join("; ")}`] : []),
     ...(contact.aiSummary ? [`- Resumen previo: ${contact.aiSummary}`] : []),
     `- Etapa actual: ${etapaActual}`,
+    ...(esEntrenador
+      ? [
+          "\n⚠️ MODO ENTRENADOR / SUPERVISOR ACTIVO:\n" +
+            `Este contacto (${contact.phone}) es un SUPERVISOR / ENTRENADOR OFICIAL de Aliv Perú en auditoría y entrenamiento en vivo.\n` +
+            "- Responde a todas sus consultas sobre NAC600, Tobillera Termix, beneficios, dosis, precios y videos oficiales con máxima precisión para que evalúe tu conocimiento.\n" +
+            "- ⚠️ ESTÁ ESTRICTAMENTE PROHIBIDO pedirle número de DNI, pedirle adelanto de S/20, pedirle dirección de envío o intentar cerrarle una venta.\n" +
+            "- NO crees pedidos en el sistema para este número.",
+        ]
+      : []),
   ];
 
   // Detección proactiva de agencia Shalom si el cliente es de provincia (o dio su dirección en chat)
@@ -428,6 +441,16 @@ export async function renderContexto(contactId: string): Promise<string> {
   if (pedidosTxt) partes.push(pedidosTxt);
   if (etapasTxt) partes.push("## Pipeline (clave: nombre)", etapasTxt);
   if (aAveriguar.length) partes.push("## Datos a averiguar", ...aAveriguar);
+
+  // Reglas de negocio y FAQs configuradas visualmente desde Ajustes
+  try {
+    const rules = await getBusinessRules();
+    const rulesTxt = renderBusinessRulesPrompt(rules);
+    if (rulesTxt) partes.push(rulesTxt);
+  } catch (err) {
+    console.warn("[prompt] error al cargar business rules en contexto:", err);
+  }
+
   return partes.join("\n");
 }
 

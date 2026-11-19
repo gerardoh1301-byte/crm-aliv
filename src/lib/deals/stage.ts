@@ -7,6 +7,8 @@ import { emitAutomationEvent } from "@/lib/automations";
 import type { DealStageChangedPayload } from "@/lib/automations/triggers";
 import { cleanStr, esEtiquetaDeEtapa, obtenerEtiquetaDeEtapa } from "@/lib/tags";
 import { sincronizarDealEnSheets } from "@/lib/sheets/envios-sync";
+import { notificarCambioDealAlErp } from "@/lib/finanzas/notificar-erp";
+import { crearOActualizarDealPostventa } from "@/lib/postventa/engine";
 
 /**
  * Mueve una operacion de etapa y emite `deal.stage_changed`.
@@ -68,6 +70,14 @@ export async function setDealStage(input: {
         .update(pedidosOrdenes)
         .set({ estado: nuevoEstado, updatedAt: new Date() })
         .where(eq(pedidosOrdenes.dealId, deal.id));
+    }
+
+    if ((stageKey === "entregado" || nuevoEstado === "entregado") && deal.contactId) {
+      try {
+        await crearOActualizarDealPostventa(deal.contactId, deal.title);
+      } catch (postventaErr) {
+        console.warn("[stage] error al vincular postventa:", postventaErr);
+      }
     }
   }
 
@@ -144,6 +154,11 @@ export async function setDealStage(input: {
       console.error("[setDealStage] Error sincronizando con Google Sheets:", err)
     );
   }
+
+  // Sincronización 100% automática y en tiempo real hacia el ERP Finanzas
+  notificarCambioDealAlErp(deal.id).catch((err) =>
+    console.error("[setDealStage] Error notificando cambio al ERP:", err)
+  );
 
   return { ok: true, changed: true };
 }

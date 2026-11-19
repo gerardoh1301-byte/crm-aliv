@@ -13,11 +13,13 @@ import {
   MessageSquare,
   Users,
   Workflow,
+  HelpCircle,
 } from "lucide-react";
 import { toast } from "sonner";
 import { NotificationToggle } from "@/components/shared/NotificationToggle";
 import { PageHeader } from "@/components/layout/PageHeader";
 import { AgentSettings } from "@/components/settings/AgentSettings";
+import { BusinessRulesSettings } from "@/components/settings/BusinessRulesSettings";
 import { ChannelsSettings } from "@/components/settings/ChannelsSettings";
 import { TeamSettings } from "@/components/settings/TeamSettings";
 import Link from "next/link";
@@ -137,6 +139,19 @@ export default function SettingsPage() {
           </CardHeader>
           <CardContent>
             <AgentSettings />
+          </CardContent>
+        </Card>
+
+        {/* Reglas de Negocio, FAQs y Base de Conocimientos */}
+        <Card className="lg:col-span-2">
+          <CardHeader>
+            <CardTitle className="text-base flex items-center gap-2">
+              <HelpCircle className="h-4 w-4" />
+              Reglas de Negocio, Políticas y FAQs del Agente
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <BusinessRulesSettings />
           </CardContent>
         </Card>
 

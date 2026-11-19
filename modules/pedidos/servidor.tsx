@@ -17,6 +17,7 @@ import { deliverMessage } from "@/lib/channels/deliver";
 import { sincronizarConGoogleDrive } from "@/lib/drive-sync";
 import { extraerDatosFormularioShopify } from "@/lib/shopify/form-extractor";
 import { sincronizarDealEnSheets } from "@/lib/sheets/envios-sync";
+import { notificarCambioDealAlErp } from "@/lib/finanzas/notificar-erp";
 import type { ModuloServidor, HandlerModulo, ToolModulo } from "@/lib/modules/types";
 import manifiesto from "./manifiesto";
 import { pedidosOrdenes, type ItemPedido } from "./tabla";
@@ -30,6 +31,7 @@ import {
   validarDepartamentoODestino,
   validarTelefonoPeruano,
 } from "@/lib/pedidos/validacion-datos";
+import { crearOActualizarDealPostventa } from "@/lib/postventa/engine";
 
 const MAPA_ESTADO_A_ETAPA: Record<EstadoPedido, string> = {
   por_confirmar_cod: "agendar_entrega",
@@ -528,6 +530,18 @@ const actualizar: HandlerModulo = async (req, { member, params }) => {
       contactId: actual.contactId,
     });
 
+    if (nuevoEstado === "entregado") {
+      try {
+        await crearOActualizarDealPostventa(
+          actual.contactId,
+          actual.numeroOrden,
+          Number(actual.total) || 0
+        );
+      } catch (postventaErr) {
+        console.warn("[pedidos] error al crear deal postventa:", postventaErr);
+      }
+    }
+
     if (nuevoEstado === "enviado" && body.notificarCliente === true) {
       await notificarDespachoPorChat(
         actual.contactId,
@@ -543,6 +557,7 @@ const actualizar: HandlerModulo = async (req, { member, params }) => {
   await sincronizarConGoogleDrive().catch(() => {});
   if (row.dealId) {
     sincronizarDealEnSheets(row.dealId).catch(() => {});
+    notificarCambioDealAlErp(row.dealId).catch(() => {});
   }
   return NextResponse.json(row);
 };

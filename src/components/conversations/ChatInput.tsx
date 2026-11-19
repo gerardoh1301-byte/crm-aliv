@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useRef, KeyboardEvent, FormEvent, useEffect } from "react";
-import { Send, Loader2, FileText, Clock, Reply, X } from "lucide-react";
+import { Send, Loader2, FileText, Clock, Reply, X, Sparkles, Check, Copy } from "lucide-react";
 import { toast } from "sonner";
 import { TemplatePicker } from "./TemplatePicker";
 import type { ConversationMessage } from "@/lib/conversations";
@@ -21,6 +21,7 @@ interface Props {
   lastInboundAt?: Date | string | null;
   replyingTo?: ConversationMessage | null;
   onClearReply?: () => void;
+  suggestedReply?: { text: string; createdAt?: string } | null;
 }
 
 function notifyRefresh() {
@@ -38,11 +39,17 @@ export function ChatInput({
   lastInboundAt,
   replyingTo,
   onClearReply,
+  suggestedReply: initialSuggested,
 }: Props) {
   const [text, setText] = useState("");
   const [sending, setSending] = useState(false);
   const [pickerOpen, setPickerOpen] = useState(false);
+  const [suggested, setSuggested] = useState(initialSuggested);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+
+  useEffect(() => {
+    setSuggested(initialSuggested);
+  }, [initialSuggested]);
 
   useEffect(() => {
     if (replyingTo) {
@@ -160,6 +167,94 @@ export function ChatInput({
           >
             <X className="h-3.5 w-3.5" />
           </button>
+        </div>
+      )}
+
+      {/* Sugerencia de la IA (Modo Asistido / Copiloto) */}
+      {suggested?.text && (
+        <div className="max-w-2xl mx-auto mb-2.5 p-3 rounded-xl border border-purple-200 bg-purple-50/90 dark:border-purple-800/60 dark:bg-purple-950/30 shadow-xs animate-in fade-in slide-in-from-bottom-1 duration-150 text-xs">
+          <div className="flex items-center justify-between font-semibold text-purple-900 dark:text-purple-200 mb-1.5">
+            <span className="flex items-center gap-1.5">
+              <Sparkles className="h-3.5 w-3.5 text-purple-600 dark:text-purple-400 shrink-0" />
+              Sugerencia de respuesta IA (Modo Asistido):
+            </span>
+            <button
+              type="button"
+              onClick={() => {
+                setSuggested(null);
+                fetch(`/api/conversations/${conversationId}/agente`, {
+                  method: "PATCH",
+                  headers: { "Content-Type": "application/json" },
+                  body: JSON.stringify({ clearSuggestedReply: true }),
+                }).catch(() => {});
+              }}
+              className="h-5 w-5 inline-flex items-center justify-center rounded-full hover:bg-purple-200/50 text-muted-foreground hover:text-foreground cursor-pointer"
+              title="Descartar sugerencia"
+            >
+              <X className="h-3.5 w-3.5" />
+            </button>
+          </div>
+          <p className="whitespace-pre-wrap text-foreground/90 my-2 text-[12px] leading-relaxed bg-background/60 p-2.5 rounded-lg border border-purple-100 dark:border-purple-900/40">
+            {suggested.text}
+          </p>
+          <div className="flex items-center gap-2 mt-2">
+            <button
+              type="button"
+              disabled={sending}
+              onClick={async () => {
+                setSending(true);
+                toast.message("Enviando...", { id: "sending-msg" });
+                try {
+                  const res = await fetch("/api/messages/send", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({
+                      conversationId,
+                      text: suggested.text,
+                    }),
+                  });
+                  const json = await res.json();
+                  if (!res.ok || !json.success) {
+                    toast.error(json.error || `HTTP ${res.status}`, { id: "sending-msg" });
+                    return;
+                  }
+                  toast.success("Respuesta aprobada y enviada a WhatsApp", { id: "sending-msg" });
+                  setSuggested(null);
+                  fetch(`/api/conversations/${conversationId}/agente`, {
+                    method: "PATCH",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ clearSuggestedReply: true }),
+                  }).catch(() => {});
+                  notifyRefresh();
+                } catch {
+                  toast.error("Error al enviar", { id: "sending-msg" });
+                } finally {
+                  setSending(false);
+                }
+              }}
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-purple-600 hover:bg-purple-700 text-white font-medium text-[11.5px] cursor-pointer shadow-2xs transition-colors"
+            >
+              <Check className="h-3.5 w-3.5" />
+              Aprobar y Enviar
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                setText(suggested.text);
+                setSuggested(null);
+                fetch(`/api/conversations/${conversationId}/agente`, {
+                  method: "PATCH",
+                  headers: { "Content-Type": "application/json" },
+                  body: JSON.stringify({ clearSuggestedReply: true }),
+                }).catch(() => {});
+                textareaRef.current?.focus();
+              }}
+              className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border border-border bg-background hover:bg-muted text-foreground font-medium text-[11.5px] cursor-pointer transition-colors"
+            >
+              <Copy className="h-3.5 w-3.5" />
+              Copiar para editar
+            </button>
+          </div>
         </div>
       )}
 

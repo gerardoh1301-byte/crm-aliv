@@ -339,6 +339,24 @@ Para enviarte tu *clave secreta de recojo* y puedas retirarlo hoy mismo con tu D
           console.warn("[notificar-llegada] Error registrando actividad:", actErr);
         }
 
+        // Si lleva más de 24 horas en agencia sin retirar, alertar de inmediato a los supervisores
+        if (esRecordatorio) {
+          try {
+            const { notificarSupervisoresCritico } = await import("@/lib/alerts/supervisor-alerts");
+            await notificarSupervisoresCritico({
+              tipo: "shalom_24h_retraso",
+              titulo: `Paquete >24h en Shalom: ${c.contactName}`,
+              detalle: `El pedido #${c.numeroOrden} (Guía Shalom: ${c.numeroGuia}) lleva más de 24 horas en espera en la agencia Shalom ${agenciaNombre} sin ser recogido. Saldo pendiente: S/ ${saldoSoles.toFixed(2)}.`,
+              clienteNombre: c.contactName,
+              clienteTelefono: c.contactPhone,
+              contactId: c.contactId,
+              conversationId: c.convId,
+            });
+          } catch (errSup) {
+            console.warn("[notificar-llegada] Error alertando a supervisores por Shalom >24h:", errSup);
+          }
+        }
+
         detalles.push({
           numeroOrden: c.numeroOrden,
           cliente: c.contactName,

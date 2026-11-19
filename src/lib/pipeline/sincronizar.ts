@@ -249,7 +249,98 @@ export async function sincronizarPipeline(opts?: { borrarSobrantes?: boolean }) 
     }
   }
 
+  // Sincronizar también el pipeline secundario de Postventa y Recompra
+  try {
+    await sincronizarPipelinePostventa();
+  } catch (err) {
+    console.warn("[pipeline] Error al sincronizar pipeline postventa:", err);
+  }
+
   return { pipelineId: principal.id, creadas, actualizadas, conservadas, borradas };
+}
+
+export const PIPELINE_POSTVENTA_NOMBRE = "Postventa y Recompra";
+
+export const ETAPAS_POSTVENTA = [
+  {
+    clave: "postventa_dia_1_3",
+    nombre: "Día 1-3: Producto recibido (Bienvenida)",
+    color: "#3b82f6",
+    order: 0,
+    isWon: false,
+    isLost: false,
+  },
+  {
+    clave: "postventa_dia_7",
+    nombre: "Día 7: Control de hábito y satisfacción",
+    color: "#8b5cf6",
+    order: 1,
+    isWon: false,
+    isLost: false,
+  },
+  {
+    clave: "postventa_dia_25",
+    nombre: "Día 25: Alerta de recompra NAC600",
+    color: "#f59e0b",
+    order: 2,
+    isWon: false,
+    isLost: false,
+  },
+  {
+    clave: "postventa_recompra_exitosa",
+    nombre: "Recompra lograda (Fidelizado)",
+    color: "#10b981",
+    order: 3,
+    isWon: true,
+    isLost: false,
+  },
+];
+
+export async function sincronizarPipelinePostventa() {
+  let [postventa] = await db
+    .select()
+    .from(pipelines)
+    .where(eq(pipelines.name, PIPELINE_POSTVENTA_NOMBRE))
+    .limit(1);
+
+  if (!postventa) {
+    [postventa] = await db
+      .insert(pipelines)
+      .values({ name: PIPELINE_POSTVENTA_NOMBRE, isDefault: false, order: 1 })
+      .returning();
+  }
+
+  const existentes = await db
+    .select()
+    .from(pipelineStages)
+    .where(eq(pipelineStages.pipelineId, postventa.id))
+    .orderBy(asc(pipelineStages.order));
+
+  const porClave = new Map(existentes.filter((e) => e.key).map((e) => [e.key as string, e]));
+
+  for (let i = 0; i < ETAPAS_POSTVENTA.length; i++) {
+    const etapa = ETAPAS_POSTVENTA[i];
+    const fila =
+      porClave.get(etapa.clave) ||
+      existentes.find((e) => e.name.trim().toLowerCase() === etapa.nombre.trim().toLowerCase());
+
+    const valores = {
+      key: etapa.clave,
+      name: etapa.nombre,
+      color: etapa.color,
+      order: i,
+      isWon: etapa.isWon,
+      isLost: etapa.isLost,
+    };
+
+    if (fila) {
+      await db.update(pipelineStages).set(valores).where(eq(pipelineStages.id, fila.id));
+    } else {
+      await db.insert(pipelineStages).values({ pipelineId: postventa.id, ...valores });
+    }
+  }
+
+  return postventa;
 }
 
 /**

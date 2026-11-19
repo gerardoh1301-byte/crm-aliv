@@ -18,6 +18,7 @@ interface ConversationHeaderInfo {
   channel: Channel;
   handle: string | null;
   lastInboundAt?: Date | string | null;
+  metadata?: Record<string, unknown> | null;
 }
 
 interface Props {

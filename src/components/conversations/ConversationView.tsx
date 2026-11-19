@@ -71,6 +71,7 @@ export function ConversationView({
           channel: conversation.channel,
           handle: conversation.handle,
           lastInboundAt: conversation.lastInboundAt,
+          metadata: conversation.metadata as Record<string, unknown> | null | undefined,
         }}
         initialMessages={initialMessages}
         isAdmin={isAdmin}
@@ -88,6 +89,7 @@ export function ConversationView({
             aiEnabled: conversation.aiEnabled,
             needsHuman: conversation.needsHuman,
             needsHumanReason: conversation.needsHumanReason ?? null,
+            copilotMode: Boolean((conversation.metadata as any)?.copilotMode),
           }}
         />
       )}

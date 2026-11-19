@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { Mail, Phone, X, Check, Bot, AlertCircle, Megaphone, Kanban } from "lucide-react";
+import { Mail, Phone, X, Check, Bot, AlertCircle, Megaphone, Kanban, Sparkles } from "lucide-react";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -53,7 +53,7 @@ interface Props {
   /** metadata de la conversacion: campos ctwa_* / meta_ad_* que captura Zernio. */
   metadata?: unknown;
   /** Estado del agente en ESTE hilo (combinado con el kill-switch del contacto). */
-  agente?: { aiEnabled: boolean; needsHuman: boolean; needsHumanReason: string | null };
+  agente?: { aiEnabled: boolean; needsHuman: boolean; needsHumanReason: string | null; copilotMode?: boolean };
 }
 
 type SaveState = "idle" | "saving" | "saved" | "error";
@@ -73,6 +73,7 @@ export function ContactDetailPanel({
   const notesTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const initialNotes = useRef(contact.notes ?? "");
   const [aiEnabled, setAiEnabled] = useState(agente?.aiEnabled ?? contact.aiEnabled ?? true);
+  const [copilotMode, setCopilotMode] = useState<boolean>(agente?.copilotMode ?? Boolean((metadata as Record<string, unknown> | null)?.copilotMode));
   const [needsHuman, setNeedsHuman] = useState(agente?.needsHuman ?? contact.needsHuman ?? false);
   const [needsHumanReason, setNeedsHumanReason] = useState(
     agente?.needsHumanReason ?? contact.needsHumanReason ?? null,
@@ -86,6 +87,7 @@ export function ContactDetailPanel({
     initialNotes.current = contact.notes ?? "";
     setNotesState("idle");
     setAiEnabled(agente?.aiEnabled ?? contact.aiEnabled ?? true);
+    setCopilotMode(agente?.copilotMode ?? Boolean((metadata as Record<string, unknown> | null)?.copilotMode));
     setNeedsHuman(agente?.needsHuman ?? contact.needsHuman ?? false);
     setNeedsHumanReason(agente?.needsHumanReason ?? contact.needsHumanReason ?? null);
   }, [
@@ -100,7 +102,11 @@ export function ContactDetailPanel({
     agente?.needsHumanReason,
   ]);
 
-  const updateAi = async (body: { enabled?: boolean; clearNeedsHuman?: boolean }) => {
+  const updateAi = async (body: {
+    enabled?: boolean;
+    clearNeedsHuman?: boolean;
+    copilotMode?: boolean;
+  }) => {
     setAiBusy(true);
     try {
       // Con hilo activo se pausa/reactiva SOLO ese hilo; sin hilo, el contacto entero.
@@ -117,10 +123,17 @@ export function ContactDetailPanel({
       setAiEnabled(data.aiEnabled);
       setNeedsHuman(data.needsHuman);
       setNeedsHumanReason(data.needsHumanReason);
+      if (typeof data.copilotMode === "boolean") {
+        setCopilotMode(data.copilotMode);
+      }
       toast.success(
-        data.aiEnabled
-          ? "Agente reactivado en esta conversacion"
-          : "Agente pausado en esta conversacion",
+        typeof body.copilotMode === "boolean"
+          ? body.copilotMode
+            ? "Modo Asistido activado (la IA sugerirá respuestas)"
+            : "Modo Automático 24/7 reactivado"
+          : data.aiEnabled
+            ? "Agente reactivado en esta conversacion"
+            : "Agente pausado en esta conversacion",
       );
     } catch {
       toast.error("No se pudo actualizar el estado del bot");
@@ -309,16 +322,24 @@ export function ContactDetailPanel({
               <Bot className="h-3 w-3" />
               Agente IA
             </Label>
-            <span
-              className={cn(
-                "inline-flex items-center gap-1 h-5 px-1.5 rounded-sm text-[10px] font-semibold uppercase tracking-wide",
-                aiEnabled
-                  ? "bg-emerald-100 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-300"
-                  : "bg-muted text-muted-foreground",
+            <div className="flex items-center gap-1.5">
+              {copilotMode && (
+                <span className="inline-flex items-center gap-1 h-5 px-1.5 rounded-sm text-[10px] font-semibold uppercase tracking-wide bg-purple-100 text-purple-700 dark:bg-purple-950/40 dark:text-purple-300">
+                  <Sparkles className="h-2.5 w-2.5" />
+                  Asistido
+                </span>
               )}
-            >
-              {aiEnabled ? "ON" : "OFF"}
-            </span>
+              <span
+                className={cn(
+                  "inline-flex items-center gap-1 h-5 px-1.5 rounded-sm text-[10px] font-semibold uppercase tracking-wide",
+                  aiEnabled
+                    ? "bg-emerald-100 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-300"
+                    : "bg-muted text-muted-foreground",
+                )}
+              >
+                {aiEnabled ? "ON" : "OFF"}
+              </span>
+            </div>
           </div>
 
           {needsHuman && (
@@ -374,6 +395,24 @@ export function ContactDetailPanel({
               </Button>
             )}
           </div>
+
+          {activeConversationId && aiEnabled && (
+            <Button
+              type="button"
+              size="sm"
+              variant={copilotMode ? "default" : "outline"}
+              disabled={aiBusy}
+              onClick={() => updateAi({ copilotMode: !copilotMode })}
+              className={`cursor-pointer h-8 text-xs w-full transition-all ${
+                copilotMode
+                  ? "bg-purple-600 hover:bg-purple-700 text-white border-purple-600 shadow-2xs"
+                  : "border-purple-300 text-purple-700 hover:bg-purple-50 dark:text-purple-300 dark:border-purple-800"
+              }`}
+            >
+              <Sparkles className="h-3.5 w-3.5 mr-1.5" />
+              {copilotMode ? "Modo Asistido (Activo)" : "Activar Modo Asistido"}
+            </Button>
+          )}
         </div>
 
         <AdelantoConfirmadoPanel contactId={contact.id} />

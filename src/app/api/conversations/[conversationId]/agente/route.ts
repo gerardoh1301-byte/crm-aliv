@@ -9,6 +9,8 @@ import { canAccessContactId, displayName } from "@/lib/team";
 interface Body {
   enabled?: boolean;
   clearNeedsHuman?: boolean;
+  copilotMode?: boolean;
+  clearSuggestedReply?: boolean;
 }
 
 /**
@@ -40,8 +42,10 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
 
   const now = new Date();
   const reactivar = body.enabled === true || body.clearNeedsHuman === true;
+  let actualizado = false;
 
   if (reactivar) {
+    actualizado = true;
     await db
       .update(conversations)
       .set({
@@ -65,11 +69,30 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
         .where(eq(contacts.id, conv.contactId));
     }
   } else if (body.enabled === false) {
+    actualizado = true;
     await db
       .update(conversations)
       .set({ aiEnabled: false, updatedAt: now })
       .where(eq(conversations.id, conversationId));
-  } else {
+  }
+
+  if (typeof body.copilotMode === "boolean" || body.clearSuggestedReply === true) {
+    actualizado = true;
+    const currentMeta = (conv.metadata as Record<string, unknown> | null) ?? {};
+    await db
+      .update(conversations)
+      .set({
+        metadata: {
+          ...currentMeta,
+          ...(typeof body.copilotMode === "boolean" ? { copilotMode: body.copilotMode } : {}),
+          ...(body.clearSuggestedReply === true || body.copilotMode === false ? { suggestedReply: null } : {}),
+        },
+        updatedAt: now,
+      })
+      .where(eq(conversations.id, conversationId));
+  }
+
+  if (!actualizado) {
     return NextResponse.json({ error: "Nada para actualizar" }, { status: 400 });
   }
 
@@ -113,11 +136,15 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
     ? await db.select().from(contacts).where(eq(contacts.id, conv.contactId)).limit(1)
     : [null];
 
+  const meta = (c2?.metadata as Record<string, unknown> | null) ?? {};
+
   return NextResponse.json({
     conversationId,
-    aiEnabled: (contact?.aiEnabled ?? true) && c2.aiEnabled,
-    needsHuman: (contact?.needsHuman ?? false) || c2.needsHuman,
-    needsHumanReason: c2.needsHumanReason ?? contact?.needsHumanReason ?? null,
+    aiEnabled: (contact?.aiEnabled ?? true) && (c2?.aiEnabled ?? true),
+    needsHuman: (contact?.needsHuman ?? false) || (c2?.needsHuman ?? false),
+    needsHumanReason: c2?.needsHumanReason ?? contact?.needsHumanReason ?? null,
+    copilotMode: Boolean(meta.copilotMode),
+    suggestedReply: meta.suggestedReply ?? null,
     respuestaEncolada,
   });
 }

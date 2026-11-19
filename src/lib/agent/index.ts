@@ -28,6 +28,7 @@ export interface RunAgentResult {
   reason?: string;
   reply?: string;
   toolCalls?: number;
+  copilot?: boolean;
 }
 
 /**
@@ -254,6 +255,24 @@ async function executeAgentTurn(
         });
       }
 
+      const convMeta = (conversation.metadata as Record<string, unknown> | null) ?? {};
+      if (convMeta.copilotMode === true) {
+        // En modo asistido: NO despachar directo a WhatsApp. Guardar sugerencia para aprobación humana.
+        const updatedMeta = {
+          ...convMeta,
+          suggestedReply: {
+            text: reply,
+            createdAt: new Date().toISOString(),
+          },
+        };
+        await db
+          .update(conversations)
+          .set({ metadata: updatedMeta, updatedAt: new Date() })
+          .where(eq(conversations.id, conversation.id));
+        await db.update(contacts).set({ updatedAt: new Date() }).where(eq(contacts.id, contact.id));
+        return { ok: true, reply, toolCalls, copilot: true };
+      }
+
       const entrega = await deliverMessage(conversation.id, { text: reply }, "agent");
       if (!entrega.ok) {
         return { ok: false, reason: `send_failed: ${entrega.error ?? "unknown"}`, toolCalls };
@@ -310,6 +329,23 @@ async function executeAgentTurn(
           db.update(conversations).set({ needsHuman: true, updatedAt: new Date() }).where(eq(conversations.id, conversation.id)),
         ]);
       }
+      const convMetaFinal = (conversation.metadata as Record<string, unknown> | null) ?? {};
+      if (convMetaFinal.copilotMode === true) {
+        const updatedMeta = {
+          ...convMetaFinal,
+          suggestedReply: {
+            text: textoFinal,
+            createdAt: new Date().toISOString(),
+          },
+        };
+        await db
+          .update(conversations)
+          .set({ metadata: updatedMeta, updatedAt: new Date() })
+          .where(eq(conversations.id, conversation.id));
+        await db.update(contacts).set({ updatedAt: new Date() }).where(eq(contacts.id, contact.id));
+        return { ok: true, reply: textoFinal, copilot: true };
+      }
+
       const entrega = await deliverMessage(conversation.id, { text: textoFinal }, "agent");
       if (entrega.ok) {
         await db.update(contacts).set({ updatedAt: new Date() }).where(eq(contacts.id, contact.id));

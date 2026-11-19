@@ -21,6 +21,12 @@ function formatoEspera(min: number): string {
   return `${Math.floor(min / 60)} h`;
 }
 
+function horasSinRespuestaCliente(c: ConversationListItem): number | null {
+  if (c.lastDirection !== "out" || !c.lastAt) return null;
+  const horas = Math.floor((Date.now() - new Date(c.lastAt).getTime()) / (1000 * 60 * 60));
+  return horas >= 2 ? horas : null;
+}
+
 interface Props {
   conversations: ConversationListItem[];
   selectedId?: string;
@@ -519,6 +525,24 @@ export function ConversationsList({ conversations, selectedId }: Props) {
                             title="El cliente escribió y nadie respondió"
                           >
                             espera {formatoEspera(minutosEsperando(c)!)}
+                          </span>
+                        ) : horasSinRespuestaCliente(c) !== null ? (
+                          <span
+                            className={cn(
+                              "text-[10px] shrink-0 tabular-nums font-semibold",
+                              horasSinRespuestaCliente(c)! >= 48
+                                ? "text-slate-400"
+                                : "text-amber-600 dark:text-amber-400"
+                            )}
+                            title={
+                              horasSinRespuestaCliente(c)! >= 48
+                                ? `Sin respuesta del cliente hace ${horasSinRespuestaCliente(c)}h (inactivo)`
+                                : `Cliente sin responder hace ${horasSinRespuestaCliente(c)}h (chat enfriándose)`
+                            }
+                          >
+                            {horasSinRespuestaCliente(c)! >= 48
+                              ? "inactivo +48h"
+                              : `frío ${horasSinRespuestaCliente(c)}h`}
                           </span>
                         ) : c.lastAt && (
                           <span className="text-[10px] font-mono text-muted-foreground shrink-0 tabular-nums">

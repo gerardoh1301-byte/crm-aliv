@@ -40,6 +40,7 @@ interface ConversationHeaderInfo {
   /** Telefono en WhatsApp, @usuario en Instagram, nombre en Messenger. */
   handle: string | null;
   lastInboundAt?: Date | string | null;
+  metadata?: Record<string, unknown> | null;
 }
 
 interface Props {
@@ -513,6 +514,7 @@ export function ChatPanel({
         lastInboundAt={lastInboundAt}
         replyingTo={replyingTo}
         onClearReply={() => setReplyingTo(null)}
+        suggestedReply={(conversation.metadata as Record<string, unknown> | null)?.suggestedReply as { text: string } | null}
       />
     </section>
   );

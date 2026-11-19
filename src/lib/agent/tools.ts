@@ -427,6 +427,34 @@ async function derivarAsesor(args: { motivo?: string; apagarAgente?: boolean }, 
     cuerpo: `${motivo}${esBaja ? " (pidió no ser contactado: bot pausado y etiqueta no-reactivar)" : apagar ? " (bot pausado)" : " (el bot sigue activo)"}`,
   });
 
+  // Notificación inmediata a números de supervisores (+51951365418 y +51945226853) ante situaciones críticas
+  try {
+    const { esNumeroEntrenador, notificarSupervisoresCritico } = await import("@/lib/alerts/supervisor-alerts");
+    if (!esNumeroEntrenador(c?.phone)) {
+      let tipoCritico: "comprobante_pago" | "reclamo_medico" | "pide_humano_llamada" | null = null;
+      if (/\b(abono|pago|yape|plin|transferencia|voucher|captura|adelanto)\b/i.test(motivo)) {
+        tipoCritico = "comprobante_pago";
+      } else if (/\b(reclamo|molestia|enfermedad|dolor|medico|reaccion|danio|mal estado|insatisfaccion)\b/i.test(motivo)) {
+        tipoCritico = "reclamo_medico";
+      } else if (/\b(llamada|humano|persona|asesor|supervisor|telefonico|urgente|hablar)\b/i.test(motivo)) {
+        tipoCritico = "pide_humano_llamada";
+      }
+      if (tipoCritico) {
+        await notificarSupervisoresCritico({
+          tipo: tipoCritico,
+          titulo: `Alerta: ${c?.name ?? "Cliente"}`,
+          detalle: motivo,
+          clienteNombre: c?.name,
+          clienteTelefono: c?.phone,
+          contactId: ctx.contactId,
+          conversationId: ctx.conversationId,
+        });
+      }
+    }
+  } catch (errSup) {
+    console.warn("[tools] Error al notificar a supervisores:", errSup);
+  }
+
   return {
     ok: true,
     stop: apagar,
