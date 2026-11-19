@@ -13,6 +13,29 @@ import { extraerDatosFormularioShopify } from "@/lib/shopify/form-extractor";
 
 export const dynamic = "force-dynamic";
 
+const activeLocks = new Map<string, Promise<void>>();
+
+async function executeWithLock<T>(key: string, fn: () => Promise<T>): Promise<T> {
+  while (activeLocks.has(key)) {
+    try {
+      await activeLocks.get(key);
+    } catch {
+      // Ignorar errores previos
+    }
+  }
+  let unlock!: () => void;
+  const lockPromise = new Promise<void>((resolve) => {
+    unlock = resolve;
+  });
+  activeLocks.set(key, lockPromise);
+  try {
+    return await fn();
+  } finally {
+    activeLocks.delete(key);
+    unlock();
+  }
+}
+
 async function leerSetting(key: string): Promise<string | null> {
   try {
     const [row] = await db
@@ -151,15 +174,16 @@ export async function POST(req: NextRequest) {
     console.error("[shopify-webhook] error guardando evento en webhook_events:", err);
   }
 
-  const tenantId = await resolveDefaultTenantId();
-  const datosForm = extraerDatosFormularioShopify(payload as Record<string, any>);
-  const nombre = datosForm.nombreCliente;
-  const telefono = datosForm.telefono;
-  const email = datosForm.email;
-  const ciudad = datosForm.ciudad;
-  const distrito = datosForm.distrito;
-  const direccion = datosForm.direccionEnvio;
-  const dni = datosForm.dni;
+  return await executeWithLock(`shopify-${shopifyOrderId}`, async () => {
+    const tenantId = await resolveDefaultTenantId();
+    const datosForm = extraerDatosFormularioShopify(payload as Record<string, any>);
+    const nombre = datosForm.nombreCliente;
+    const telefono = datosForm.telefono;
+    const email = datosForm.email;
+    const ciudad = datosForm.ciudad;
+    const distrito = datosForm.distrito;
+    const direccion = datosForm.direccionEnvio;
+    const dni = datosForm.dni;
 
   // Buscar o crear contacto
   let contactId: string | null = null;
@@ -406,4 +430,5 @@ export async function POST(req: NextRequest) {
   }
 
   return NextResponse.json({ ok: true, numeroOrden, yaRegistrado: Boolean(yaRegistrado) });
+  });
 }

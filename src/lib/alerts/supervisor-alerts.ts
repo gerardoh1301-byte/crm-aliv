@@ -97,7 +97,7 @@ export async function notificarSupervisoresCritico(input: AlertaSupervisorInput)
 
         if (supConv) {
           const detallePlantilla = input.detalle.replace(/\s+/g, " ").trim().slice(0, 220);
-          const res = await deliverMessage(
+          let res = await deliverMessage(
             supConv.id,
             {
               text: mensajeAlerta,
@@ -110,9 +110,22 @@ export async function notificarSupervisoresCritico(input: AlertaSupervisorInput)
             },
             "agent"
           );
+
+          // Fallback resiliente: si la plantilla no está aprobada aún en Meta, enviar como texto plano directo
+          if (!res.ok) {
+            console.warn(`[notificarSupervisoresCritico] Plantilla falló (${res.error}), reintentando como texto plano para supervisor ${supRaw}...`);
+            res = await deliverMessage(
+              supConv.id,
+              { text: mensajeAlerta },
+              "agent"
+            );
+          }
+
           if (res.ok) {
             notificados++;
             continue;
+          } else {
+            errores.push(`${supRaw}: ${res.error}`);
           }
         }
       }
