@@ -2,13 +2,27 @@ import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/db";
 import { deals, contacts, activities } from "@/db/schema";
 import { pedidosOrdenes } from "../../../../../modules/pedidos/tabla";
-import { and, eq, gte, ne, or } from "drizzle-orm";
+import { and, desc, eq, gte, lt, ne, or } from "drizzle-orm";
 import { getCurrentMember } from "@/lib/team";
 import { sincronizarEtapaPipeline } from "../../../../../modules/pedidos/servidor";
 import { sincronizarConGoogleDrive } from "@/lib/drive-sync";
 import type { EstadoPedido } from "../../../../../modules/pedidos/tipos";
 
 export const dynamic = "force-dynamic";
+
+function getInicioHoyLima(): Date {
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone: "America/Lima",
+    year: "numeric",
+    month: "numeric",
+    day: "numeric",
+  }).formatToParts(new Date());
+  const year = parseInt(parts.find((p) => p.type === "year")?.value || "2026", 10);
+  const month = parseInt(parts.find((p) => p.type === "month")?.value || "1", 10);
+  const day = parseInt(parts.find((p) => p.type === "day")?.value || "1", 10);
+  // 00:00:00 en America/Lima (UTC-5) -> 05:00:00 UTC
+  return new Date(Date.UTC(year, month - 1, day, 5, 0, 0));
+}
 
 export async function POST(req: NextRequest) {
   const member = await getCurrentMember();
@@ -86,25 +100,31 @@ export async function POST(req: NextRequest) {
 
   let claveLimpia = claveRecojo ? String(claveRecojo).trim() : null;
 
-  // B7: Validar que la clave de retiro no se repita en órdenes de los últimos 7 días
+  // Validación de clave de retiro Shalom:
+  // Se PERMITE usar la misma clave secreta el mismo día para todos los pedidos (lote de despacho del día).
+  // Solo se prohíbe reutilizar una clave que haya sido registrada en un DÍA ANTERIOR (ayer o días pasados).
   if (claveLimpia) {
-    const sieteDiasAtras = new Date(Date.now() - 7 * 24 * 3600 * 1000);
-    const [duplicada] = await db
-      .select({ id: pedidosOrdenes.id, numeroOrden: pedidosOrdenes.numeroOrden })
+    const inicioHoyLima = getInicioHoyLima();
+    const sieteDiasAtras = new Date(inicioHoyLima.getTime() - 7 * 24 * 3600 * 1000);
+
+    const [duplicadaDiaAnterior] = await db
+      .select({ id: pedidosOrdenes.id, numeroOrden: pedidosOrdenes.numeroOrden, updatedAt: pedidosOrdenes.updatedAt })
       .from(pedidosOrdenes)
       .where(
         and(
           eq(pedidosOrdenes.claveRecojo, claveLimpia),
           ne(pedidosOrdenes.id, pedido.id),
-          gte(pedidosOrdenes.createdAt, sieteDiasAtras)
+          lt(pedidosOrdenes.updatedAt, inicioHoyLima),
+          gte(pedidosOrdenes.updatedAt, sieteDiasAtras)
         )
       )
+      .orderBy(desc(pedidosOrdenes.updatedAt))
       .limit(1);
 
-    if (duplicada) {
+    if (duplicadaDiaAnterior) {
       return NextResponse.json(
         {
-          error: `La clave de retiro ${claveLimpia} ya fue utilizada recientemente en la orden ${duplicada.numeroOrden}. Shalom no permite repetir claves recientes; por favor ingresa una clave distinta de 4 dígitos.`,
+          error: `La clave de retiro ${claveLimpia} ya fue utilizada en un día anterior en la orden ${duplicadaDiaAnterior.numeroOrden}. Shalom permite usar la misma clave para varios pedidos del mismo día, pero no permite repetir claves de días anteriores. Por favor ingresa una clave distinta de 4 dígitos.`,
         },
         { status: 400 }
       );
