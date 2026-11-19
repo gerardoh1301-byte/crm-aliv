@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { emitContactCreated } from "@/lib/contacts/events";
 import { db } from "@/db";
 import { contacts, activities, crmSettings } from "@/db/schema";
+import { applyAutoAssignToContact } from "@/lib/team/auto-assign";
 import { eq } from "drizzle-orm";
 
 // Field name mapping: common variations → standard field
@@ -153,6 +154,8 @@ export async function POST(request: NextRequest) {
       contactId: contact.id,
       createdAt: now,
     });
+
+    await applyAutoAssignToContact(contact.id);
 
     return NextResponse.json(
       {

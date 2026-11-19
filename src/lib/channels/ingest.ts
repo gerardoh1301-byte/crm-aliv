@@ -11,6 +11,7 @@ import {
 import { and, desc, eq, gte, isNull, sql } from "drizzle-orm";
 import { normalizePhone } from "@/lib/phone";
 import { enqueueAgentJob } from "@/lib/agent/queue";
+import { applyAutoAssignToContact } from "@/lib/team/auto-assign";
 import { CHANNEL_LABELS, type Channel, type Provider } from "./types";
 
 /**
@@ -138,6 +139,9 @@ export async function findOrCreateContactByIdentity(
     source: input.channel,
     channel: input.channel,
   });
+
+  // Asignación automática de nuevas conversaciones al asesor configurado por Admin
+  await applyAutoAssignToContact(created.id);
 
   return created.id;
 }
@@ -413,6 +417,11 @@ export async function ingestMessage(
 
   if (input.direction !== "in") {
     return { duplicate: false, messageId, jobId: null };
+  }
+
+  // Si entra un mensaje del cliente, asegurar asignación automática al asesor configurado
+  if (conv.contactId) {
+    await applyAutoAssignToContact(conv.contactId);
   }
 
   await maybeReactivateAfterInactivity(conv.id, conv.contactId);

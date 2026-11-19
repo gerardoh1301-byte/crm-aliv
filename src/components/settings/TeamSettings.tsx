@@ -11,6 +11,7 @@ import {
   KeyRound,
   Sparkles,
   Check,
+  Power,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -77,19 +78,62 @@ export function TeamSettings() {
   const [googleClientId, setGoogleClientId] = useState("");
   const [savingConfig, setSavingConfig] = useState(false);
 
+  // Asignación automática de conversaciones
+  const [autoAssignEnabled, setAutoAssignEnabled] = useState(false);
+  const [autoAssignMemberId, setAutoAssignMemberId] = useState<string>("");
+  const [autoAssignMode, setAutoAssignMode] = useState<"all_inbound" | "unassigned_only">("all_inbound");
+  const [savingAutoAssign, setSavingAutoAssign] = useState(false);
+
   const load = useCallback(async () => {
-    const [list, current] = await Promise.all([
+    const [list, current, autoAssignRes] = await Promise.all([
       fetch("/api/team").then((r) => (r.ok ? r.json() : [])),
       fetch("/api/team/me").then((r) => (r.ok ? r.json() : { member: null })),
+      fetch("/api/team/auto-assign").then((r) => (r.ok ? r.json() : null)),
     ]);
-    return { list, me: current.member as Member | null };
+    return {
+      list,
+      me: current.member as Member | null,
+      autoAssign: autoAssignRes?.config as {
+        enabled: boolean;
+        memberId: string | null;
+        mode: "all_inbound" | "unassigned_only";
+      } | null,
+    };
   }, []);
 
-  const apply = useCallback((data: { list: Member[]; me: Member | null }) => {
-    setMembers(data.list);
-    setMe(data.me);
-    setLoading(false);
-  }, []);
+  const apply = useCallback(
+    (data: {
+      list: Member[];
+      me: Member | null;
+      autoAssign?: {
+        enabled: boolean;
+        memberId: string | null;
+        mode: "all_inbound" | "unassigned_only";
+      } | null;
+    }) => {
+      setMembers(data.list);
+      setMe(data.me);
+      if (data.autoAssign) {
+        setAutoAssignEnabled(Boolean(data.autoAssign.enabled));
+        if (data.autoAssign.memberId) {
+          setAutoAssignMemberId(data.autoAssign.memberId);
+        } else if (data.list.length > 0) {
+          const primerVendedor =
+            data.list.find((m) => m.role === "asesor" && m.active) || data.list[0];
+          if (primerVendedor) setAutoAssignMemberId(primerVendedor.id);
+        }
+        if (data.autoAssign.mode) {
+          setAutoAssignMode(data.autoAssign.mode);
+        }
+      } else if (data.list.length > 0 && !autoAssignMemberId) {
+        const primerVendedor =
+          data.list.find((m) => m.role === "asesor" && m.active) || data.list[0];
+        if (primerVendedor) setAutoAssignMemberId(primerVendedor.id);
+      }
+      setLoading(false);
+    },
+    [autoAssignMemberId]
+  );
 
   useEffect(() => {
     let alive = true;
@@ -197,6 +241,48 @@ export function TeamSettings() {
     }
   };
 
+  const handleToggleAutoAssign = async (
+    newEnabled: boolean,
+    targetMemberId = autoAssignMemberId,
+    targetMode = autoAssignMode
+  ) => {
+    if (newEnabled && !targetMemberId) {
+      toast.error("Selecciona un asesor de venta antes de activar la asignación automática");
+      return;
+    }
+    setSavingAutoAssign(true);
+    try {
+      const res = await fetch("/api/team/auto-assign", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          enabled: newEnabled,
+          memberId: targetMemberId || null,
+          mode: targetMode,
+        }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        toast.error(data.error || "No se pudo actualizar la asignación automática");
+        return;
+      }
+      setAutoAssignEnabled(newEnabled);
+      if (newEnabled) {
+        const asesorNombre =
+          members.find((m) => m.id === targetMemberId)?.name ||
+          members.find((m) => m.id === targetMemberId)?.email ||
+          "el asesor seleccionado";
+        toast.success(`Asignación automática activada: nuevas conversaciones se asignarán a ${asesorNombre}`);
+      } else {
+        toast.success("Asignación automática desactivada");
+      }
+    } catch {
+      toast.error("Error al conectar con el servidor");
+    } finally {
+      setSavingAutoAssign(false);
+    }
+  };
+
   if (loading) {
     return <p className="text-sm text-muted-foreground">Cargando cuentas del equipo...</p>;
   }
@@ -285,6 +371,158 @@ export function TeamSettings() {
             </div>
           </div>
         </form>
+      )}
+
+      {/* Asignación Automática de Conversaciones Entrantes (Admin Total) */}
+      {isAdmin && (
+        <div
+          className={cn(
+            "rounded-xl border p-4 sm:p-5 transition-all space-y-4",
+            autoAssignEnabled
+              ? "border-emerald-500/40 bg-emerald-500/5 shadow-sm"
+              : "border-border bg-muted/20"
+          )}
+        >
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+            <div className="space-y-1">
+              <div className="flex items-center gap-2">
+                <span
+                  className={cn(
+                    "flex h-8 w-8 items-center justify-center rounded-lg shrink-0",
+                    autoAssignEnabled
+                      ? "bg-emerald-500/20 text-emerald-600 dark:text-emerald-400"
+                      : "bg-muted text-muted-foreground"
+                  )}
+                >
+                  <UserCheck className="h-4 w-4" />
+                </span>
+                <h3 className="text-sm font-semibold tracking-tight">
+                  Asignación Automática de Nuevas Conversaciones
+                </h3>
+                {autoAssignEnabled ? (
+                  <Badge className="bg-emerald-600 hover:bg-emerald-700 text-white text-[11px] px-2 py-0.5">
+                    ● Función Activa
+                  </Badge>
+                ) : (
+                  <Badge
+                    variant="outline"
+                    className="text-muted-foreground text-[11px] px-2 py-0.5"
+                  >
+                    Función Desactivada
+                  </Badge>
+                )}
+              </div>
+              <p className="text-xs text-muted-foreground max-w-2xl">
+                Al activar esta opción, todas las conversaciones y mensajes de clientes que ingresen al CRM desde este momento se asignarán automáticamente al asesor de venta que elijas para su atención inmediata.
+              </p>
+            </div>
+
+            {/* Botón de 1 clic para Activar / Desactivar la función */}
+            <div className="shrink-0 flex items-center gap-2">
+              {autoAssignEnabled ? (
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  disabled={savingAutoAssign}
+                  onClick={() => handleToggleAutoAssign(false)}
+                  className="border-rose-500/30 text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/40 cursor-pointer font-medium text-xs h-9 px-3"
+                >
+                  <Power className="h-3.5 w-3.5 mr-1.5" />
+                  {savingAutoAssign ? "Guardando..." : "Desactivar función"}
+                </Button>
+              ) : (
+                <Button
+                  type="button"
+                  size="sm"
+                  disabled={savingAutoAssign || !autoAssignMemberId}
+                  onClick={() => handleToggleAutoAssign(true)}
+                  className="bg-emerald-600 hover:bg-emerald-700 text-white cursor-pointer font-medium text-xs h-9 px-3.5 shadow-sm"
+                >
+                  <UserCheck className="h-4 w-4 mr-1.5" />
+                  {savingAutoAssign ? "Activando..." : "Activar asignación automática"}
+                </Button>
+              )}
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5 pt-2 border-t border-border/60">
+            {/* Selector de Asesor de Venta */}
+            <div className="space-y-1.5">
+              <Label className="text-xs font-semibold text-foreground/90">
+                Asesor de venta a quien asignar las conversaciones:
+              </Label>
+              <Select
+                value={autoAssignMemberId}
+                onValueChange={(val) => {
+                  const id = val || "";
+                  setAutoAssignMemberId(id);
+                  if (autoAssignEnabled && id) {
+                    handleToggleAutoAssign(true, id);
+                  }
+                }}
+              >
+                <SelectTrigger className="w-full bg-background text-xs h-9">
+                  <SelectValue placeholder="Selecciona un asesor del equipo" />
+                </SelectTrigger>
+                <SelectContent>
+                  {members
+                    .filter((m) => m.active)
+                    .map((m) => (
+                      <SelectItem key={m.id} value={m.id} className="text-xs">
+                        {label(m)} ({m.email}) — {m.role === "admin" ? "Administrador" : "Vendedor (Asesor)"}
+                      </SelectItem>
+                    ))}
+                </SelectContent>
+              </Select>
+            </div>
+
+            {/* Selector de Alcance */}
+            <div className="space-y-1.5">
+              <Label className="text-xs font-semibold text-foreground/90">
+                Alcance de la asignación entrante:
+              </Label>
+              <Select
+                value={autoAssignMode}
+                onValueChange={(val) => {
+                  if (val === "all_inbound" || val === "unassigned_only") {
+                    setAutoAssignMode(val);
+                    if (autoAssignEnabled) {
+                      handleToggleAutoAssign(true, autoAssignMemberId, val);
+                    }
+                  }
+                }}
+              >
+                <SelectTrigger className="w-full bg-background text-xs h-9">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all_inbound" className="text-xs">
+                    Todas las conversaciones entrantes (Recomendado para turnos)
+                  </SelectItem>
+                  <SelectItem value="unassigned_only" className="text-xs">
+                    Solo nuevos contactos y conversaciones sin asesor previo
+                  </SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+
+          {autoAssignEnabled && (
+            <div className="rounded-lg bg-emerald-500/10 border border-emerald-500/25 p-2.5 text-xs text-emerald-800 dark:text-emerald-300 flex items-center gap-2">
+              <Check className="h-4 w-4 shrink-0 text-emerald-600" />
+              <span>
+                Asignación activa: Desde este momento, toda conversación o mensaje entrante se asigna a{" "}
+                <strong>
+                  {members.find((m) => m.id === autoAssignMemberId)?.name ||
+                    members.find((m) => m.id === autoAssignMemberId)?.email ||
+                    "el asesor seleccionado"}
+                </strong>
+                .
+              </span>
+            </div>
+          )}
+        </div>
       )}
 
       {/* Lista de cuentas autorizadas */}
