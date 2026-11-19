@@ -46,7 +46,13 @@ export async function GET(
 
   const producto = primerItem?.titulo || (custom.producto_interes as string) || null;
   const cantidad = primerItem?.cantidad || Number(custom.cantidad_producto) || 1;
-  const total = pedido ? Number(pedido.total) : (deal?.value || Number(custom.total_venta) || 0);
+  const total = pedido
+    ? Number(pedido.total)
+    : deal?.value
+      ? deal.value > 500
+        ? deal.value / 100
+        : deal.value
+      : Number(custom.total_venta) || 0;
   const adelanto = Number(custom.adelanto_pagado) || 20;
   const saldo = Math.max(0, total - adelanto);
 
@@ -157,7 +163,7 @@ export async function POST(
       .update(deals)
       .set({
         title: dealTitle,
-        value: Math.round(total),
+        value: Math.round(total * 100),
         updatedAt: new Date(),
       })
       .where(eq(deals.id, deal.id))
@@ -192,7 +198,7 @@ export async function POST(
           .insert(deals)
           .values({
             title: dealTitle,
-            value: Math.round(total),
+            value: Math.round(total * 100),
             stageId: stageTarget.id,
             contactId: id,
           })

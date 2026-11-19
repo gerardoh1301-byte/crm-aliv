@@ -99,7 +99,12 @@ export default async function PipelinePage() {
       id: d.id,
       title: d.title,
       // A5: Leads en consulta sin pedido tienen valor 0
-      value: esConsulta && !d.ordenId ? 0 : d.value,
+      // Asegurar que el valor del deal siempre esté en centavos para formatCurrency (S/ total * 100)
+      value: esConsulta && !d.ordenId
+        ? 0
+        : d.ordenTotal && Number(d.ordenTotal) > 0
+          ? Math.round(Number(d.ordenTotal) * 100)
+          : (d.value && d.value > 0 && d.value < 500 ? Math.round(d.value * 100) : (d.value || 0)),
       stageId: d.stageId,
       contactId: d.contactId,
       expectedClose: d.expectedClose,

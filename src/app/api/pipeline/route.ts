@@ -102,7 +102,12 @@ export async function GET() {
             ),
             liquidacionAliclik: liq,
             // A5: Poner valor 0 a las consultas (leads sin pedido) para no inflar el valor del pipeline
-            value: esConsulta && !d.ordenId ? 0 : d.value,
+            // Asegurar que el valor del deal siempre esté en centavos para formatCurrency (S/ total * 100)
+            value: esConsulta && !d.ordenId
+              ? 0
+              : d.ordenTotal && Number(d.ordenTotal) > 0
+                ? Math.round(Number(d.ordenTotal) * 100)
+                : (d.value && d.value > 0 && d.value < 500 ? Math.round(d.value * 100) : (d.value || 0)),
             docCount: docCounts[d.contactId] ?? 0,
           };
         }),
