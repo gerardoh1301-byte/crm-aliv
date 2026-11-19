@@ -125,8 +125,21 @@ export async function PUT(
       : [];
   }
   if (body.customFields !== undefined) {
+    // El formulario de edicion reenvia la ficha entera, incluidos datos internos que
+    // escribe el sistema (abandono, agencia_shalom, guia_shalom...). Si llegan sin
+    // cambios se ignoran; si alguien intenta cambiarlos, la validacion los rechaza.
+    const guardados = (existing.customFields as Record<string, unknown> | null) ?? {};
+    const conocidas = new Set(camposContacto().map((c) => c.clave));
+    const entrada =
+      body.customFields && typeof body.customFields === "object" && !Array.isArray(body.customFields)
+        ? Object.fromEntries(
+            Object.entries(body.customFields as Record<string, unknown>).filter(
+              ([k, v]) => conocidas.has(k) || JSON.stringify(v) !== JSON.stringify(guardados[k])
+            )
+          )
+        : body.customFields;
     // Parcial: se mezclan con lo guardado, solo se validan las claves que vienen.
-    const campos = validarCamposPersonalizados(camposContacto(), body.customFields, { parcial: true });
+    const campos = validarCamposPersonalizados(camposContacto(), entrada, { parcial: true });
     if (!campos.ok) {
       return NextResponse.json({ error: campos.error }, { status: 400 });
     }

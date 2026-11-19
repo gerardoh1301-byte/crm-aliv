@@ -20,6 +20,8 @@ const ENDPOINTS = [
   "/api/agent/rescate",
   // Rastreo automático de envíos Shalom y avisos de llegada/recordatorio
   "/api/shalom/verificar-envios",
+  // Formularios EasySell abandonados: mensaje a los 30 min y a las 24 h
+  "/api/agent/abandonos",
 ];
 
 declare global {

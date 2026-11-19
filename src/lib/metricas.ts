@@ -254,6 +254,25 @@ export async function calcularMetricas({ desde, hasta }: RangoMetricas) {
     };
   });
 
+  // ---- formularios abandonados y rescate de chats (actividades con prefijo fijo) ----
+  const seguimiento = await filas(sql`
+    select
+      count(*) filter (where description like '[ABANDONO] Capturado%')::int as capturados,
+      count(*) filter (where description like '[ABANDONO] Paso 1 enviado%')::int as paso1,
+      count(*) filter (where description like '[ABANDONO] Paso 2 enviado%')::int as paso2,
+      count(*) filter (where description like '[ABANDONO] Respondió%')::int as respondieron,
+      count(*) filter (where description like '[ABANDONO] Recuperado tras mensaje%')::int as recuperados_mensaje,
+      count(*) filter (where description like '[ABANDONO] Recuperado por su cuenta%')::int as recuperados_solos,
+      coalesce(sum(nullif(substring(description from 'Recuperado tras mensaje: pedido .* por S/ ([0-9.]+)'), '')::numeric), 0) as monto_recuperado,
+      count(*) filter (where description like '[ABANDONO] Cerrado%')::int as cerrados,
+      count(*) filter (where description like '[ABANDONO] Error%')::int as errores,
+      count(*) filter (where description like '[RESCATE VENTAS] Mensaje enviado%')::int as rescate_toque1,
+      count(*) filter (where description like '[RESCATE VENTAS] Segundo%')::int as rescate_toque2
+    from activities
+    where created_at >= ${ini} and created_at < ${fin}
+      and (description like '[ABANDONO]%' or description like '[RESCATE VENTAS]%')`);
+  const sg = seguimiento[0] ?? {};
+
   // ---- comentarios (comment.received de Zernio, aun sin respuesta automatica) ----
   const clasificados = comentarios.map((c) => {
     const texto = textoComentario(c.payload);
@@ -285,6 +304,21 @@ export async function calcularMetricas({ desde, hasta }: RangoMetricas) {
       ciudad: p.ciudad ?? null,
       ad_id: p.ad_id ?? null,
     })),
+    formularios_abandonados: {
+      capturados: num(sg.capturados),
+      mensaje_30min: num(sg.paso1),
+      mensaje_24h: num(sg.paso2),
+      respondieron: num(sg.respondieron),
+      recuperados_tras_mensaje: num(sg.recuperados_mensaje),
+      recuperados_por_su_cuenta: num(sg.recuperados_solos),
+      monto_recuperado: num(sg.monto_recuperado),
+      cerrados_sin_compra: num(sg.cerrados),
+      errores_envio: num(sg.errores),
+    },
+    rescate_chats: {
+      primer_toque: num(sg.rescate_toque1),
+      segundo_toque: num(sg.rescate_toque2),
+    },
     comentarios: {
       total: clasificados.length,
       compra: clasificados.filter((c) => c.tipo === "compra").length,

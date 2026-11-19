@@ -10,6 +10,7 @@ import { pedidosOrdenes, type ItemPedido } from "../../../../../modules/pedidos/
 import { sincronizarEtapaPipeline } from "../../../../../modules/pedidos/servidor";
 import { emitAutomationEvent } from "@/lib/automations";
 import { extraerDatosFormularioShopify } from "@/lib/shopify/form-extractor";
+import { marcarAbandonoRecuperado } from "@/lib/abandonos/servidor";
 
 export const dynamic = "force-dynamic";
 
@@ -426,6 +427,10 @@ export async function POST(req: NextRequest) {
       }`,
       contactId,
     });
+    // Si venía de un formulario abandonado, cuenta como recuperado (métricas del rescate).
+    await marcarAbandonoRecuperado(contactId, numeroOrden, Number(payload.total_price) || 0).catch((err) =>
+      console.warn("[shopify-webhook] no se pudo marcar abandono recuperado:", err)
+    );
     await sincronizarConGoogleDrive().catch(() => {});
   }
 

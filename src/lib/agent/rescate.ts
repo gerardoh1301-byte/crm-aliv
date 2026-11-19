@@ -1,7 +1,7 @@
 import "server-only";
 import { db } from "@/db";
 import { activities, contacts, conversations, deals, messages, pipelineStages } from "@/db/schema";
-import { and, desc, eq, gte, lte } from "drizzle-orm";
+import { and, desc, eq, gte, lte, sql } from "drizzle-orm";
 import { getConfig } from "@/lib/config";
 import { deliverMessage } from "@/lib/channels/deliver";
 import { aplicarEtiquetaAContacto } from "./etiquetado";
@@ -9,6 +9,7 @@ import { pedidosOrdenes } from "../../../modules/pedidos/tabla";
 import { esPedidoDeProvincia } from "@/lib/pedidos/adelanto";
 import { createChatCompletionWithFallback, hasOpenRouterKey, getAgentModel } from "./openrouter";
 import { limpiarFormatoWhatsApp } from "./formato";
+import { abandonoEnCurso } from "@/lib/abandonos/reglas";
 
 export type TipoEscenarioRescate = "direccion_incompleta" | "adelanto_provincia" | "cotizacion_abandonada";
 
@@ -130,12 +131,24 @@ export function esHorarioPermitidoRescate(
  * Función pura que audita los datos de una conversación y decide si amerita
  * rescate y qué mensaje enviar.
  */
+/** Ventanas del rescate: primer toque 2-22 h, segundo (y último) toque 22-72 h. */
+export const VENTANA_PRIMER_TOQUE = { min: 2, max: 22 };
+export const VENTANA_SEGUNDO_TOQUE = { min: 22, max: 72 };
+
 export function determinarEscenarioRescate(
   contexto: ContextoChatParaAuditoria,
-  ahora: Date = new Date()
+  ahora: Date = new Date(),
+  opciones: { segundoToque?: boolean } = {}
 ): ResultadoAuditoriaRescate {
   const { contact, conversation, ultimoMensaje, pedidoReciente, historialMensajes } = contexto;
   const tags = contact.tags ?? [];
+  const segundoToque = Boolean(opciones.segundoToque);
+  const ventana = segundoToque ? VENTANA_SEGUNDO_TOQUE : VENTANA_PRIMER_TOQUE;
+
+  // 0. Formulario web abandonado en curso: su propia secuencia le escribe (no duplicar).
+  if (abandonoEnCurso(tags)) {
+    return { esElegible: false, motivoDescarte: "Formulario abandonado en curso (lo atiende su secuencia)" };
+  }
 
   // 1. Validar etiquetas excluyentes (clientes ya atendidos, pagados, en logística o cerrados)
   const tagsExcluyentes = [
@@ -147,13 +160,18 @@ export function determinarEscenarioRescate(
     "adelanto_pagado",
     "en agencia shalom",
     "comprobante recibido",
-    "rescate_enviado",
+    "rescate_2_enviado",
     "por despachar",
     "esperando clave",
+    // El primer toque solo se envía una vez; el segundo exige que el primero ya haya salido.
+    ...(segundoToque ? [] : ["rescate_enviado"]),
   ];
   const tieneExcluyente = tags.some((t) => tagsExcluyentes.includes(t.toLowerCase().trim()));
   if (tieneExcluyente) {
     return { esElegible: false, motivoDescarte: "Contacto con etiqueta de cierre, pagado o ya rescatado" };
+  }
+  if (segundoToque && !tags.some((t) => t.toLowerCase().trim() === "rescate_enviado")) {
+    return { esElegible: false, motivoDescarte: "Segundo toque sin primer rescate previo" };
   }
 
   // 1.1 Si el pedido ya está en estado pagado o logístico
@@ -176,11 +194,11 @@ export function determinarEscenarioRescate(
   }
 
   const horasTranscurridas = (ahora.getTime() - fechaUltimo.getTime()) / (1000 * 60 * 60);
-  if (horasTranscurridas < 2) {
-    return { esElegible: false, motivoDescarte: `Solo han pasado ${horasTranscurridas.toFixed(1)}h (mínimo 2h)` };
+  if (horasTranscurridas < ventana.min) {
+    return { esElegible: false, motivoDescarte: `Solo han pasado ${horasTranscurridas.toFixed(1)}h (mínimo ${ventana.min}h)` };
   }
-  if (horasTranscurridas > 22) {
-    return { esElegible: false, motivoDescarte: `Han pasado ${horasTranscurridas.toFixed(1)}h (fuera de ventana segura 22h)` };
+  if (horasTranscurridas > ventana.max) {
+    return { esElegible: false, motivoDescarte: `Han pasado ${horasTranscurridas.toFixed(1)}h (fuera de ventana ${ventana.max}h)` };
   }
 
   // 3.1 Protección de descanso nocturno: si el último mensaje fue durante la madrugada (22:00 a 06:00),
@@ -291,7 +309,21 @@ export function determinarEscenarioRescate(
   const esTermix = productoPrincipal === "termix";
   const nombreProducto = esTermix ? "la Tobillera Termix" : "NAC600 + NAD+";
 
-  // Detección estricta de provincia (evita ofrecer motorizado / contraentrega donde no aplica)
+  // Detección estricta de provincia (evita ofrecer motorizado / contraentrega donde no aplica).
+  // Solo cuenta lo que dijo el CLIENTE (o su pedido/etiquetas): el bot escribe "provincia" y
+  // "agencia" al cotizar a cualquiera ("¿Te lo enviamos a Lima o a provincia?"), y usar sus
+  // textos clasificaba como provincia a casi todas las consultas de Lima.
+  const textoCliente = mensajesCliente.map((m) => m.body || "").join(" ").toLowerCase();
+  // Para saber QUÉ pack acordó: lo que dijo el cliente + las confirmaciones del bot que
+  // nombran un solo precio ("tu pedido de 3 frascos por S/199"). Las cotizaciones con la
+  // lista completa (119/189/199) no dicen nada de lo elegido y antes forzaban "1 frasco".
+  const confirmacionesBot = (historialMensajes || [])
+    .filter((m) => m.direction === "out")
+    .map((m) => (m.body || "").toLowerCase())
+    .filter((b) => new Set(b.match(/\b(79|119|139|189|199)\b/g) ?? []).size === 1);
+  const textoPack = [textoCliente, ...confirmacionesBot].join(" ");
+  const fieldsCliente = (contact.customFields ?? {}) as Record<string, unknown>;
+  const ciudadFicha = String(fieldsCliente.departamento_ciudad ?? fieldsCliente.ciudad ?? "");
   const esProvincia =
     tags.some((t) => /provincia|adelanto|shalom/i.test(t)) ||
     (pedidoReciente &&
@@ -301,9 +333,9 @@ export function determinarEscenarioRescate(
         direccionEnvio: pedidoReciente.direccionEnvio ?? null,
       })) ||
     /\b(abancay|chalhuanca|trujillo|arequipa|cusco|puno|piura|chiclayo|tacna|ica|pisco|huancayo|ayacucho|chimbote|huaraz|iquitos|pucallpa|tarapoto|madre de dios|tambopata|tumbes|cajamarca|moquegua|chota|jaen|bagua|sullana|talara|juliaca|chincha|nazca|andahuaylas|pasco|huanuco|tingo mar[ií]a|chachapoyas|ilo|mollendo|caman[aá]|moyobamba|yurimaguas|tarma|la merced|satipo|pichanaqui|oxapampa|cerro de pasco|puquio|barranca|huacho|huaral|cañete|imperial|mala)\b/i.test(
-      (pedidoReciente?.ciudad || "") + " " + (pedidoReciente?.direccionEnvio || "") + " " + textosHistorial
+      (pedidoReciente?.ciudad || "") + " " + (pedidoReciente?.direccionEnvio || "") + " " + ciudadFicha + " " + textoCliente
     ) ||
-    /\b(shalom|olva|agencia|provincia)\b/i.test(textosHistorial);
+    /\b(shalom|olva|agencia|provincia)\b/i.test(textoCliente);
 
   // ESCENARIO A: Dirección Incompleta (SOLO LIMA / CALLAO para entrega con motorizado a domicilio)
   // En provincia NUNCA debe ejecutarse este escenario ni enviar la plantilla aliv_completar_direccion.
@@ -334,19 +366,19 @@ export function determinarEscenarioRescate(
     if (!pedidoReciente && botPreguntoPorDireccion) {
       let detallePack = esTermix ? "tu Tobillera Termix" : "tu pedido de NAC600 + NAD+";
       if (esTermix) {
-        if (/\b(3\s*(?:tobilleras?|unidades?)|pack\s*(?:de\s*)?3|189)\b/i.test(textosHistorial)) {
+        if (/\b(3\s*(?:tobilleras?|unidades?)|pack\s*(?:de\s*)?3|189)\b/i.test(textoPack)) {
           detallePack = "tus 3 Tobilleras Termix";
-        } else if (/\b(2\s*(?:tobilleras?|unidades?)|pack\s*(?:de\s*)?2|139)\b/i.test(textosHistorial)) {
+        } else if (/\b(2\s*(?:tobilleras?|unidades?)|pack\s*(?:de\s*)?2|139)\b/i.test(textoPack)) {
           detallePack = "tu promo de 2 Tobilleras Termix";
-        } else if (/\b(1\s*(?:tobillera|unidad)|79)\b/i.test(textosHistorial)) {
+        } else if (/\b(1\s*(?:tobillera|unidad)|79)\b/i.test(textoPack)) {
           detallePack = "tu Tobillera Termix";
         }
       } else {
-        if (/\b(3\s*frascos?|pack\s*(?:de\s*)?3|199)\b/i.test(textosHistorial)) {
+        if (/\b(3\s*frascos?|pack\s*(?:de\s*)?3|199)\b/i.test(textoPack)) {
           detallePack = "tus 3 frascos de NAC600 + NAD+";
-        } else if (/\b(2\s*frascos?|pack\s*(?:de\s*)?2|169)\b/i.test(textosHistorial)) {
+        } else if (/\b(2\s*frascos?|pack\s*(?:de\s*)?2|189)\b/i.test(textoPack)) {
           detallePack = "tus 2 frascos de NAC600 + NAD+";
-        } else if (/\b(1\s*frasco|119)\b/i.test(textosHistorial)) {
+        } else if (/\b(1\s*frasco|119)\b/i.test(textoPack)) {
           detallePack = "tu frasco de NAC600 + NAD+";
         }
       }
@@ -379,16 +411,16 @@ export function determinarEscenarioRescate(
     if (pedidoReciente?.total) {
       totalNum = Number(pedidoReciente.total);
     } else if (esTermix) {
-      totalNum = /\b(3\s*(?:tobilleras?|unidades?)|189)\b/i.test(textosHistorial)
+      totalNum = /\b(3\s*(?:tobilleras?|unidades?)|189)\b/i.test(textoPack)
         ? 189
-        : /\b(79|1\s*(?:tobillera|unidad))\b/i.test(textosHistorial)
+        : /\b(79|1\s*(?:tobillera|unidad))\b/i.test(textoPack)
           ? 79
           : 139;
     } else {
-      totalNum = /\b(1\s*frasco|119)\b/i.test(textosHistorial)
+      totalNum = /\b(1\s*frasco|119)\b/i.test(textoPack)
         ? 119
-        : /\b(2\s*frascos?|169)\b/i.test(textosHistorial)
-          ? 169
+        : /\b(2\s*frascos?|189)\b/i.test(textoPack)
+          ? 189
           : 199;
     }
     const saldo = Math.max(totalNum - 20, 0);
@@ -565,13 +597,40 @@ Responde ÚNICAMENTE un objeto JSON válido con la siguiente estructura:
   return evaluacionHeuristica;
 }
 
+
+/**
+ * Segundo y último toque (22-72 h sin respuesta tras el primer rescate). Corto, sin
+ * repetir el discurso, con una propuesta concreta que se responde con "sí". Fuera de la
+ * ventana de 24 h sale la plantilla aprobada del escenario; este texto queda de vista
+ * previa y se envía tal cual si la ventana sigue abierta.
+ */
+export function mensajeSegundoToque(
+  escenario: TipoEscenarioRescate,
+  nombre: string | null,
+  producto: "nac600" | "termix"
+): string {
+  const saludo = nombre ? `${nombre}, ` : "";
+  const pack = producto === "termix" ? "el par de Tobilleras Termix (S/139)" : "los 3 frascos de NAC600 (S/199)";
+  if (escenario === "direccion_incompleta") {
+    return `${saludo}tu pedido sigue separado 📦. Solo respóndeme con tu dirección o tu ubicación y lo dejo en ruta para la próxima entrega.`;
+  }
+  if (escenario === "adelanto_provincia") {
+    return `${saludo}te escribo por última vez para no incomodarte 🙂. Si aún lo quieres, con el adelanto de S/20 al Yape *951365418* (Gerardo Huaynalaya) te lo despachamos por Shalom. ¿Te lo separo?`;
+  }
+  return `${saludo}te escribo por última vez para no incomodarte 🙂. Te puedo separar ${pack} con envío gratis. ¿Te lo agendo? Responde "sí" y lo dejo listo.`;
+}
+
+type Pasada = "primero" | "segundo";
+
 /**
  * Ejecuta el barrido de auditoría sobre todas las conversaciones candidatas en la base de datos.
+ * Dos pasadas: primer toque (2-22 h) y segundo toque (22-72 h, solo a quien ya recibió
+ * el primero y no respondió). Nunca hay un tercero.
  */
 export async function auditarChatsAbandonados(opts?: { limite?: number; forzarHorario?: boolean }): Promise<{
   procesados: number;
   rescatados: number;
-  detalles: Array<{ contactId: string; phone: string | null; escenario: string; mensaje: string }>;
+  detalles: Array<{ contactId: string; phone: string | null; escenario: string; mensaje: string; toque?: number }>;
 }> {
   const limite = opts?.limite ?? 10;
   const forzarHorario = opts?.forzarHorario ?? false;
@@ -582,166 +641,189 @@ export async function auditarChatsAbandonados(opts?: { limite?: number; forzarHo
     return { procesados: 0, rescatados: 0, detalles: [] };
   }
 
-  // Ventana de 2h a 22h atrás
-  const hace2Horas = new Date(ahora.getTime() - 2 * 60 * 60 * 1000);
-  const hace22Horas = new Date(ahora.getTime() - 22 * 60 * 60 * 1000);
-
-  // Buscar conversaciones activas dentro de la ventana con IA activa
-  const candidatas = await db
-    .select({
-      convId: conversations.id,
-      channel: conversations.channel,
-      lastMessageAt: conversations.lastMessageAt,
-      contactId: contacts.id,
-      contactName: contacts.name,
-      contactPhone: contacts.phone,
-      contactTags: contacts.tags,
-      contactFields: contacts.customFields,
-    })
-    .from(conversations)
-    .innerJoin(contacts, eq(conversations.contactId, contacts.id))
-    .where(
-      and(
-        eq(conversations.aiEnabled, true),
-        eq(contacts.aiEnabled, true),
-        eq(conversations.channel, "whatsapp"),
-        lte(conversations.lastMessageAt, hace2Horas),
-        gte(conversations.lastMessageAt, hace22Horas)
-      )
-    )
-    .orderBy(desc(conversations.lastMessageAt))
-    .limit(limite * 2);
-
+  let procesados = 0;
   let rescatados = 0;
-  const detalles: Array<{ contactId: string; phone: string | null; escenario: string; mensaje: string }> = [];
+  const detalles: Array<{ contactId: string; phone: string | null; escenario: string; mensaje: string; toque?: number }> = [];
 
-  for (const c of candidatas) {
-    if (rescatados >= limite) break;
+  for (const pasada of ["primero", "segundo"] as Pasada[]) {
+    const ventana = pasada === "primero" ? VENTANA_PRIMER_TOQUE : VENTANA_SEGUNDO_TOQUE;
+    const desde = new Date(ahora.getTime() - ventana.max * 60 * 60 * 1000);
+    const hasta = new Date(ahora.getTime() - ventana.min * 60 * 60 * 1000);
 
-    // Obtener los últimos mensajes de la conversación para evaluar el contexto completo
-    const ultimosMensajes = await db
+    // Buscar conversaciones activas dentro de la ventana con IA activa
+    const candidatas = await db
       .select({
-        direction: messages.direction,
-        body: messages.body,
-        createdAt: messages.createdAt,
+        convId: conversations.id,
+        channel: conversations.channel,
+        lastMessageAt: conversations.lastMessageAt,
+        contactId: contacts.id,
+        contactName: contacts.name,
+        contactPhone: contacts.phone,
+        contactTags: contacts.tags,
+        contactFields: contacts.customFields,
       })
-      .from(messages)
-      .where(eq(messages.conversationId, c.convId))
-      .orderBy(desc(messages.createdAt))
-      .limit(8);
-
-    const ultimoMsg = ultimosMensajes[0] ?? null;
-
-    // Verificar si ya existe una actividad de seguimiento pendiente o programada recientemente
-    const [actividadFutura] = await db
-      .select({ id: activities.id })
-      .from(activities)
+      .from(conversations)
+      .innerJoin(contacts, eq(conversations.contactId, contacts.id))
       .where(
         and(
-          eq(activities.contactId, c.contactId),
-          eq(activities.type, "follow_up"),
-          gte(activities.scheduledAt, new Date(ahora.getTime() - 6 * 60 * 60 * 1000))
+          eq(conversations.aiEnabled, true),
+          eq(contacts.aiEnabled, true),
+          eq(conversations.channel, "whatsapp"),
+          lte(conversations.lastMessageAt, hasta),
+          gte(conversations.lastMessageAt, desde),
+          ...(pasada === "segundo"
+            ? [sql`${contacts.tags} @> ARRAY['rescate_enviado']::text[]`, sql`not (${contacts.tags} @> ARRAY['rescate_2_enviado']::text[])`]
+            : [])
         )
       )
-      .limit(1);
+      .orderBy(desc(conversations.lastMessageAt))
+      .limit(limite * 2);
 
-    if (actividadFutura) {
-      continue; // Hay un seguimiento programado, no enviar rescate automático
-    }
+    procesados += candidatas.length;
 
-    // Obtener pedido más reciente si existe
-    const [pedido] = await db
-      .select({
-        numeroOrden: pedidosOrdenes.numeroOrden,
-        total: pedidosOrdenes.total,
-        direccionEnvio: pedidosOrdenes.direccionEnvio,
-        ciudad: pedidosOrdenes.ciudad,
-        distrito: pedidosOrdenes.distrito,
-        items: pedidosOrdenes.items,
-        estado: pedidosOrdenes.estado,
-      })
-      .from(pedidosOrdenes)
-      .where(eq(pedidosOrdenes.contactId, c.contactId))
-      .orderBy(desc(pedidosOrdenes.createdAt))
-      .limit(1);
+    for (const c of candidatas) {
+      if (rescatados >= limite) break;
 
-    const contexto: ContextoChatParaAuditoria = {
-      contact: {
-        id: c.contactId,
-        name: c.contactName,
-        phone: c.contactPhone,
-        tags: c.contactTags,
-        customFields: c.contactFields as Record<string, unknown> | null,
-      },
-      conversation: {
-        id: c.convId,
-        lastMessageAt: c.lastMessageAt,
-        channel: c.channel,
-      },
-      ultimoMensaje: ultimoMsg ?? null,
-      historialMensajes: ultimosMensajes,
-      pedidoReciente: pedido ?? null,
-    };
+      // Obtener los últimos mensajes de la conversación para evaluar el contexto completo
+      const ultimosMensajes = await db
+        .select({
+          direction: messages.direction,
+          body: messages.body,
+          createdAt: messages.createdAt,
+        })
+        .from(messages)
+        .where(eq(messages.conversationId, c.convId))
+        .orderBy(desc(messages.createdAt))
+        .limit(8);
 
-    const evaluacion = determinarEscenarioRescate(contexto, ahora);
-    if (!evaluacion.esElegible || !evaluacion.mensajeRescate || !evaluacion.escenario) {
-      continue;
-    }
+      const ultimoMsg = ultimosMensajes[0] ?? null;
 
-    // Auditoría contextual inteligente con IA (Gemini vía pool) para confirmar o enriquecer la retoma
-    const evaluacionFinal = await evaluarRescateConIA(contexto, evaluacion);
-    if (!evaluacionFinal.esElegible || !evaluacionFinal.mensajeRescate || !evaluacionFinal.escenario) {
-      continue;
-    }
+      // Verificar si ya existe una actividad de seguimiento pendiente o programada recientemente
+      const [actividadFutura] = await db
+        .select({ id: activities.id })
+        .from(activities)
+        .where(
+          and(
+            eq(activities.contactId, c.contactId),
+            eq(activities.type, "follow_up"),
+            gte(activities.scheduledAt, new Date(ahora.getTime() - 6 * 60 * 60 * 1000))
+          )
+        )
+        .limit(1);
 
-    // R3: Adjuntar plantilla aprobada de Meta según escenario para garantizar entrega fuera de ventana 24h
-    const nombreCliente = (c.contactName || "estimado(a)").trim().split(/\s+/)[0] || "estimado(a)";
-    const prodRescate = detectarProductoRescate(contexto);
-    const prodNombre = prodRescate === "termix" ? "Tobillera Termix" : "suplemento NAC600 + NAD+";
-    const ciudadDestino = (pedido?.ciudad || "Perú").trim() || "Perú";
-    const plantillaRescate =
-      evaluacionFinal.escenario === "direccion_incompleta"
-        ? {
-            name: "aliv_completar_direccion",
-            language: "es",
-            params: [nombreCliente, prodNombre, ciudadDestino],
-            previewText: evaluacionFinal.mensajeRescate,
-          }
-        : evaluacionFinal.escenario === "adelanto_provincia"
+      if (actividadFutura) {
+        continue; // Hay un seguimiento programado, no enviar rescate automático
+      }
+
+      // Obtener pedido más reciente si existe
+      const [pedido] = await db
+        .select({
+          numeroOrden: pedidosOrdenes.numeroOrden,
+          total: pedidosOrdenes.total,
+          direccionEnvio: pedidosOrdenes.direccionEnvio,
+          ciudad: pedidosOrdenes.ciudad,
+          distrito: pedidosOrdenes.distrito,
+          items: pedidosOrdenes.items,
+          estado: pedidosOrdenes.estado,
+        })
+        .from(pedidosOrdenes)
+        .where(eq(pedidosOrdenes.contactId, c.contactId))
+        .orderBy(desc(pedidosOrdenes.createdAt))
+        .limit(1);
+
+      const contexto: ContextoChatParaAuditoria = {
+        contact: {
+          id: c.contactId,
+          name: c.contactName,
+          phone: c.contactPhone,
+          tags: c.contactTags,
+          customFields: c.contactFields as Record<string, unknown> | null,
+        },
+        conversation: {
+          id: c.convId,
+          lastMessageAt: c.lastMessageAt,
+          channel: c.channel,
+        },
+        ultimoMensaje: ultimoMsg ?? null,
+        historialMensajes: ultimosMensajes,
+        pedidoReciente: pedido ?? null,
+      };
+
+      const evaluacion = determinarEscenarioRescate(contexto, ahora, { segundoToque: pasada === "segundo" });
+      if (!evaluacion.esElegible || !evaluacion.mensajeRescate || !evaluacion.escenario) {
+        continue;
+      }
+
+      const nombreCliente = (c.contactName || "estimado(a)").trim().split(/\s+/)[0] || "estimado(a)";
+      const prodRescate = detectarProductoRescate(contexto);
+
+      // Primer toque: auditoría contextual con IA. Segundo toque: mensaje corto y fijo
+      // (la IA ya tuvo su oportunidad; aquí solo se ofrece cerrar o se despide).
+      let evaluacionFinal = evaluacion;
+      if (pasada === "primero") {
+        evaluacionFinal = await evaluarRescateConIA(contexto, evaluacion);
+        if (!evaluacionFinal.esElegible || !evaluacionFinal.mensajeRescate || !evaluacionFinal.escenario) {
+          continue;
+        }
+      } else {
+        const nombreReal = /\d/.test(nombreCliente) || /^(estimado|whatsapp|web)/i.test(nombreCliente) ? null : nombreCliente;
+        evaluacionFinal = {
+          ...evaluacion,
+          mensajeRescate: mensajeSegundoToque(evaluacion.escenario!, nombreReal, prodRescate),
+        };
+      }
+
+      // R3: Adjuntar plantilla aprobada de Meta según escenario para garantizar entrega fuera de ventana 24h
+      const prodNombre = prodRescate === "termix" ? "Tobillera Termix" : "suplemento NAC600 + NAD+";
+      const ciudadDestino = (pedido?.ciudad || "Perú").trim() || "Perú";
+      const plantillaRescate =
+        evaluacionFinal.escenario === "direccion_incompleta"
           ? {
-              name: "aliv_recordatorio_adelanto",
+              name: "aliv_completar_direccion",
               language: "es",
               params: [nombreCliente, prodNombre, ciudadDestino],
-              previewText: evaluacionFinal.mensajeRescate,
+              previewText: evaluacionFinal.mensajeRescate!,
             }
-          : {
-              name: "aliv_seguimiento_consulta",
-              language: "es",
-              params: [nombreCliente, prodNombre],
-              previewText: evaluacionFinal.mensajeRescate,
-            };
+          : evaluacionFinal.escenario === "adelanto_provincia"
+            ? {
+                name: "aliv_recordatorio_adelanto",
+                language: "es",
+                params: [nombreCliente, prodNombre, ciudadDestino],
+                previewText: evaluacionFinal.mensajeRescate!,
+              }
+            : {
+                name: "aliv_seguimiento_consulta",
+                language: "es",
+                params: [nombreCliente, prodNombre],
+                previewText: evaluacionFinal.mensajeRescate!,
+              };
 
-    // Entregar mensaje oficial de rescate (texto dentro de 24h, plantilla aprobada fuera de 24h)
-    const entrega = await deliverMessage(
-      c.convId,
-      { text: evaluacionFinal.mensajeRescate, template: plantillaRescate },
-      "agent"
-    );
-    if (entrega.ok) {
+      // Entregar mensaje oficial de rescate (texto dentro de 24h, plantilla aprobada fuera de 24h)
+      const entrega = await deliverMessage(
+        c.convId,
+        { text: evaluacionFinal.mensajeRescate!, template: plantillaRescate },
+        "agent"
+      );
+      if (!entrega.ok) continue;
+
       rescatados++;
-      // Aplicar etiqueta 'rescate_enviado' para evitar duplicidad
+      // rescate_enviado tras el primer toque, rescate_2_enviado tras el último
+      const etiqueta = pasada === "primero" ? "rescate_enviado" : "rescate_2_enviado";
       await aplicarEtiquetaAContacto({
         contactId: c.contactId,
-        etiqueta: "rescate_enviado",
+        etiqueta,
         accion: "agregar",
-        motivo: `Rescate de chat abandonado (${evaluacionFinal.escenario})`,
+        motivo: `Rescate de chat abandonado (${evaluacionFinal.escenario}, toque ${pasada === "primero" ? 1 : 2})`,
       });
 
       // Registrar nota en la ficha
       try {
         await db.insert(activities).values({
           type: "note",
-          description: `[RESCATE VENTAS] Mensaje enviado automáticamente para recuperar venta abandonada (${evaluacionFinal.escenario}).`,
+          description:
+            pasada === "primero"
+              ? `[RESCATE VENTAS] Mensaje enviado automáticamente para recuperar venta abandonada (${evaluacionFinal.escenario}).`
+              : `[RESCATE VENTAS] Segundo y último toque enviado (${evaluacionFinal.escenario}).`,
           contactId: c.contactId,
         });
       } catch (actErr) {
@@ -751,14 +833,15 @@ export async function auditarChatsAbandonados(opts?: { limite?: number; forzarHo
       detalles.push({
         contactId: c.contactId,
         phone: c.contactPhone,
-        escenario: evaluacionFinal.escenario,
-        mensaje: evaluacionFinal.mensajeRescate,
+        escenario: evaluacionFinal.escenario!,
+        mensaje: evaluacionFinal.mensajeRescate!,
+        toque: pasada === "primero" ? 1 : 2,
       });
     }
   }
 
   return {
-    procesados: candidatas.length,
+    procesados,
     rescatados,
     detalles,
   };

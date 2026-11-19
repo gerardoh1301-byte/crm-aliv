@@ -452,6 +452,22 @@ export async function renderContexto(contactId: string): Promise<string> {
 
   if (llamadasTxt) partes.push(llamadasTxt);
   if (pedidosTxt) partes.push(pedidosTxt);
+
+  // Formulario web abandonado: el cliente ya eligió pack y dejó datos en la landing.
+  const abandono = rawFields.abandono as
+    | { pack?: string; total?: number; ciudad?: string | null; direccion?: string | null; capturadoEn?: string }
+    | undefined;
+  const tagsContacto = (contact.tags ?? []).map((t) => t.toLowerCase());
+  if (abandono && tagsContacto.includes("formulario_abandonado") && !tagsContacto.includes("abandono_recuperado") && !pedidosTxt) {
+    partes.push(
+      "## Formulario web incompleto (viene de la tienda)\n" +
+        `- Llenó el formulario de compra de alivstore.shop con: *${abandono.pack ?? "pack sin dato"}*${abandono.total ? ` por S/${Number(abandono.total).toFixed(2)}` : ""}` +
+        `${abandono.ciudad ? `, ciudad: ${abandono.ciudad}` : ""}${abandono.direccion ? `, dirección: ${abandono.direccion}` : ""}. No lo envió.\n` +
+        "- YA ELIGIÓ: no le preguntes qué producto quiere ni le pegues la lista de precios. Confírmale ese pedido y pide SOLO lo que falte (nombre completo, dirección con número/referencia y día de entrega en Lima; agencia Shalom y DNI en provincia).\n" +
+        "- Si cuenta que el formulario falló o tuvo dudas, resuélvelas en una línea y registra el pedido aquí con crear_pedido_chat. Si dice que ya no lo quiere, respétalo y despídete en una línea."
+    );
+  }
+
   if (etapasTxt) partes.push("## Pipeline (clave: nombre)", etapasTxt);
   if (aAveriguar.length) partes.push("## Datos a averiguar", ...aAveriguar);
 

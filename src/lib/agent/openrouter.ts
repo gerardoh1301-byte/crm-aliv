@@ -135,9 +135,14 @@ export async function createChatCompletionWithFallback(
   const triedKeys = new Set<string>();
   let lastErr: unknown = null;
 
-  // 1. Probar con hasta 2 claves del pool de Gemini y reservar al menos 15s para Groq/OpenRouter
-  const maxAttempts = Math.min(Math.max(allKeys.length, 1), 2);
+  // 1. Probar con hasta 3 claves del pool de Gemini y reservar al menos 15s para Groq/OpenRouter.
+  // Si el modelo principal se satura o no contesta a tiempo, los intentos siguientes usan el
+  // modelo lite: repetir el mismo modelo saturado con otra clave solo gastaba el presupuesto
+  // y el cliente recibía "Disculpa la demora" (Groq gratis no acepta un prompt de ~22k tokens).
+  const maxAttempts = Math.min(Math.max(allKeys.length, 1), 3);
   let gemini503Count = 0;
+  const modeloLite = GEMINI_FALLBACK_MODELS.find((m) => m !== requestedModel) ?? requestedModel;
+  let modeloIntento = requestedModel;
 
   for (let attempt = 0; attempt < maxAttempts; attempt++) {
     // Si quedan menos de 15s de presupuesto, salir de inmediato a Groq/OpenRouter
@@ -161,7 +166,7 @@ export async function createChatCompletionWithFallback(
       return await client.chat.completions.create(
         {
           ...params,
-          model: requestedModel,
+          model: modeloIntento,
         },
         reqOptions
       );
@@ -169,6 +174,11 @@ export async function createChatCompletionWithFallback(
       lastErr = err;
       const error = err as { status?: number; code?: string | number; message?: string };
       const status = error?.status;
+
+      // Sin respuesta a tiempo (status undefined) o error del servidor: pasar al modelo lite.
+      if (status === undefined || (typeof status === "number" && status >= 500)) {
+        modeloIntento = modeloLite;
+      }
 
       // 503 = Sobrecarga del modelo en Google -> Probar de inmediato modelos alternativos (lite)
       if (status === 503) {
@@ -251,7 +261,12 @@ export async function createChatCompletionWithFallback(
   // 2. Si las claves de Gemini fallaron o agotaron su ventana, conmutar a Groq Cloud dentro del presupuesto de 45s
   const groq = getGroqClient();
   if (groq) {
-    const groqModels = ["llama-3.3-70b-versatile", "llama-3.1-8b-instant"];
+    // Groq retiró los Llama 3.x (devuelven 404). Lista vigente verificada el 19/11/2026 con
+    // GET /openai/v1/models; se puede pisar con GROQ_MODELS="modelo1,modelo2" sin desplegar código.
+    const groqModels = (process.env.GROQ_MODELS || "openai/gpt-oss-120b,qwen/qwen3.8-27b")
+      .split(",")
+      .map((m) => m.trim())
+      .filter(Boolean);
     for (const gModel of groqModels) {
       const reqOptions = buildReqOptions();
       if (!reqOptions) break;
