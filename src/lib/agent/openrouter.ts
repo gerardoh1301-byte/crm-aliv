@@ -11,6 +11,8 @@ const GROQ_BASE_URL = "https://api.groq.com/openai/v1";
 const GEMINI_FALLBACK_MODELS = [
   "gemini-3.5-flash-lite",
   "gemini-flash-lite-latest",
+  "gemini-2.5-flash",
+  "gemini-2.5-flash-lite",
   "gemini-3.1-flash-lite",
 ];
 
@@ -133,9 +135,17 @@ export async function createChatCompletionWithFallback(
   const triedKeys = new Set<string>();
   let lastErr: unknown = null;
 
-  // 1. Probar con hasta 3 claves del pool de Gemini antes de pasar a Groq para no agotar los 45s
-  const maxAttempts = Math.min(Math.max(allKeys.length, 1), 3);
+  // 1. Probar con hasta 2 claves del pool de Gemini y reservar al menos 15s para Groq/OpenRouter
+  const maxAttempts = Math.min(Math.max(allKeys.length, 1), 2);
+  let gemini503Count = 0;
+
   for (let attempt = 0; attempt < maxAttempts; attempt++) {
+    // Si quedan menos de 15s de presupuesto, salir de inmediato a Groq/OpenRouter
+    if (deadline - Date.now() < 15_000) {
+      console.warn("[agent-llm] Menos de 15s de presupuesto restante. Conmutando a Groq/OpenRouter...");
+      break;
+    }
+
     const reqOptions = buildReqOptions();
     if (!reqOptions) break;
 
@@ -160,10 +170,45 @@ export async function createChatCompletionWithFallback(
       const error = err as { status?: number; code?: string | number; message?: string };
       const status = error?.status;
 
-      // 429 = Cuota por minuto excedida / 503 = Sobrecarga temporal de Google
-      if (status === 429 || status === 503) {
+      // 503 = Sobrecarga del modelo en Google -> Probar de inmediato modelos alternativos (lite)
+      if (status === 503) {
+        gemini503Count++;
         console.warn(
-          `[agent-llm] Clave ...${key.slice(-8)} recibió ${status} (cuota/saturación). Conmutando de inmediato a la siguiente clave del pool...`
+          `[agent-llm] Modelo ${requestedModel} saturado (503) en clave ...${key.slice(-8)}. Probando de inmediato modelos Gemini lite alternativos...`
+        );
+        markGeminiKeyRateLimited(key, 30);
+
+        for (const fallbackModel of GEMINI_FALLBACK_MODELS) {
+          if (fallbackModel === requestedModel) continue;
+          if (deadline - Date.now() < 12_000) break; // reservar para Groq
+          const fbOpts = buildReqOptions();
+          if (!fbOpts) break;
+          try {
+            console.info(`[agent-llm] Intentando modelo Gemini alternativo ${fallbackModel}...`);
+            return await client.chat.completions.create(
+              {
+                ...params,
+                model: fallbackModel,
+              },
+              fbOpts
+            );
+          } catch (fbErr: any) {
+            console.warn(`[agent-llm] Fallback ${fallbackModel} también falló:`, fbErr?.message || fbErr);
+          }
+        }
+
+        // Si ya van 2 fallos 503 en Gemini, conmutar a Groq/OpenRouter
+        if (gemini503Count >= 2) {
+          console.warn("[agent-llm] Gemini sobrecargado persistentemente (503). Conmutando de inmediato a proveedores de respaldo...");
+          break;
+        }
+        continue;
+      }
+
+      // 429 = Cuota por minuto excedida
+      if (status === 429) {
+        console.warn(
+          `[agent-llm] Clave ...${key.slice(-8)} recibió 429 (cuota excedida). Conmutando a la siguiente clave del pool...`
         );
         markGeminiKeyRateLimited(key, 60);
         continue;
@@ -206,7 +251,7 @@ export async function createChatCompletionWithFallback(
   // 2. Si las claves de Gemini fallaron o agotaron su ventana, conmutar a Groq Cloud dentro del presupuesto de 45s
   const groq = getGroqClient();
   if (groq) {
-    const groqModels = ["openai/gpt-oss-20b", "openai/gpt-oss-120b", "qwen/qwen3.8-27b"];
+    const groqModels = ["llama-3.3-70b-versatile", "llama-3.1-8b-instant"];
     for (const gModel of groqModels) {
       const reqOptions = buildReqOptions();
       if (!reqOptions) break;

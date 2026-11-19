@@ -17,10 +17,6 @@ export const ALICLIK_COMPANY_ID = 57390;
 export const ALICLIK_USER_ID = 45168;
 export const ALICLIK_COMPANY_PREFIX = "ERG";
 
-// Token permanente de integración oficial de ERGONOVA en AliClik
-const TOKEN_INTEGRATION_FALLBACK =
-  "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6NDUxNjgsImVtYWlsIjoiR0VSQVJET0gxMzAxIiwiY29tcGFueUlkIjo1NzM5MCwiY29kZSI6IkVSRyIsImNvbXBhbnlOYW1lIjoiRVJHT05PVkEiLCJjb21wYW55UGFyZW50SWQiOjEsImNvdW50cnkiOm51bGwsImN1cnJlbmN5Ijp7ImNvZGUiOiJQRU4iLCJuYW1lIjoiU09MRVMiLCJzeW1ib2wiOiJTLyJ9LCJpYXQiOjE3ODI4NTkyMjJ9.XWZ4w4IWfDRHlK_fNIVH7kVsyOMgXQu62GOJ-c_L-hw";
-
 // Catálogo verificado de SKUs y Almacén en AliClik para ALIVPERU
 export const ALICLIK_CATALOG = {
   NAC600: {
@@ -45,6 +41,9 @@ export async function resolveAliclikToken(): Promise<string> {
   if (process.env.ALICLIK_TOKEN_INTEGRATION?.trim()) {
     return process.env.ALICLIK_TOKEN_INTEGRATION.trim();
   }
+  if (process.env.ALICLIK_MCP_TOKEN?.trim()) {
+    return process.env.ALICLIK_MCP_TOKEN.trim().replace(/^Bearer\s+/i, "");
+  }
   try {
     const [row] = await db
       .select()
@@ -57,7 +56,7 @@ export async function resolveAliclikToken(): Promise<string> {
   } catch (err) {
     console.warn("No se pudo leer aliclik.token_integration de crm_settings:", err);
   }
-  return TOKEN_INTEGRATION_FALLBACK;
+  throw new Error("No se ha configurado el token de integración de AliClik (ALICLIK_TOKEN_INTEGRATION o ajuste crm_settings).");
 }
 
 /**

@@ -8,7 +8,7 @@ import type { DealStageChangedPayload } from "@/lib/automations/triggers";
 import { cleanStr, esEtiquetaDeEtapa, obtenerEtiquetaDeEtapa } from "@/lib/tags";
 import { sincronizarDealEnSheets } from "@/lib/sheets/envios-sync";
 import { notificarCambioDealAlErp } from "@/lib/finanzas/notificar-erp";
-import { crearOActualizarDealPostventa } from "@/lib/postventa/engine";
+import { crearOActualizarDealPostventa, cancelarDealPostventa } from "@/lib/postventa/engine";
 
 /**
  * Mueve una operacion de etapa y emite `deal.stage_changed`.
@@ -77,6 +77,14 @@ export async function setDealStage(input: {
         await crearOActualizarDealPostventa(deal.contactId, deal.title);
       } catch (postventaErr) {
         console.warn("[stage] error al vincular postventa:", postventaErr);
+      }
+    }
+
+    if ((stageKey === "cancelado_rechazado" || nuevoEstado === "cancelado") && deal.contactId) {
+      try {
+        await cancelarDealPostventa(deal.contactId);
+      } catch (cancelErr) {
+        console.warn("[stage] error al desvincular postventa:", cancelErr);
       }
     }
   }

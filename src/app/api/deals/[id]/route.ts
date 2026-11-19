@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { setDealStage } from "@/lib/deals/stage";
 import { db } from "@/db";
-import { deals } from "@/db/schema";
+import { activities, deals } from "@/db/schema";
+import { pedidosOrdenes } from "../../../../../modules/pedidos/tabla";
 import { eq } from "drizzle-orm";
 import { canAccessContactId } from "@/lib/team";
 import { requireMember } from "@/lib/api-auth";
@@ -112,6 +113,14 @@ export async function DELETE(
       { error: "Deal no encontrado" },
       { status: 404 }
     );
+  }
+
+  // Desvincular actividades y pedidos relacionados para evitar violación de FK
+  try {
+    await db.update(activities).set({ dealId: null }).where(eq(activities.dealId, id));
+    await db.update(pedidosOrdenes).set({ dealId: null }).where(eq(pedidosOrdenes.dealId, id));
+  } catch (cleanErr) {
+    console.warn("[DELETE /api/deals] Advertencia desvinculando relaciones:", cleanErr);
   }
 
   await db.delete(deals).where(eq(deals.id, id));

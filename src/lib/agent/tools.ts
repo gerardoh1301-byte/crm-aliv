@@ -659,6 +659,17 @@ async function buscarAgenciaShalomTool(
     }
   }
 
+  if (!ciudad) {
+    return {
+      ok: true,
+      data: {
+        encontrada: false,
+        mensaje:
+          "No se conoce la ciudad o departamento de destino. Pregúntale cordialmente al cliente a qué ciudad de provincia desea su envío antes de proponerle una agencia.",
+      },
+    };
+  }
+
   const res = buscarAgenciaShalomCercana({
     ciudad,
     distrito,
@@ -938,18 +949,18 @@ function toolsGenericas(): ToolAgente[] {
           properties: {
             ciudad: {
               type: "string",
-              description: "Ciudad o departamento de destino en provincia (ej: Sullana, Arequipa, Chiclayo, Trujillo, Huancayo, Piura, etc.).",
+              description: "Ciudad o departamento de destino en provincia indicada explícitamente por el cliente en la conversación (OBLIGATORIO: nunca inventar una ciudad).",
             },
             direccion_o_referencia: {
               type: "string",
-              description: "Dirección, calle, urbanización, distrito o referencia brindada por el cliente (ej: 'Sta Rosa', 'Av. Parra', 'Calle Dos 857', 'José Leonardo Ortiz').",
+              description: "Dirección, calle, urbanización, distrito o referencia brindada por el cliente.",
             },
             distrito: {
               type: "string",
               description: "Distrito del cliente si se conoce (opcional).",
             },
           },
-          required: [],
+          required: ["ciudad"],
           additionalProperties: false,
         }
       ),

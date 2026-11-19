@@ -269,6 +269,33 @@ export async function crearOActualizarDealPostventa(
 }
 
 /**
+ * Si un pedido entregado pasa posteriormente a cancelado/rechazado,
+ * remueve la tarjeta de postventa para que no se envíen mensajes automáticos a un cliente cancelado.
+ */
+export async function cancelarDealPostventa(contactId: string): Promise<void> {
+  try {
+    const postventaPipeline = await sincronizarPipelinePostventa();
+    const dealsActivos = await db
+      .select({ id: deals.id })
+      .from(deals)
+      .innerJoin(pipelineStages, eq(deals.stageId, pipelineStages.id))
+      .where(
+        and(
+          eq(deals.contactId, contactId),
+          eq(pipelineStages.pipelineId, postventaPipeline.id)
+        )
+      );
+
+    for (const d of dealsActivos) {
+      await db.update(activities).set({ dealId: null }).where(eq(activities.dealId, d.id));
+      await db.delete(deals).where(eq(deals.id, d.id));
+    }
+  } catch (err) {
+    console.warn("[postventa] error al cancelar postventa para contacto:", contactId, err);
+  }
+}
+
+/**
  * Motor de seguimiento automático de postventa:
  * Realiza el envío periódico de mensajes por WhatsApp en Día 1-3, Día 7 y Día 25,
  * avanzando automáticamente el deal por las etapas del pipeline.

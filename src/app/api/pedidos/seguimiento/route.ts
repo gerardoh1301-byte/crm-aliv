@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/db";
 import { deals, contacts, activities } from "@/db/schema";
 import { pedidosOrdenes } from "../../../../../modules/pedidos/tabla";
-import { eq, or } from "drizzle-orm";
+import { and, eq, gte, ne, or } from "drizzle-orm";
 import { getCurrentMember } from "@/lib/team";
 import { sincronizarEtapaPipeline } from "../../../../../modules/pedidos/servidor";
 import { sincronizarConGoogleDrive } from "@/lib/drive-sync";
@@ -84,11 +84,38 @@ export async function POST(req: NextRequest) {
     codigoLimpio = partes[1] || null;
   }
 
+  let claveLimpia = claveRecojo ? String(claveRecojo).trim() : null;
+
+  // B7: Validar que la clave de retiro no se repita en órdenes de los últimos 7 días
+  if (claveLimpia) {
+    const sieteDiasAtras = new Date(Date.now() - 7 * 24 * 3600 * 1000);
+    const [duplicada] = await db
+      .select({ id: pedidosOrdenes.id, numeroOrden: pedidosOrdenes.numeroOrden })
+      .from(pedidosOrdenes)
+      .where(
+        and(
+          eq(pedidosOrdenes.claveRecojo, claveLimpia),
+          ne(pedidosOrdenes.id, pedido.id),
+          gte(pedidosOrdenes.createdAt, sieteDiasAtras)
+        )
+      )
+      .limit(1);
+
+    if (duplicada) {
+      return NextResponse.json(
+        {
+          error: `La clave de retiro ${claveLimpia} ya fue utilizada recientemente en la orden ${duplicada.numeroOrden}. Shalom no permite repetir claves recientes; por favor ingresa una clave distinta de 4 dígitos.`,
+        },
+        { status: 400 }
+      );
+    }
+  }
+
   const updates: Record<string, any> = {
     transportadora: transportadora || "Shalom",
     numeroGuia: guiaLimpia,
     codigoRastreo: codigoLimpio,
-    claveRecojo: claveRecojo ? String(claveRecojo).trim() : null,
+    claveRecojo: claveLimpia,
     updatedAt: new Date(),
   };
 

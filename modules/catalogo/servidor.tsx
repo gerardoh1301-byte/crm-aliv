@@ -245,7 +245,7 @@ const tools: ToolModulo[] = [
         data: {
           moneda: "PEN (Soles Peruanos S/)",
           envio_y_garantia:
-            "Envío GRATIS a todo el Perú (Lima: 1 día hábil y pagas todo al recibir en efectivo, Yape, Plin o tarjeta | Provincias: 2 a 5 días hábiles por Shalom u Olva con adelanto de S/ 20 y el saldo al recibir). Garantía de satisfacción de 30 días.",
+            "Envío GRATIS a todo el Perú (Lima: 1 día hábil y pagas todo al recibir en efectivo, Yape, Plin o tarjeta | Provincias: 2 a 5 días hábiles por Shalom u Olva con adelanto de S/ 20 y el saldo al recibir). Garantía de fábrica al recibir el producto.",
           cantidad: rows.length,
           productos: rows.map((r) => ({
             sku: r.sku,
@@ -320,7 +320,7 @@ const tools: ToolModulo[] = [
           precio_unidad_soles: `S/ ${Number(prod.precio).toFixed(2)}`,
           ofertas_packs: (prod.sku && OFERTAS_PACKS_POR_SKU[prod.sku]) || [`1 unidad: S/ ${Number(prod.precio).toFixed(2)}`],
           envio_y_garantia:
-            "Envío GRATIS a todo el Perú (Lima: 1 día hábil y pagas todo al recibir | Provincias: 2 a 5 días hábiles con adelanto de S/ 20 y el saldo al recibir). Garantía de 30 días.",
+            "Envío GRATIS a todo el Perú (Lima: 1 día hábil y pagas todo al recibir | Provincias: 2 a 5 días hábiles con adelanto de S/ 20 y el saldo al recibir). Garantía de fábrica al recibir el producto.",
           disponible: prod.disponible && prod.stock > 0,
           stock: prod.stock,
           descripcion: prod.descripcion,

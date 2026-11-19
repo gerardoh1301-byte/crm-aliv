@@ -36,6 +36,9 @@ export function normalizarNombreEtiqueta(nombre: string): string {
   if (norm === "cancelado" || norm === "rechazado" || norm === "cancelada") {
     return "Cancelado";
   }
+  if (norm === "adelanto por verificar" || norm === "adelanto enviado" || norm === "comprobante por verificar") {
+    return "adelanto por verificar";
+  }
   if (norm === "adelanto pagado" || norm === "adelanto verificado" || norm === "pago adelanto") {
     return "adelanto pagado";
   }
@@ -206,15 +209,15 @@ export async function autoClasificarYEtiquetarConversacion(params: {
     }
   }
 
-  // SEÑAL C: Adelanto pagado / Comprobante
+  // SEÑAL C: Adelanto avisado por cliente (debe ir a verificación humana antes de considerarse pagado)
   if (!etiquetaObjetivo) {
     const pagoAvisado =
       /\b(ya yapee|ya pague|hice el yape|hice el pago|te envie el yape|ahi esta la captura|aqui esta el comprobante|ya deposite|ya transferi|listo el adelanto)\b/.test(
         userMsg
       );
     if (pagoAvisado) {
-      etiquetaObjetivo = "adelanto pagado";
-      motivo = "Cliente indicó pago de adelanto / comprobante";
+      etiquetaObjetivo = "adelanto por verificar";
+      motivo = "Cliente indicó pago de adelanto / comprobante (pendiente de verificación humana)";
     }
   }
 
