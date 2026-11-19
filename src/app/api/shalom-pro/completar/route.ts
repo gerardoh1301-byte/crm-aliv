@@ -67,6 +67,23 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ ok: false, error: "Pedido no encontrado" }, { status: 404 });
     }
 
+    // Q1: Idempotencia estricta — si ya tiene guía o marca de registro previo, no duplicar orden en AliClik ni alertas
+    const notasPrevias = pedido.notas || "";
+    const matchAliExistente = notasPrevias.match(/\[ALICLIK_WANKLIC_ORDEN:([^\]]+)\]/i);
+    if (
+      pedido.numeroGuia ||
+      notasPrevias.includes("[SHALOM_PRO_REGISTRADO:") ||
+      Boolean(matchAliExistente)
+    ) {
+      return NextResponse.json({
+        ok: true,
+        duplicado: true,
+        pedido,
+        aliclikOrderNumber: matchAliExistente?.[1]?.trim() || null,
+        supervisoresNotificados: 0,
+      });
+    }
+
     const [contacto] = await db
       .select()
       .from(contacts)

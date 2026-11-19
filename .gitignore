@@ -31,8 +31,9 @@ npm-debug.log*
 yarn-debug.log*
 .pnpm-debug.log*
 /coverage
-# Scripts locales con credenciales o temporales
-/scripts/
+# Scripts locales con credenciales o temporales (versionamos solo el worker oficial sin sesiones)
+/scripts/*
+!/scripts/shalom-pro-worker.mjs
 /scratch/
 
 # OS / editor

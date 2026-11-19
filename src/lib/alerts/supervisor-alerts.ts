@@ -96,9 +96,18 @@ export async function notificarSupervisoresCritico(input: AlertaSupervisorInput)
           .limit(1);
 
         if (supConv) {
+          const detallePlantilla = input.detalle.replace(/\s+/g, " ").trim().slice(0, 220);
           const res = await deliverMessage(
             supConv.id,
-            { text: mensajeAlerta },
+            {
+              text: mensajeAlerta,
+              template: {
+                name: "aliv_alerta_supervisor",
+                language: "es",
+                params: [encTitle, clienteStr, detallePlantilla],
+                previewText: mensajeAlerta,
+              },
+            },
             "agent"
           );
           if (res.ok) {

@@ -603,8 +603,39 @@ export async function auditarChatsAbandonados(opts?: { limite?: number; forzarHo
       continue;
     }
 
-    // Entregar mensaje oficial de rescate
-    const entrega = await deliverMessage(c.convId, { text: evaluacionFinal.mensajeRescate }, "agent");
+    // R3: Adjuntar plantilla aprobada de Meta según escenario para garantizar entrega fuera de ventana 24h
+    const nombreCliente = (c.contactName || "estimado(a)").trim().split(/\s+/)[0] || "estimado(a)";
+    const prodRescate = detectarProductoRescate(contexto);
+    const prodNombre = prodRescate === "termix" ? "Tobillera Termix" : "suplemento NAC600 + NAD+";
+    const ciudadDestino = (pedido?.ciudad || "Perú").trim() || "Perú";
+    const plantillaRescate =
+      evaluacionFinal.escenario === "direccion_incompleta"
+        ? {
+            name: "aliv_completar_direccion",
+            language: "es",
+            params: [nombreCliente, prodNombre, ciudadDestino],
+            previewText: evaluacionFinal.mensajeRescate,
+          }
+        : evaluacionFinal.escenario === "adelanto_provincia"
+          ? {
+              name: "aliv_recordatorio_adelanto",
+              language: "es",
+              params: [nombreCliente, prodNombre, ciudadDestino],
+              previewText: evaluacionFinal.mensajeRescate,
+            }
+          : {
+              name: "aliv_seguimiento_consulta",
+              language: "es",
+              params: [nombreCliente, prodNombre],
+              previewText: evaluacionFinal.mensajeRescate,
+            };
+
+    // Entregar mensaje oficial de rescate (texto dentro de 24h, plantilla aprobada fuera de 24h)
+    const entrega = await deliverMessage(
+      c.convId,
+      { text: evaluacionFinal.mensajeRescate, template: plantillaRescate },
+      "agent"
+    );
     if (entrega.ok) {
       rescatados++;
       // Aplicar etiqueta 'rescate_enviado' para evitar duplicidad

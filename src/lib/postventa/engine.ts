@@ -108,6 +108,7 @@ export function resolverTituloProductoPostventa(input: {
       if (!raw || typeof raw !== "object") continue;
       const item = raw as Record<string, unknown>;
       const cand =
+        (typeof item.titulo === "string" && item.titulo.trim()) ||
         (typeof item.nombre === "string" && item.nombre.trim()) ||
         (typeof item.producto === "string" && item.producto.trim()) ||
         (typeof item.title === "string" && item.title.trim()) ||
@@ -359,13 +360,28 @@ export async function procesarSeguimientosPostventaAutomaticos(opts?: {
     const esTermix = /termix|tobillera/i.test(deal.title || "") || /termix|tobillera/i.test(meta.ordenInfo || "");
 
     let mensajeAEnviar: string | null = null;
+    let plantillaPostventa: { name: string; language: string; params: string[]; previewText: string } | undefined;
     let nuevoStageId: string | null = null;
     let actividadNota = "";
+
+    const productoLabel = esTermix ? "Tobillera Termix" : "NAC600 + NAD+";
 
     if (diasTranscurridos >= 25 && !meta.mensajeDia25Enviado) {
       mensajeAEnviar = esTermix
         ? `¡Hola, ${nombre}! 🌿 Te saluda Aliv Perú. Esperamos que sigas recuperando tu movilidad y estabilidad con tu Tobillera Termix. Si deseas un par adicional para el otro pie o un familiar, te mantenemos el precio de promoción especial con envío gratis. ¿Te gustaría aprovecharlo? ✨`
         : buildMensajeDia25(nombre);
+      plantillaPostventa = {
+        name: "aliv_postventa_recompra",
+        language: "es",
+        params: [
+          nombre,
+          productoLabel,
+          esTermix
+            ? "precio de promoción especial en tu par adicional con envío gratis"
+            : "2 frascos por S/ 189 o 3 frascos por S/ 199 con envío gratis",
+        ],
+        previewText: mensajeAEnviar,
+      };
       nuevoStageId = stageDia25.id;
       meta.mensajeDia25Enviado = true;
       actividadNota = `Alerta automática de recompra (Día 25) enviada al cliente.`;
@@ -373,6 +389,12 @@ export async function procesarSeguimientosPostventaAutomaticos(opts?: {
       mensajeAEnviar = esTermix
         ? `¡Hola, ${nombre}! 🌿 Te saluda Aliv Perú. Ya llevas una semana usando tu Tobillera Termix. Cuéntanos, ¿cómo ha respondido tu tobillo con el soporte y alivio en tus actividades diarias?`
         : buildMensajeDia7(nombre);
+      plantillaPostventa = {
+        name: "aliv_postventa_seguimiento",
+        language: "es",
+        params: [nombre, esTermix ? "tu Tobillera Termix" : "tu NAC600 + NAD+"],
+        previewText: mensajeAEnviar,
+      };
       nuevoStageId = stageDia7.id;
       meta.mensajeDia7Enviado = true;
       actividadNota = `Seguimiento automático de hábito (Día 7) enviado al cliente.`;
@@ -380,13 +402,29 @@ export async function procesarSeguimientosPostventaAutomaticos(opts?: {
       mensajeAEnviar = esTermix
         ? `¡Hola, ${nombre}! 👋 Te saluda Aliv Perú. Vemos que ya recibiste tu Tobillera Termix. Recuerda que es de compresión ajustable y soporte ergonómico para uso diario. ¿Llegó todo en perfecto estado? Estamos atentos ante cualquier duda. 🦶`
         : buildMensajeDia1(nombre);
+      plantillaPostventa = {
+        name: "aliv_postventa_bienvenida",
+        language: "es",
+        params: [
+          nombre,
+          productoLabel,
+          esTermix
+            ? "compresión ajustable y soporte ergonómico para uso diario"
+            : "2 cápsulas al día con un vaso de agua en el desayuno",
+        ],
+        previewText: mensajeAEnviar,
+      };
       meta.mensajeDia1Enviado = true;
       actividadNota = `Mensaje de bienvenida y modo de uso (Día 1-3) enviado al cliente.`;
     }
 
     if (mensajeAEnviar) {
       try {
-        const entrega = await deliverMessage(conv.id, { text: mensajeAEnviar }, "agent");
+        const entrega = await deliverMessage(
+          conv.id,
+          { text: mensajeAEnviar, ...(plantillaPostventa ? { template: plantillaPostventa } : {}) },
+          "agent"
+        );
         if (entrega.ok) {
           enviados++;
           const updatePayload: Record<string, unknown> = {
