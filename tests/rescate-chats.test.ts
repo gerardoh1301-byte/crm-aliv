@@ -289,6 +289,142 @@ describe("Auditoría y Rescate de Chats Abandonados", () => {
     expect(res.mensajeRescate).not.toContain("Termix");
   });
 
+  it("CASO EBERHSON (Abancay/Chalhuanca): Descarte si ya envió comprobante de adelanto y JAMÁS calificar como direccion_incompleta con motorizado", () => {
+    const contexto: ContextoChatParaAuditoria = {
+      contact: {
+        id: "c-eberhson",
+        name: "Eberhson",
+        phone: "+51951161874",
+        tags: ["interes:nac600", "adelanto pagado", "en agencia shalom"],
+      },
+      conversation: {
+        id: "conv-eberhson",
+        lastMessageAt: new Date(ahora.getTime() - 2.5 * 60 * 60 * 1000),
+        channel: "whatsapp",
+      },
+      ultimoMensaje: {
+        direction: "out",
+        body: "¡Muchas gracias, Eberhson! Ya recibí tu comprobante y tu DNI 46018933. Nuestro equipo de administración verificará tu abono de adelanto...",
+      },
+      historialMensajes: [
+        {
+          direction: "out",
+          body: "¡Muchas gracias, Eberhson! Ya recibí tu comprobante y tu DNI 46018933. Nuestro equipo de administración verificará tu abono de adelanto...",
+        },
+        {
+          direction: "in",
+          body: "ABANCAY ABANCAY APURIMAC",
+        },
+        {
+          direction: "in",
+          body: "Eberhson ARAMBURU MARTINEZ DNI 46018933",
+        },
+        {
+          direction: "in",
+          body: "[imagen] Operación exitosa S/ 20.00 YAPE",
+        },
+      ],
+      pedidoReciente: {
+        numeroOrden: "1145",
+        total: 199,
+        direccionEnvio: "Chalhuanca",
+        ciudad: "Chalhuanca",
+        distrito: "Chalhuanca",
+        estado: "adelanto_pagado",
+      },
+    };
+
+    const res = determinarEscenarioRescate(contexto, ahora);
+    expect(res.esElegible).toBe(false);
+    expect(res.motivoDescarte).toMatch(/pagado|comprobante|etiqueta/i);
+    // Bajo ninguna circunstancia debe proponer direccion_incompleta
+    expect(res.escenario).toBeUndefined();
+  });
+
+  it("CASO MARLON (@mjulcavasquez): Descarte si el cliente prometió pagar 'mañana' ('Maña Le paso')", () => {
+    // 08:32 AM Lima
+    const horaAuditoria = new Date("2026-11-19T13:32:00Z");
+    // 03:10 AM Lima (hace ~5.3 horas, durante la madrugada)
+    const horaMsgMadrugada = new Date("2026-11-19T08:10:00Z");
+
+    const contexto: ContextoChatParaAuditoria = {
+      contact: {
+        id: "c-marlon",
+        name: "Marlon Leonardo Julca Vásquez",
+        phone: "+51907828431",
+        tags: ["interes:nac600", "Pendiente de adelanto"],
+      },
+      conversation: {
+        id: "conv-marlon",
+        lastMessageAt: horaMsgMadrugada,
+        channel: "whatsapp",
+      },
+      ultimoMensaje: {
+        direction: "out",
+        body: "Perfecto, Marlon. Quedamos a la espera de tu captura del adelanto de S/20 al Yape 951365418 para dejar listo tu pedido de 2 frascos de NAC600 hacia Trujillo. ¿Me confirmas tu número de DNI para emitir la guía de Shalom?",
+      },
+      historialMensajes: [
+        {
+          direction: "out",
+          body: "Perfecto, Marlon. Quedamos a la espera de tu captura del adelanto de S/20 al Yape 951365418 para dejar listo tu pedido de 2 frascos de NAC600 hacia Trujillo.",
+        },
+        {
+          direction: "in",
+          body: "Le paso",
+        },
+        {
+          direction: "in",
+          body: "Maña",
+        },
+        {
+          direction: "out",
+          body: "¡Hola, Marlon! Recibimos tu pedido #1143: 2 frascos de NAC600 por S/189.00 con envío gratis a Trujillo. Los envíos a provincia van por agencia Shalom...",
+        },
+      ],
+      pedidoReciente: {
+        numeroOrden: "1143",
+        total: 189,
+        direccionEnvio: "Trujillo",
+        ciudad: "Trujillo",
+        distrito: "Trujillo",
+        estado: "pendiente_adelanto",
+      },
+    };
+
+    const res = determinarEscenarioRescate(contexto, horaAuditoria);
+    expect(res.esElegible).toBe(false);
+    expect(res.motivoDescarte).toMatch(/postergó pago|madrugada/i);
+  });
+
+  it("PROTECCIÓN NOCTURNA: Chat en la madrugada (03:00 am) evaluado a las 08:30 am debe descartarse", () => {
+    const horaEvaluacion = new Date("2026-11-19T13:30:00Z"); // 08:30 am Lima
+    const horaMsg = new Date("2026-11-19T08:00:00Z"); // 03:00 am Lima (hace 5.5h)
+
+    const contexto: ContextoChatParaAuditoria = {
+      contact: {
+        id: "c-madrugada",
+        name: "Carlos",
+        phone: "+51999111222",
+        tags: [],
+      },
+      conversation: {
+        id: "conv-madrugada",
+        lastMessageAt: horaMsg,
+        channel: "whatsapp",
+      },
+      ultimoMensaje: {
+        direction: "out",
+        body: "¿Te gustaría confirmar tu pedido?",
+      },
+      historialMensajes: [],
+      pedidoReciente: null,
+    };
+
+    const res = determinarEscenarioRescate(contexto, horaEvaluacion);
+    expect(res.esElegible).toBe(false);
+    expect(res.motivoDescarte).toContain("madrugada");
+  });
+
   it("descarta si el cliente ya respondió (último mensaje entrante)", () => {
     const contexto: ContextoChatParaAuditoria = {
       contact: { id: "c-4", name: "Juan", phone: "+51999999999", tags: [] },
@@ -324,7 +460,7 @@ describe("Auditoría y Rescate de Chats Abandonados", () => {
 
     const res = determinarEscenarioRescate(contexto, ahora);
     expect(res.esElegible).toBe(false);
-    expect(res.motivoDescarte).toContain("Contacto con etiqueta de cierre o ya rescatado");
+    expect(res.motivoDescarte).toMatch(/Contacto con etiqueta de cierre/i);
   });
 
   it("descarta si han pasado menos de 2 horas (muy temprano)", () => {

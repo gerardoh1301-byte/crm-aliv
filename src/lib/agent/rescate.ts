@@ -42,6 +42,7 @@ export interface ContextoChatParaAuditoria {
     ciudad?: string | null;
     distrito?: string | null;
     items?: unknown;
+    estado?: string | null;
   } | null;
 }
 
@@ -136,11 +137,31 @@ export function determinarEscenarioRescate(
   const { contact, conversation, ultimoMensaje, pedidoReciente, historialMensajes } = contexto;
   const tags = contact.tags ?? [];
 
-  // 1. Validar etiquetas excluyentes
-  const tagsExcluyentes = ["no-reactivar", "cancelado", "compra exitosa", "orden en camino", "rescate_enviado"];
+  // 1. Validar etiquetas excluyentes (clientes ya atendidos, pagados, en logística o cerrados)
+  const tagsExcluyentes = [
+    "no-reactivar",
+    "cancelado",
+    "compra exitosa",
+    "orden en camino",
+    "adelanto pagado",
+    "adelanto_pagado",
+    "en agencia shalom",
+    "comprobante recibido",
+    "rescate_enviado",
+    "por despachar",
+    "esperando clave",
+  ];
   const tieneExcluyente = tags.some((t) => tagsExcluyentes.includes(t.toLowerCase().trim()));
   if (tieneExcluyente) {
-    return { esElegible: false, motivoDescarte: "Contacto con etiqueta de cierre o ya rescatado" };
+    return { esElegible: false, motivoDescarte: "Contacto con etiqueta de cierre, pagado o ya rescatado" };
+  }
+
+  // 1.1 Si el pedido ya está en estado pagado o logístico
+  if (pedidoReciente && (pedidoReciente as any).estado) {
+    const est = String((pedidoReciente as any).estado).toLowerCase();
+    if (["adelanto_pagado", "confirmado", "preparando", "enviado", "entregado"].includes(est)) {
+      return { esElegible: false, motivoDescarte: `Pedido ya se encuentra en estado logístico: ${est}` };
+    }
   }
 
   // 2. Validar que el último mensaje fue saliente (el bot o asesor preguntó y el cliente no respondió)
@@ -162,6 +183,18 @@ export function determinarEscenarioRescate(
     return { esElegible: false, motivoDescarte: `Han pasado ${horasTranscurridas.toFixed(1)}h (fuera de ventana segura 22h)` };
   }
 
+  // 3.1 Protección de descanso nocturno: si el último mensaje fue durante la madrugada (22:00 a 06:00),
+  // no enviar rescate temprano en la mañana (8:30 a.m.). Esperar al menos 9 horas para no importunar.
+  const horaUltimoMsg = fechaUltimo.toLocaleTimeString("en-US", { timeZone: "America/Lima", hour12: false, hour: "numeric" });
+  const horaNumUltimo = parseInt(horaUltimoMsg, 10);
+  const esMensajeMadrugada = horaNumUltimo >= 22 || horaNumUltimo < 6;
+  if (esMensajeMadrugada && horasTranscurridas < 9) {
+    return {
+      esElegible: false,
+      motivoDescarte: `Mensaje fue en la madrugada (${horaNumUltimo}:00). Esperando al menos 9h para no importunar al cliente`,
+    };
+  }
+
   const nombre = (contact.name || "hola").split(" ")[0].trim();
   const nombreLimpio = nombre && nombre.toLowerCase() !== "desconocido" && nombre.toLowerCase() !== "lead" ? nombre : "";
   const saludo = nombreLimpio ? `¡Hola ${nombreLimpio}!` : "¡Hola!";
@@ -179,6 +212,35 @@ export function determinarEscenarioRescate(
   // Obtener el último mensaje entrante del cliente para conocer su estado final
   const mensajesCliente = (historialMensajes || []).filter((m) => m.direction === "in");
   const ultimoMsgCliente = mensajesCliente[0] ? (mensajesCliente[0].body || "").toLowerCase() : "";
+
+  // 3.2 Si el cliente ya envió comprobante o voucher de pago en sus mensajes
+  const clienteEnvioComprobante =
+    mensajesCliente.some((m) =>
+      (m.body || "").includes("[imagen]") ||
+      (m.body || "").includes("COMPROBANTE DE PAGO") ||
+      /\b(voucher|comprobante|constancia|captura|operaci[oó]n|ya yape[eé]|ya transfer[ií]|ya pagu[eé]|ya deposit[eé])\b/i.test(m.body || "")
+    ) ||
+    /ya recib[ií] tu comprobante|verificar[aá] tu abono de adelanto|equipo de administraci[oó]n verificar[aá]/i.test(textosHistorial);
+
+  if (clienteEnvioComprobante) {
+    return {
+      esElegible: false,
+      motivoDescarte: "Cliente ya envió comprobante de pago o adelanto (pendiente de validación/clave)",
+    };
+  }
+
+  // 3.3 Si el cliente indicó que pagará más tarde o en fecha futura ("mañana", "más tarde", etc.)
+  const clienteDijoPagariaMasTarde =
+    /\b(mañana|maña|mñn|le paso mañ|en la tarde|m[aá]s tarde|luego|despu[eé]s|fin de mes|a fin de mes|el s[aá]bado|el domingo|el lunes|el martes|el mi[eé]rcoles|el jueves|el viernes|cuando cobre|cuando me paguen|apenas cobre|apenas pueda|hoy en la noche|en la noche)\b/i.test(
+      ultimoMsgCliente
+    );
+
+  if (clienteDijoPagariaMasTarde) {
+    return {
+      esElegible: false,
+      motivoDescarte: `Cliente postergó el abono para fecha/hora futura: "${ultimoMsgCliente.slice(0, 50)}"`,
+    };
+  }
 
   // 4. Validar si el pedido YA fue agendado/coordinado con el motorizado o en proceso de despacho (Caso José)
   const pedidoYaAgendado =
@@ -229,83 +291,89 @@ export function determinarEscenarioRescate(
   const esTermix = productoPrincipal === "termix";
   const nombreProducto = esTermix ? "la Tobillera Termix" : "NAC600 + NAD+";
 
-  // ESCENARIO A: Dirección Incompleta o Datos de Despacho Pendientes
-  // Caso 1: Pedido web con dirección incompleta (caso Laura)
-  const direccion = (pedidoReciente?.direccionEnvio || "").trim();
-  const direccionCortaOIncompleta =
-    direccion.length > 0 &&
-    (direccion.length < 15 || !/\d/.test(direccion) || /calle \d+\s*(?:san)?$/i.test(direccion));
-
-  const botPreguntoPorDireccion =
-    /\b(direcci[oó]n|calle|referencia|ubicaci[oó]n|n[uú]mero de tu calle|agendar la orden|programar el despacho|dejar registrado tu pedido|dejamos agendado|tu nombre completo)\b/i.test(
-      bodyUltimo
-    ) ||
-    /\b(direcci[oó]n exacta|conf[ií]rmame tu nombre completo|cu[aá]l es tu direcci[oó]n|ubicaci[oó]n mucho mejor)\b/i.test(
-      textosHistorial
-    );
-
-  if (pedidoReciente && (direccionCortaOIncompleta || botPreguntoPorDireccion)) {
-    const ordenTxt = pedidoReciente.numeroOrden ? `#${pedidoReciente.numeroOrden} ` : "";
-    return {
-      esElegible: true,
-      escenario: "direccion_incompleta",
-      mensajeRescate: `${saludo} Te saluda Aliv Perú 🌿. Tu pedido ${ordenTxt}de ${nombreProducto} está separado y listo para embalar 📦. Solo nos falta confirmar el número de tu calle o una referencia para programar la entrega a tu puerta. ¿Nos confirmas tu dirección completa o nos compartes tu ubicación por aquí? 📍`,
-    };
-  }
-
-  // Caso 2: Cierre en chat donde el cliente acordó un pack pero quedó pendiente su dirección o nombre completo (caso DJ Zeta)
-  if (!pedidoReciente && botPreguntoPorDireccion) {
-    let detallePack = esTermix ? "tu Tobillera Termix" : "tu pedido de NAC600 + NAD+";
-    if (esTermix) {
-      if (/\b(3\s*(?:tobilleras?|unidades?)|pack\s*(?:de\s*)?3|189)\b/i.test(textosHistorial)) {
-        detallePack = "tus 3 Tobilleras Termix";
-      } else if (/\b(2\s*(?:tobilleras?|unidades?)|pack\s*(?:de\s*)?2|139)\b/i.test(textosHistorial)) {
-        detallePack = "tu promo de 2 Tobilleras Termix";
-      } else if (/\b(1\s*(?:tobillera|unidad)|79)\b/i.test(textosHistorial)) {
-        detallePack = "tu Tobillera Termix";
-      }
-    } else {
-      if (/\b(3\s*frascos?|pack\s*(?:de\s*)?3|199)\b/i.test(textosHistorial)) {
-        detallePack = "tus 3 frascos de NAC600 + NAD+";
-      } else if (/\b(2\s*frascos?|pack\s*(?:de\s*)?2|169)\b/i.test(textosHistorial)) {
-        detallePack = "tus 2 frascos de NAC600 + NAD+";
-      } else if (/\b(1\s*frasco|119)\b/i.test(textosHistorial)) {
-        detallePack = "tu frasco de NAC600 + NAD+";
-      }
-    }
-
-    // Detectar distrito mencionado si existe
-    const matchDistrito = textosHistorial.match(
-      /\b(carabayllo|comas|los olivos|san mart[ií]n|independencia|san miguel|magdalena|jes[uú]s mar[ií]a|pueblo libre|surco|miraflores|san borja|san isidro|la molina|ate|chorrillos|san juan de lurigancho|sjl|sjm|villa el salvador|ves|callao|bellavista|ventanilla)\b/i
-    );
-    const destinoTxt = matchDistrito
-      ? ` a ${matchDistrito[1].charAt(0).toUpperCase() + matchDistrito[1].slice(1).toLowerCase()}`
-      : "";
-
-    // Detectar si se conversó un día de entrega específico (ej. lunes)
-    const matchDia = textosHistorial.match(
-      /\bllegar[ií]a el\s+(lunes|martes|mi[eé]rcoles|jueves|viernes|s[aá]bado)\b/i
-    );
-    const diaTxt = matchDia ? ` este ${matchDia[1].toLowerCase()}` : "";
-
-    return {
-      esElegible: true,
-      escenario: "direccion_incompleta",
-      mensajeRescate: `${saludo} Te saluda Aliv Perú 🌿. Quería confirmarte que tenemos ${detallePack} separados para coordinar tu entrega${destinoTxt}${diaTxt}. Solo nos falta que nos confirmes tu nombre completo y dirección exacta (calle y número o referencia) para dejar tu orden agendada con el motorizado. Si te es más fácil, ¿nos puedes compartir tu ubicación por aquí? 📍`,
-    };
-  }
-
-  // ESCENARIO B: Freno por Adelanto en Provincia (caso Carlos)
+  // Detección estricta de provincia (evita ofrecer motorizado / contraentrega donde no aplica)
   const esProvincia =
-    tags.includes("Pendiente de adelanto") ||
+    tags.some((t) => /provincia|adelanto|shalom/i.test(t)) ||
     (pedidoReciente &&
       esPedidoDeProvincia({
         ciudad: pedidoReciente.ciudad ?? null,
         distrito: pedidoReciente.distrito ?? null,
         direccionEnvio: pedidoReciente.direccionEnvio ?? null,
       })) ||
-    /\b(adelanto|yape\s+951365418|shalom|provincia)\b/i.test(textosHistorial);
+    /\b(abancay|chalhuanca|trujillo|arequipa|cusco|puno|piura|chiclayo|tacna|ica|pisco|huancayo|ayacucho|chimbote|huaraz|iquitos|pucallpa|tarapoto|madre de dios|tambopata|tumbes|cajamarca|moquegua|chota|jaen|bagua|sullana|talara|juliaca|chincha|nazca|andahuaylas|pasco|huanuco|tingo mar[ií]a|chachapoyas|ilo|mollendo|caman[aá]|moyobamba|yurimaguas|tarma|la merced|satipo|pichanaqui|oxapampa|cerro de pasco|puquio|barranca|huacho|huaral|cañete|imperial|mala)\b/i.test(
+      (pedidoReciente?.ciudad || "") + " " + (pedidoReciente?.direccionEnvio || "") + " " + textosHistorial
+    ) ||
+    /\b(shalom|olva|agencia|provincia)\b/i.test(textosHistorial);
 
+  // ESCENARIO A: Dirección Incompleta (SOLO LIMA / CALLAO para entrega con motorizado a domicilio)
+  // En provincia NUNCA debe ejecutarse este escenario ni enviar la plantilla aliv_completar_direccion.
+  if (!esProvincia) {
+    const direccion = (pedidoReciente?.direccionEnvio || "").trim();
+    const direccionCortaOIncompleta =
+      direccion.length > 0 &&
+      (direccion.length < 15 || !/\d/.test(direccion) || /calle \d+\s*(?:san)?$/i.test(direccion));
+
+    const botPreguntoPorDireccion =
+      /\b(direcci[oó]n|calle|referencia|ubicaci[oó]n|n[uú]mero de tu calle|agendar la orden|programar el despacho|dejar registrado tu pedido|dejamos agendado|tu nombre completo)\b/i.test(
+        bodyUltimo
+      ) ||
+      /\b(direcci[oó]n exacta|conf[ií]rmame tu nombre completo|cu[aá]l es tu direcci[oó]n|ubicaci[oó]n mucho mejor)\b/i.test(
+        textosHistorial
+      );
+
+    if (pedidoReciente && (direccionCortaOIncompleta || botPreguntoPorDireccion)) {
+      const ordenTxt = pedidoReciente.numeroOrden ? `#${pedidoReciente.numeroOrden} ` : "";
+      return {
+        esElegible: true,
+        escenario: "direccion_incompleta",
+        mensajeRescate: `${saludo} Te saluda Aliv Perú 🌿. Tu pedido ${ordenTxt}de ${nombreProducto} está separado y listo para embalar 📦. Solo nos falta confirmar el número de tu calle o una referencia para programar la entrega a tu puerta. ¿Nos confirmas tu dirección completa o nos compartes tu ubicación por aquí? 📍`,
+      };
+    }
+
+    // Caso 2: Cierre en chat donde el cliente acordó un pack pero quedó pendiente su dirección o nombre completo (Lima)
+    if (!pedidoReciente && botPreguntoPorDireccion) {
+      let detallePack = esTermix ? "tu Tobillera Termix" : "tu pedido de NAC600 + NAD+";
+      if (esTermix) {
+        if (/\b(3\s*(?:tobilleras?|unidades?)|pack\s*(?:de\s*)?3|189)\b/i.test(textosHistorial)) {
+          detallePack = "tus 3 Tobilleras Termix";
+        } else if (/\b(2\s*(?:tobilleras?|unidades?)|pack\s*(?:de\s*)?2|139)\b/i.test(textosHistorial)) {
+          detallePack = "tu promo de 2 Tobilleras Termix";
+        } else if (/\b(1\s*(?:tobillera|unidad)|79)\b/i.test(textosHistorial)) {
+          detallePack = "tu Tobillera Termix";
+        }
+      } else {
+        if (/\b(3\s*frascos?|pack\s*(?:de\s*)?3|199)\b/i.test(textosHistorial)) {
+          detallePack = "tus 3 frascos de NAC600 + NAD+";
+        } else if (/\b(2\s*frascos?|pack\s*(?:de\s*)?2|169)\b/i.test(textosHistorial)) {
+          detallePack = "tus 2 frascos de NAC600 + NAD+";
+        } else if (/\b(1\s*frasco|119)\b/i.test(textosHistorial)) {
+          detallePack = "tu frasco de NAC600 + NAD+";
+        }
+      }
+
+      // Detectar distrito mencionado si existe
+      const matchDistrito = textosHistorial.match(
+        /\b(carabayllo|comas|los olivos|san mart[ií]n|independencia|san miguel|magdalena|jes[uú]s mar[ií]a|pueblo libre|surco|miraflores|san borja|san isidro|la molina|ate|chorrillos|san juan de lurigancho|sjl|sjm|villa el salvador|ves|callao|bellavista|ventanilla)\b/i
+      );
+      const destinoTxt = matchDistrito
+        ? ` a ${matchDistrito[1].charAt(0).toUpperCase() + matchDistrito[1].slice(1).toLowerCase()}`
+        : "";
+
+      // Detectar si se conversó un día de entrega específico (ej. lunes)
+      const matchDia = textosHistorial.match(
+        /\bllegar[ií]a el\s+(lunes|martes|mi[eé]rcoles|jueves|viernes|s[aá]bado)\b/i
+      );
+      const diaTxt = matchDia ? ` este ${matchDia[1].toLowerCase()}` : "";
+
+      return {
+        esElegible: true,
+        escenario: "direccion_incompleta",
+        mensajeRescate: `${saludo} Te saluda Aliv Perú 🌿. Quería confirmarte que tenemos ${detallePack} separados para coordinar tu entrega${destinoTxt}${diaTxt}. Solo nos falta que nos confirmes tu nombre completo y dirección exacta (calle y número o referencia) para dejar tu orden agendada con el motorizado. Si te es más fácil, ¿nos puedes compartir tu ubicación por aquí? 📍`,
+      };
+    }
+  }
+
+  // ESCENARIO B: Freno por Adelanto en Provincia (cuando aún no ha pagado los S/20)
   if (esProvincia) {
     let totalNum = 199;
     if (pedidoReciente?.total) {
@@ -395,7 +463,7 @@ export async function evaluarRescateConIA(
       .join("\n");
 
     const promptAuditoria = `Eres el supervisor senior de atención y ventas de Aliv Perú (tienda oficial de salud y bienestar).
-Analiza el siguiente historial reciente de WhatsApp para determinar si la conversación quedó REALMENTE TRABADA en una venta que requiere rescate, o si por el contrario es un chat concluido, atendido o con pedido ya agendado.
+Analiza el siguiente historial reciente de WhatsApp para determinar si la conversación quedó REALMENTE TRABADA en una venta que requiere rescate, o si por el contrario es un chat concluido, atendido, pagado o con seguimiento agendado.
 
 HISTORIAL DEL CHAT:
 ${transcripcion || `Aliv Perú: ${ultimoMensaje?.body ?? ""}`}
@@ -406,22 +474,27 @@ DATOS DEL CLIENTE:
 - Pedido Shopify en sistema: ${pedidoReciente?.numeroOrden ? `#${pedidoReciente.numeroOrden}` : "Ninguno aún"}
 - Evaluación heurística previa: Escenario "${evaluacionHeuristica.escenario}", mensaje propuesto: "${evaluacionHeuristica.mensajeRescate}"
 
-REGLAS DE DECISIÓN CRÍTICAS:
+REGLAS DE DECISIÓN CRÍTICAS (CUMPLIMIENTO ESTRICTO):
 1. DEBES RESPONDER "debeRescatar": false SI:
-   - El cliente YA COMPRÓ, ya coordinó la entrega con motorizado, o el pedido ya fue agendado/confirmado (ej: "ya le dejé la indicación al motorizado", "este sábado te llega", etc.).
+   - El cliente YA PAGÓ (envió voucher, captura, constancia de Yape/BCP o saldo de adelanto), o el bot/asesor ya confirmó la recepción del comprobante.
+   - El cliente ya proporcionó sus datos de envío (DNI, Agencia Shalom) o el pedido ya está en preparación, despachado o entregado.
+   - El cliente indicó que pagará en una fecha u hora futura (ej: "mañana le paso", "más tarde", "el sábado", "fin de mes", "cuando cobre"). NO insistir antes de tiempo.
+   - El pedido es de provincia (fuera de Lima/Callao) y la propuesta habla de motorizado contraentrega. (En provincia es por agencia Shalom/Olva).
+   - El cliente YA COMPRÓ, ya coordinó la entrega con motorizado, o el pedido ya fue agendado/confirmado.
    - La conversación concluyó cordialmente con agradecimiento o despedida mutua (ej: el cliente dijo "no listo gracias", "gracias amigo", "todo claro" y el bot respondió cordialmente).
    - El cliente rechazó la compra ("no gracias", "ya no deseo", "muy caro").
    - El último mensaje fue del cliente (aún espera respuesta nuestra, no está abandonado por él).
 
-2. DEBES RESPONDER "debeRescatar": true SI:
-   - Hay una venta en proceso que se detuvo por falta de respuesta del cliente tras 2 a 22 horas:
-     a) Ya eligió o acordó un producto/pack pero quedó pendiente enviar su dirección, nombre o ubicación en Lima.
-     b) Aceptó el envío a provincia pero quedó pendiente realizar el adelanto de S/20 para la guía Shalom.
+2. DEBES RESPONDER "debeRescatar": true ÚNICAMENTE SI:
+   - Hay una venta en proceso que se detuvo por falta de respuesta del cliente tras 2 a 22 horas y NO existe ningún pago ni promesa de pago postergada:
+     a) Ya eligió o acordó un producto/pack pero quedó pendiente enviar su dirección, nombre o ubicación en LIMA/CALLAO. (NUNCA en provincia).
+     b) Aceptó el envío a provincia pero quedó pendiente realizar el adelanto de S/20 para la guía Shalom (y NO ha enviado voucher ni dicho que pagará después).
      c) Pidió precios o cotización y no decidió qué opción tomar.
      d) Hizo una consulta médica o técnica, se le respondió, y no continuó.
 
 3. REGLAS PARA EL MENSAJE DE RETOMA (si debeRescatar es true):
    - NUNCA sonar como una plantilla genérica ("Quería saber si tuviste oportunidad de revisar...").
+   - NUNCA ofrecer motorizado contraentrega ni entrega a domicilio a pedidos de provincia (Abancay, Chalhuanca, Trujillo, etc. van SOLO por agencia Shalom / Olva).
    - Retoma EXACTAMENTE desde el punto donde se detuvo el proceso.
    - Si ya acordó el pack (ej: 3 frascos por S/199), el distrito (ej: Carabayllo) o el día de llegada (ej: lunes), menciónalos con naturalidad.
    - NUNCA cambies de producto (si hablaban de NAC600, no menciones Tobillera ni viceversa).
@@ -559,6 +632,23 @@ export async function auditarChatsAbandonados(opts?: { limite?: number; forzarHo
 
     const ultimoMsg = ultimosMensajes[0] ?? null;
 
+    // Verificar si ya existe una actividad de seguimiento pendiente o programada recientemente
+    const [actividadFutura] = await db
+      .select({ id: activities.id })
+      .from(activities)
+      .where(
+        and(
+          eq(activities.contactId, c.contactId),
+          eq(activities.type, "follow_up"),
+          gte(activities.scheduledAt, new Date(ahora.getTime() - 6 * 60 * 60 * 1000))
+        )
+      )
+      .limit(1);
+
+    if (actividadFutura) {
+      continue; // Hay un seguimiento programado, no enviar rescate automático
+    }
+
     // Obtener pedido más reciente si existe
     const [pedido] = await db
       .select({
@@ -568,6 +658,7 @@ export async function auditarChatsAbandonados(opts?: { limite?: number; forzarHo
         ciudad: pedidosOrdenes.ciudad,
         distrito: pedidosOrdenes.distrito,
         items: pedidosOrdenes.items,
+        estado: pedidosOrdenes.estado,
       })
       .from(pedidosOrdenes)
       .where(eq(pedidosOrdenes.contactId, c.contactId))
