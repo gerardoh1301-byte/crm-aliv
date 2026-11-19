@@ -38,7 +38,8 @@ export type TipoSituacionCritica =
   | "comprobante_pago"
   | "reclamo_medico"
   | "pide_humano_llamada"
-  | "shalom_24h_retraso";
+  | "shalom_24h_retraso"
+  | "shalom_preguia_pago_almacen";
 
 export interface AlertaSupervisorInput {
   tipo: TipoSituacionCritica;
@@ -55,6 +56,7 @@ const TITULOS_ALERTA: Record<TipoSituacionCritica, string> = {
   reclamo_medico: "⚠️ Reclamo / Inconformidad o Molestia",
   pide_humano_llamada: "📞 Solicitud de Asesor Humano / Llamada",
   shalom_24h_retraso: "📦 Paquete >24h en Agencia Shalom sin retirar",
+  shalom_preguia_pago_almacen: "📦 Preguía Shalom + AliClik lista · Verificar y Pagar Almacén",
 };
 
 /**

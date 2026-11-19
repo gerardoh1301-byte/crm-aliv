@@ -28,7 +28,11 @@
     "auth:preparar": "node scripts/preparar-auth-autoalojado.mjs",
     "claves:supabase": "node scripts/generar-claves-supabase.mjs",
     "local": "node scripts/local.mjs",
-    "local:prod": "node scripts/local.mjs --prod"
+    "local:prod": "node scripts/local.mjs --prod",
+    "shalom:login": "node scripts/shalom-pro-worker.mjs --login",
+    "shalom:dry-run": "node scripts/shalom-pro-worker.mjs --dry-run",
+    "shalom:once": "node scripts/shalom-pro-worker.mjs --once",
+    "shalom:watch": "node scripts/shalom-pro-worker.mjs --watch"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.1134.0",
@@ -49,6 +53,7 @@
     "lucide-react": "^1.7.0",
     "next": "^16.4.6",
     "openai": "^6.36.0",
+    "playwright-core": "^1.65.1",
     "postgres": "^3.4.9",
     "react": "19.2.4",
     "react-dom": "19.2.4",

@@ -397,3 +397,194 @@ export async function crearOrdenAgenciaServicioCompleto(params: CrearOrdenAgenci
     result,
   };
 }
+
+export interface CrearOrdenGuiaPropiaShalomParams extends CrearOrdenAgenciaParams {
+  claveRetiro: string;       // Clave numérica de 4 dígitos generada en Shalom PRO
+  numeroOrdenShalom: string; // N° de orden Shalom (ej. "104493206")
+  codigoShalom: string;      // Código Shalom de 4 caracteres (ej. "V243")
+  guiaShalomUrl?: string;    // URL del PDF (Drive / almacenamiento) si aplica
+}
+
+/**
+ * Nueva modalidad logística oficial Aliv Perú:
+ * - "¿Quién lleva mi paquete a Shalom u Olva?": Almacén WANKLIC GROUP 2 (Prepara y lleva a la agencia) -> flagCourierToAgency: false
+ * - "¿Quién genera la guía?": Yo genero mi guía en Shalom PRO -> flagAliShalom: false
+ * - Tipo de pago: Parcial (paymentType: "P")
+ * - Tipo de mercancía: Caja Paquete XS
+ * - Incluye clave numérica 4 dígitos, N° de orden Shalom y Código Shalom.
+ */
+export async function crearOrdenAgenciaGuiaPropiaShalom(
+  params: CrearOrdenGuiaPropiaShalomParams
+) {
+  const token = await resolveAliclikToken();
+  const orderNumber = `${ALICLIK_COMPANY_PREFIX}${String(Date.now()).slice(-7)}`;
+  const idempotencyKey = crypto.randomUUID();
+
+  const agenciaNormalizada = normalizarAgenciaShalomAliclik(
+    params.agenciaShalomNombre,
+    params.departamento
+  );
+  const dropShalomIdFinal = params.dropShalomId || agenciaNormalizada.dropShalomId || 405;
+  const agenciaDestinoFinal = agenciaNormalizada.agencyDestination;
+  const agenciaDireccionFinal =
+    params.agenciaShalomDireccion || agenciaNormalizada.agencyAddress;
+  const departamentoFinal = params.departamento || agenciaNormalizada.departmentName;
+  const provinciaFinal = params.provincia || agenciaNormalizada.provinceName;
+  const distritoFinal = params.distrito || agenciaNormalizada.districtName;
+
+  const fechaEnvioTexto = params.fechaEnvio || calcularFechaEnvioShalom();
+  let scheduleDateIso = fechaEnvioTexto;
+  if (/^\d{2}\/\d{2}\/\d{4}$/.test(fechaEnvioTexto)) {
+    const [d, m, y] = fechaEnvioTexto.split("/");
+    scheduleDateIso = `${y}-${m}-${d}T00:00:00.000Z`;
+  } else if (/^\d{4}-\d{2}-\d{2}$/.test(fechaEnvioTexto)) {
+    scheduleDateIso = `${fechaEnvioTexto}T00:00:00.000Z`;
+  }
+
+  const tipoMercanciaFinal = params.tipoMercancia || "Caja Paquete XS";
+  const cantidadTotal = params.productos.reduce((acc, p) => acc + (p.cantidad || 1), 0);
+  const precioUnitarioProrrateado =
+    cantidadTotal > 0
+      ? Math.round((params.total / cantidadTotal) * 100) / 100
+      : params.total;
+
+  const productDetail = params.productos
+    .map((p) => `${p.cantidad} ${p.nombre}`)
+    .join(", ");
+
+  let subtotalAcumulado = 0;
+  const orderDetails = params.productos.map((p, idx) => {
+    const info = resolverSkuAliclik(p.nombre);
+    const esUltimo = idx === params.productos.length - 1;
+    const subtotal = esUltimo
+      ? params.total - subtotalAcumulado
+      : Math.round(p.cantidad * precioUnitarioProrrateado * 100) / 100;
+    subtotalAcumulado += subtotal;
+
+    return {
+      price: precioUnitarioProrrateado,
+      quantity: p.cantidad,
+      subtotal,
+      skuId: info.skuId,
+      warehouseId: info.warehouseId,
+      companyId: info.companyId,
+      dropPrice: 0,
+      storeCentralProductId: null,
+    };
+  });
+
+  const primarySku = resolverSkuAliclik(params.productos[0]?.nombre || "NAC600");
+  const claveLimpia = String(params.claveRetiro || "").replace(/\D/g, "").slice(0, 4);
+  const ordenShalomLimpia = String(params.numeroOrdenShalom || "").trim();
+  const codigoShalomLimpio = String(params.codigoShalom || "").trim().toUpperCase();
+
+  const payload = {
+    assignedSellerId: void 0,
+    orderNumber,
+    userId: ALICLIK_USER_ID,
+    total: params.total,
+    prefixPhone: "51",
+    note:
+      params.nota ||
+      `Preguía Shalom PRO (${ordenShalomLimpia} / ${codigoShalomLimpio}) · Almacén WANKLIC GROUP 2 (${tipoMercanciaFinal})`,
+    channel: "WhatsApp CRM",
+    status: "PENDING_DELIVERY",
+    commissionCod: 0,
+    callStatus: "CONFIRMED",
+    flagDeliveryExpress: false,
+    additionalCostExpress: 0,
+    currency: { code: "PEN", name: "SOLES", symbol: "S/" },
+    isOrderAgency: true,
+    trackingStatus: "TO_PREPARE",
+    paymentType: "P", // Parcial
+    shippingCost: 0,
+    managementType: "PARTNER",
+    payAgency: 2,
+    flagAliShalom: false, // "Yo genero mi guía en Shalom PRO"
+    flagCourierToAgency: false, // "Almacén WANKLIC GROUP 2 (Prepara y lleva a la agencia)"
+    productDetail,
+    merchandiseShalom: tipoMercanciaFinal,
+    warehouseName: primarySku.warehouseName,
+    warehouseId: primarySku.warehouseId,
+    customer: {
+      companyId: ALICLIK_COMPANY_ID,
+      name: params.clienteNombre,
+      lastName: "",
+      phone: params.clienteTelefono.replace(/\D/g, ""),
+    },
+    orderDetails,
+    preOrderHistory: {},
+    shipping: {
+      scheduleDate: scheduleDateIso,
+      DropShalomId: dropShalomIdFinal,
+      agencyDestination: String(dropShalomIdFinal),
+      agencySelected: agenciaDestinoFinal,
+      agencyAddress: agenciaDireccionFinal,
+      addressPickUp: agenciaDestinoFinal,
+      address1: agenciaDestinoFinal,
+      address2: "",
+      reference: agenciaDireccionFinal,
+      countryName: "Perú",
+      countryCode: "PER",
+      firstName: params.clienteNombre,
+      firstLastName: "",
+      secondLastName: "",
+      departmentName: departamentoFinal,
+      departmentCode: null,
+      provinceName: provinciaFinal,
+      provinceCode: null,
+      districtName: distritoFinal,
+      districtCode: null,
+      shippingByAgency: true,
+      agencyName: "SHALOM",
+      contactName: params.clienteNombre,
+      contactPhone: params.clienteTelefono.replace(/\D/g, ""),
+      contactDocumenType: "DNI",
+      contactDocumentNumber: params.clienteDni || "",
+      shippingCost: 0,
+      senderContact: params.clienteDni || "",
+      senderPhone: params.clienteTelefono.replace(/\D/g, ""),
+      merchandiseShalom: tipoMercanciaFinal,
+      keyCode: claveLimpia,
+      orderNumberShalom: ordenShalomLimpia,
+      codeShalom: codigoShalomLimpio,
+      trackingCode: ordenShalomLimpia,
+      ...(params.guiaShalomUrl ? { guideUrl: params.guiaShalomUrl } : {}),
+    },
+  };
+
+  const res = await fetch(`${BASE_URL}/order/agency/create`, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${token}`,
+      "Content-Type": "application/json",
+      "idempotency-key": idempotencyKey,
+      idempotencyKey: idempotencyKey,
+      Origin: "https://admin.aliclik.app",
+      Referer: "https://admin.aliclik.app/",
+      "User-Agent":
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
+      "X-Platform": "web",
+      "X-Device": "Chrome/Windows",
+      "x-aliclik-origin": "aliclik-web",
+    },
+    body: JSON.stringify(payload),
+  });
+
+  if (!res.ok) {
+    const err = await res.text();
+    throw new Error(`Error creando orden en AliClik (Guía Propia Shalom) (${res.status}): ${err}`);
+  }
+
+  const result = await res.json();
+  return {
+    ok: true,
+    orderNumber,
+    id: result?.id,
+    fechaEnvio: fechaEnvioTexto,
+    tipoMercancia: tipoMercanciaFinal,
+    agenciaDestino: agenciaDestinoFinal,
+    almacen: primarySku.warehouseName,
+    result,
+  };
+}

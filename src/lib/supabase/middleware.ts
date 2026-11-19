@@ -17,6 +17,7 @@ const PUBLIC_API_PREFIXES = [
   "/api/metricas",
   "/api/alertas",
   "/api/shalom/verificar-envios",
+  "/api/shalom-pro",
 ];
 
 export async function updateSession(request: NextRequest) {
