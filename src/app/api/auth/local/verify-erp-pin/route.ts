@@ -3,7 +3,7 @@ import { db } from "@/db";
 import { crmSettings } from "@/db/schema";
 import { eq } from "drizzle-orm";
 import { timingSafeEqual } from "node:crypto";
-import { ID_MIEMBRO_LOCAL } from "@/lib/modo-local";
+import { COOKIE_SESION_LOCAL, ID_MIEMBRO_LOCAL } from "@/lib/modo-local";
 import { firmarSesion } from "@/lib/sesion-local";
 import {
   limpiarIntentosLogin,
@@ -79,7 +79,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({
       ok: true,
       crmSessionCookie: crmSessionToken
-        ? `aliv_local_session=${crmSessionToken}`
+        ? `${COOKIE_SESION_LOCAL}=${crmSessionToken}`
         : null,
     });
   } catch (err) {
