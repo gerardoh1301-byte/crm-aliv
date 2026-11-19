@@ -200,18 +200,25 @@ Recuerda acudir con tu DNI físico original para el retiro. ¡Que disfrutes tus 
       }),
     });
 
+    const json = await res.json().catch(() => ({}));
     if (!res.ok) {
-      const err = await res.json().catch(() => ({}));
-      throw new Error(err.error || "No se pudo guardar el seguimiento");
+      throw new Error(json.error || "No se pudo guardar el seguimiento");
     }
+
+    if (json.advertencia) {
+      toast.warning(json.advertencia, { duration: 7000 });
+    }
+    return json;
   };
 
   const handleGuardar = async () => {
     setSaving(true);
     try {
-      await guardarEnBaseDeDatos();
+      const resData = await guardarEnBaseDeDatos();
       onUpdated?.(numeroGuia.trim(), codigoRastreo.trim(), claveRecojo.trim(), agenciaDestino.trim(), totalSoles);
-      toast.success("Seguimiento de Shalom guardado exitosamente");
+      if (!resData?.advertencia) {
+        toast.success("Seguimiento de Shalom guardado exitosamente");
+      }
       onOpenChange(false);
       router.refresh();
     } catch (e: any) {
@@ -561,6 +568,9 @@ Recuerda acudir con tu DNI físico original para el retiro. ¡Que disfrutes tus 
               onChange={(e) => setClaveRecojo(e.target.value.toUpperCase().trim())}
               className="text-xs font-mono font-bold tracking-wider h-8"
             />
+            <p className="text-[10px] text-muted-foreground leading-tight">
+              💡 Si Shalom registró esta clave en la agencia física, puedes guardarla y enviarla sin restricción (el sistema te avisará si se utilizó antes, pero no te bloqueará).
+            </p>
           </div>
 
           <div className="space-y-1">

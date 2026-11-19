@@ -410,13 +410,18 @@ export function RotuloShalomModal({
         }),
       });
 
+      const json = await res.json().catch(() => ({}));
       if (!res.ok) {
-        const err = await res.json().catch(() => ({}));
-        throw new Error(err.error || "No se pudo guardar los datos de Shalom");
+        throw new Error(json.error || "No se pudo guardar los datos de Shalom");
+      }
+
+      if (json.advertencia) {
+        toast.warning(json.advertencia, { duration: 7000 });
+      } else {
+        toast.success("¡Datos de Shalom guardados exitosamente!");
       }
 
       onUpdated?.(numOrdenInput.trim(), codigoInput.trim(), claveRecojoInput.trim());
-      toast.success("¡Datos de Shalom guardados exitosamente!");
       router.refresh();
     } catch (e: any) {
       toast.error(e.message || "Error al guardar datos de Shalom");

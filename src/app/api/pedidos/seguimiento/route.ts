@@ -100,34 +100,33 @@ export async function POST(req: NextRequest) {
 
   let claveLimpia = claveRecojo ? String(claveRecojo).trim() : null;
 
-  // Validación de clave de retiro Shalom:
-  // Se PERMITE usar la misma clave secreta el mismo día para todos los pedidos (lote de despacho del día).
-  // Solo se prohíbe reutilizar una clave que haya sido registrada en un DÍA ANTERIOR (ayer o días pasados).
+  // Verificación de clave de retiro Shalom:
+  // Si la clave ya fue utilizada anteriormente (en otro pedido reciente), se genera una advertencia
+  // informativa para el asesor, pero NUNCA se bloquea el guardado ni el envío. Si el asesor
+  // humano la está ingresando es porque se realizó el registro manual en la agencia con esa clave.
+  let advertenciaClave: string | null = null;
   if (claveLimpia) {
     const inicioHoyLima = getInicioHoyLima();
     const sieteDiasAtras = new Date(inicioHoyLima.getTime() - 7 * 24 * 3600 * 1000);
 
-    const [duplicadaDiaAnterior] = await db
+    const [duplicadaAnterior] = await db
       .select({ id: pedidosOrdenes.id, numeroOrden: pedidosOrdenes.numeroOrden, updatedAt: pedidosOrdenes.updatedAt })
       .from(pedidosOrdenes)
       .where(
         and(
           eq(pedidosOrdenes.claveRecojo, claveLimpia),
           ne(pedidosOrdenes.id, pedido.id),
-          lt(pedidosOrdenes.updatedAt, inicioHoyLima),
           gte(pedidosOrdenes.updatedAt, sieteDiasAtras)
         )
       )
       .orderBy(desc(pedidosOrdenes.updatedAt))
       .limit(1);
 
-    if (duplicadaDiaAnterior) {
-      return NextResponse.json(
-        {
-          error: `La clave de retiro ${claveLimpia} ya fue utilizada en un día anterior en la orden ${duplicadaDiaAnterior.numeroOrden}. Shalom permite usar la misma clave para varios pedidos del mismo día, pero no permite repetir claves de días anteriores. Por favor ingresa una clave distinta de 4 dígitos.`,
-        },
-        { status: 400 }
-      );
+    if (duplicadaAnterior) {
+      const esDiaAnterior = duplicadaAnterior.updatedAt < inicioHoyLima;
+      advertenciaClave = esDiaAnterior
+        ? `Aviso: La clave de retiro ${claveLimpia} ya fue utilizada en un día anterior en la orden ${duplicadaAnterior.numeroOrden}. Al ser ingresada manualmente por el asesor, se guardó correctamente.`
+        : `Aviso: La clave ${claveLimpia} coincide con la orden ${duplicadaAnterior.numeroOrden} del mismo día. Guardada correctamente.`;
     }
   }
 
@@ -198,5 +197,6 @@ export async function POST(req: NextRequest) {
   return NextResponse.json({
     ok: true,
     pedido: actualizado,
+    advertencia: advertenciaClave,
   });
 }

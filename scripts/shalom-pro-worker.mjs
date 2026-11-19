@@ -145,8 +145,17 @@ async function abrirNavegador() {
   return chromium.launchPersistentContext(PROFILE_DIR, launchOpts);
 }
 
+async function dismissPopups(page) {
+  try {
+    await page.evaluate(() => {
+      document.querySelectorAll('.loyalty-popup-overlay, [class*="popup-overlay"], .v-overlay').forEach(el => el.remove());
+    });
+  } catch {}
+}
+
 async function asegurarSesionShalomPro(page) {
   await page.goto("https://pro.shalom.pe/home", { waitUntil: "networkidle", timeout: 45_000 });
+  await dismissPopups(page);
   if (page.url().includes("/login")) {
     console.log("[Shalom PRO] Sesión no iniciada. Intentando login...");
     const email = ENV.SHALOM_PRO_EMAIL || "alivperu1301@gmail.com";
@@ -161,6 +170,7 @@ async function asegurarSesionShalomPro(page) {
       await page.waitForURL((u) => !u.pathname.includes("/login"), { timeout: 120_000 });
     }
   }
+  await dismissPopups(page);
   console.log("[Shalom PRO] ✅ Sesión activa en:", page.url());
 }
 
@@ -170,99 +180,102 @@ async function asegurarSesionShalomPro(page) {
 async function registrarEnvioEnShalomPro(page, pedido) {
   console.log(`\n[Shalom PRO] 🚀 Procesando ${pedido.numeroOrden} · ${pedido.clienteNombre} (DNI ${pedido.clienteDni}) -> ${pedido.agenciaShalomDestino}`);
 
-  // Paso 1: Ir a Home y hacer clic en "Registra"
-  await page.goto("https://pro.shalom.pe/home", { waitUntil: "networkidle", timeout: 45_000 });
-  await page.locator('text="Registra"').first().click();
-  await page.waitForTimeout(1200);
+  // Paso 1: Navegar directamente a Registro Individual (evita popups del home y menús desplegables)
+  await page.goto("https://pro.shalom.pe/registroindividual", { waitUntil: "networkidle", timeout: 45_000 });
+  await dismissPopups(page);
+  await page.waitForTimeout(1000);
 
   // Paso 2: Elegir "Caja Paquete XS" y Continuar
-  await page.locator('text=/Caja Paquete XS/i').first().click();
+  const empaqueXS = page.locator('.card:has-text("Caja Paquete XS"), text=/Caja Paquete XS/i').first();
+  await empaqueXS.click();
   await page.waitForTimeout(400);
-  await page.locator('button:has-text("Continuar")').first().click();
-  await page.waitForTimeout(1200);
-
-  // Paso 3: Origen fijo = Lima, Lima, La Victoria, Raymondi | Destino = agencia localizada por el bot
-  const origenInput = page.locator('input[placeholder*="Origen" i], [aria-label*="Origen" i]').first();
-  if (await origenInput.count()) {
-    await origenInput.click();
-    await origenInput.fill("Raymondi");
-    await page.waitForTimeout(800);
-    await page.locator('text=/La Victoria.*Raymondi|Raymondi/i').first().click();
-  }
-  await page.waitForTimeout(600);
-
-  const destinoInput = page.locator('input[placeholder*="Destino" i], [aria-label*="Destino" i]').first();
-  if (await destinoInput.count()) {
-    await destinoInput.click();
-    // Usar las palabras más distintivas de la agencia destino
-    const terminoBusqueda = pedido.agenciaShalomDestino.split(/[-,/]/)[0].trim().slice(0, 30);
-    await destinoInput.fill(terminoBusqueda);
-    await page.waitForTimeout(1000);
-    await page.locator('[role="option"], li, .option').first().click();
-  }
-  await page.waitForTimeout(600);
-  await page.locator('button:has-text("Continuar")').first().click();
-  await page.waitForTimeout(1200);
-
-  // Paso 4: Envío Sobreprotegido -> dejar "No deseo el servicio" y Continuar
-  const noDeseoSobre = page.locator('text=/No deseo el servicio/i').first();
-  if (await noDeseoSobre.count()) {
-    // Ya viene marcado por defecto en rojo, solo confirmamos continuar
-  }
-  await page.locator('button:has-text("Continuar")').first().click();
-  await page.waitForTimeout(1200);
-
-  // Paso 5: Destinatario -> DNI + autocompletar o llenar nombre/apellidos + celular
-  const dniInput = page.locator('input[placeholder*="DNI" i]').first();
-  await dniInput.click();
-  await dniInput.fill(pedido.clienteDni);
-  await dniInput.press("Tab");
+  await page.locator('button:visible:has-text("Continuar")').first().click();
   await page.waitForTimeout(1500);
 
-  const nombreInput = page.locator('input[placeholder="Nombre"]').first();
+  // Paso 3: Origen fijo = Raymondi (La Victoria) | Destino = agencia localizada por el bot
+  const origenMultiselect = page.locator('.multiselect:has(input[placeholder*="Origen"]) .multiselect__tags, span:has-text("Origen")').first();
+  await origenMultiselect.click();
+  await page.waitForTimeout(400);
+  const origenInput = page.locator('input[placeholder*="Origen"]').first();
+  await origenInput.fill("Raymondi");
+  await page.waitForTimeout(800);
+  const optRaymondi = page.locator('.multiselect__option:has-text("Raymondi"), li:has-text("Raymondi")').first();
+  await optRaymondi.click();
+  await page.waitForTimeout(800);
+
+  const destinoMultiselect = page.locator('.multiselect:has(input[placeholder*="Destino"]) .multiselect__tags, span:has-text("Destino")').first();
+  await destinoMultiselect.click();
+  await page.waitForTimeout(400);
+  const destinoInput = page.locator('input[placeholder*="Destino"]').first();
+  const terminoBusqueda = pedido.agenciaShalomDestino.split(/[-,/]/)[0].trim().slice(0, 30);
+  await destinoInput.fill(terminoBusqueda);
+  await page.waitForTimeout(1200);
+  const optDestino = page.locator(`.multiselect__option:has-text("${terminoBusqueda}"), .multiselect__option, [role="option"], li`).first();
+  await optDestino.click();
+  await page.waitForTimeout(800);
+
+  await page.locator('button:visible:has-text("Continuar")').first().click();
+  await page.waitForTimeout(1500);
+
+  // Paso 4: Envío Sobreprotegido -> dejar "No deseo el servicio" y Continuar
+  await page.locator('button:visible:has-text("Continuar")').first().click();
+  await page.waitForTimeout(1500);
+
+  // Paso 5: Destinatario -> DNI + autocompletar o llenar nombre/apellidos + celular
+  const dniInput = page.locator('input:visible[placeholder*="DNI" i]').first();
+  await dniInput.click();
+  await dniInput.fill(pedido.clienteDni);
+  await page.waitForTimeout(400);
+  await dniInput.press("Enter");
+  await page.waitForTimeout(2000);
+
+  const nombreInput = page.locator('input:visible#names-input, input:visible[placeholder="Nombre"]').first();
   if ((await nombreInput.count()) && !(await nombreInput.inputValue()).trim()) {
     const { nombre, paterno, materno } = dividirNombreCompleto(pedido.clienteNombre);
     await nombreInput.fill(nombre);
-    const patInput = page.locator('input[placeholder*="Apellido paterno" i]').first();
+    const patInput = page.locator('input:visible[placeholder*="Apellido paterno" i]').first();
     if (await patInput.count()) await patInput.fill(paterno);
-    const matInput = page.locator('input[placeholder*="Apellido materno" i]').first();
+    const matInput = page.locator('input:visible[placeholder*="Apellido materno" i]').first();
     if ((await matInput.count()) && materno) await matInput.fill(materno);
   }
-  const celInput = page.locator('input[placeholder*="Celular" i]').first();
+  const celInput = page.locator('input:visible#phone-input, input:visible[placeholder*="Celular" i]').first();
   if ((await celInput.count()) && !(await celInput.inputValue()).trim()) {
-    const cel9 = pedido.clienteTelefono.slice(-9);
+    const cel9 = pedido.clienteTelefono.replace(/\D/g, "").slice(-9);
     await celInput.fill(cel9);
+    await page.waitForTimeout(400);
   }
-  await page.locator('button:has-text("Continuar")').first().click();
-  await page.waitForTimeout(1200);
+  await page.locator('button:visible:has-text("Continuar")').first().click();
+  await page.waitForTimeout(1500);
 
   // Paso 6: Servicio de Cobros Seguros -> dejar "No deseo el servicio" y Continuar
-  await page.locator('button:has-text("Continuar")').first().click();
-  await page.waitForTimeout(1200);
+  await page.locator('button:visible:has-text("Continuar")').first().click();
+  await page.waitForTimeout(1500);
 
   // Paso 7: Clave de Seguridad (teclado digital aleatorio de 4 dígitos)
   const clave = String(pedido.claveRetiroSugerida);
   for (const digito of clave) {
     // Cada botón del teclado numérico muestra exactamente 1 dígito (0..9)
-    await page.locator(`button:text-is("${digito}")`).first().click();
-    await page.waitForTimeout(180);
+    await page.locator(`button:visible:text-is("${digito}")`).first().click();
+    await page.waitForTimeout(250);
   }
-  await page.waitForTimeout(300);
-  await page.locator('button:has-text("Continuar")').first().click();
-  await page.waitForTimeout(2500);
+  await page.waitForTimeout(400);
+  await page.locator('button:visible:has-text("Continuar")').first().click();
+  await page.waitForTimeout(3000);
 
   // Paso 8: Capturar N° de registro (ej. "V243 - 104493206") y Descargar rótulo PDF
+  await page.waitForTimeout(1000);
   const bodyText = await page.locator("body").innerText();
-  const matchReg = bodyText.match(/([A-Z0-9]{4})\s*-\s*(\d{7,12})/);
+  const matchReg = bodyText.match(/([A-Z0-9]{3,6})\s*-\s*(\d{6,12})/);
   if (!matchReg) {
-    throw new Error("No se detectó el N° de registro Shalom en pantalla tras confirmar la clave.");
+    await page.screenshot({ path: path.join(DOWNLOADS_DIR, `debug-confirmacion-${pedido.numeroOrden}.png`) });
+    throw new Error(`No se detectó el N° de registro Shalom en pantalla tras confirmar la clave. Texto: ${bodyText.slice(0, 300)}`);
   }
   const codigoShalom = matchReg[1].trim().toUpperCase();
   const numeroOrdenShalom = matchReg[2].trim();
   console.log(`[Shalom PRO] ✅ Registro confirmado: Código=${codigoShalom} · N° Orden=${numeroOrdenShalom} · Clave=${clave}`);
 
   const downloadPromise = page.waitForEvent("download", { timeout: 30_000 });
-  await page.locator('button:has-text("Descargar rótulo"), a:has-text("Descargar rótulo")').first().click();
+  await page.locator('button:visible:has-text("Descargar"), a:visible:has-text("Descargar")').first().click();
   const download = await downloadPromise;
 
   const destinoPdf = path.join(DOWNLOADS_DIR, pedido.nombreArchivoDrive);
