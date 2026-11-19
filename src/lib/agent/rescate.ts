@@ -427,7 +427,7 @@ export function determinarEscenarioRescate(
     return {
       esElegible: true,
       escenario: "adelanto_provincia",
-      mensajeRescate: `${saludo} Quería darte la tranquilidad de que somos Aliv Perú (RUC 20612283134) y despachamos a diario por Shalom con 30 días de garantía a todo el país. Los S/20 son solo para generar tu guía oficial; cuando tu paquete llegue a la agencia, nos transfieres el saldo de S/${saldo} y te enviamos tu clave secreta de recojo para que lo retires con tu DNI. Puedes rastrear tu envío en tiempo real en la web de Shalom. ¿A qué agencia Shalom te quedaría más cómodo que te lo enviemos?`,
+      mensajeRescate: `${saludo} Quería darte la tranquilidad de que somos Aliv Perú (RUC 20612283134) y despachamos a diario por Shalom con garantía de 30 días por fallas de fábrica a todo el país. Los S/20 son solo para generar tu guía oficial; cuando tu paquete llegue a la agencia, nos transfieres el saldo de S/${saldo} y te enviamos tu clave secreta de recojo para que lo retires con tu DNI. Puedes rastrear tu envío en tiempo real en la web de Shalom. ¿A qué agencia Shalom te quedaría más cómodo que te lo enviemos?`,
     };
   }
 
@@ -442,13 +442,13 @@ export function determinarEscenarioRescate(
       return {
         esElegible: true,
         escenario: "cotizacion_abandonada",
-        mensajeRescate: `${saludo} Quería consultarte si tuviste oportunidad de revisar cómo funciona la Tobillera Termix con calor de grafeno y masaje vibratorio ✨. Recuerda que es talla universal y viene con 30 días de garantía. ¿Tienes alguna duda adicional sobre su funcionamiento?`,
+        mensajeRescate: `${saludo} Quería consultarte si tuviste oportunidad de revisar cómo funciona la Tobillera Termix con calor de grafeno y masaje vibratorio ✨. Recuerda que es talla universal y viene con garantía de 30 días por fallas de fábrica. ¿Tienes alguna duda adicional sobre su funcionamiento?`,
       };
     }
     return {
       esElegible: true,
       escenario: "cotizacion_abandonada",
-      mensajeRescate: `${saludo} Quería saber si pudiste revisar la información sobre cómo apoya NAC600 + NAD+ a tu bienestar y salud celular ✨. Si te animas a probarlo, recuerda que en Lima pagas recién al recibir en tu puerta con envío gratis y 30 días de garantía. ¿Te gustaría que te programemos 1 frasco de S/119 o prefieres aprovechar la promo de 3 por S/199?`,
+      mensajeRescate: `${saludo} Quería saber si pudiste revisar la información sobre cómo apoya NAC600 + NAD+ a tu bienestar y salud celular ✨. Si te animas a probarlo, recuerda que en Lima pagas recién al recibir en tu puerta con envío gratis y garantía de 30 días por fallas de fábrica. ¿Te gustaría que te programemos 1 frasco de S/119 o prefieres aprovechar la promo de 3 por S/199?`,
     };
   }
 
@@ -457,14 +457,14 @@ export function determinarEscenarioRescate(
     return {
       esElegible: true,
       escenario: "cotizacion_abandonada",
-      mensajeRescate: `${saludo} Quería saber si tuviste oportunidad de revisar los detalles de la Tobillera Termix ✨. Recuerda que incluye calor constante de grafeno, masaje por vibración y 30 días de garantía con envío gratis. ¿Te gustaría aprovechar la promo de 2 por S/139 o prefieres empezar con 1 por S/79?`,
+      mensajeRescate: `${saludo} Quería saber si tuviste oportunidad de revisar los detalles de la Tobillera Termix ✨. Recuerda que incluye calor constante de grafeno, masaje por vibración y garantía de 30 días por fallas de fábrica con envío gratis. ¿Te gustaría aprovechar la promo de 2 por S/139 o prefieres empezar con 1 por S/79?`,
     };
   }
 
   return {
     esElegible: true,
     escenario: "cotizacion_abandonada",
-    mensajeRescate: `${saludo} Quería saber si tuviste oportunidad de revisar la información de NAC600 + NAD+ ✨. Recuerda que tenemos envío gratis con pago al recibir en Lima y 30 días de garantía. ¿Te gustaría empezar con 1 frasco de S/119 o prefieres aprovechar la promo de 3 por S/199?`,
+    mensajeRescate: `${saludo} Quería saber si tuviste oportunidad de revisar la información de NAC600 + NAD+ ✨. Recuerda que tenemos envío gratis con pago al recibir en Lima y garantía de 30 días por fallas de fábrica. ¿Te gustaría empezar con 1 frasco de S/119 o prefieres aprovechar la promo de 3 por S/199?`,
   };
 }
 
