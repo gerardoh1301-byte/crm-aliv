@@ -20,6 +20,8 @@ import {
   Calendar,
   Truck,
   DollarSign,
+  Kanban,
+  ArrowUpRight,
 } from "lucide-react";
 import { formatRelativeDate, formatDate } from "@/lib/constants";
 import { ACTIVITY_TYPE_CONFIG } from "@/lib/constants";
@@ -67,6 +69,14 @@ interface ActivityItem {
   scheduledAt: number | Date | null;
   completedAt: number | Date | null;
   createdAt: number | Date;
+}
+
+function pipelineHrefForActivity(item: Pick<ActivityItem, "contactId" | "contactName">): string {
+  const params = new URLSearchParams();
+  if (item.contactId) params.set("contactId", item.contactId);
+  if (item.contactName) params.set("search", item.contactName);
+  const qs = params.toString();
+  return qs ? `/pipeline?${qs}` : "/pipeline";
 }
 
 interface FollowUps {
@@ -121,6 +131,16 @@ export default function ActivitiesPage() {
         actions={
           <div className="flex items-center gap-2">
             <Link
+              href="/pipeline"
+              className={cn(
+                buttonVariants({ variant: "outline", size: "sm" }),
+                "cursor-pointer gap-1.5 border-primary/30 text-primary hover:bg-primary/5"
+              )}
+            >
+              <Kanban className="h-4 w-4" />
+              <span>Ir al Pipeline</span>
+            </Link>
+            <Link
               href="/calendar"
               className={cn(
                 buttonVariants({ variant: "outline", size: "sm" }),
@@ -164,12 +184,25 @@ export default function ActivitiesPage() {
                 {followUps.overdue.map((f) => (
                   <div
                     key={f.id}
-                    className="p-2.5 rounded-lg bg-card border border-destructive/15 text-sm"
+                    className="p-2.5 rounded-lg bg-card border border-destructive/15 text-sm flex flex-col gap-2"
                   >
                     <p className="font-medium leading-snug">{f.description}</p>
-                    <p className="text-xs text-muted-foreground mt-1">
-                      {f.contactName} &middot; {formatDate(f.scheduledAt)}
-                    </p>
+                    <div className="flex items-center justify-between gap-2 flex-wrap">
+                      <p className="text-xs text-muted-foreground">
+                        {f.contactName} &middot; {formatDate(f.scheduledAt)}
+                      </p>
+                      <Link
+                        href={pipelineHrefForActivity(f)}
+                        className={cn(
+                          buttonVariants({ variant: "outline", size: "sm" }),
+                          "h-7 px-2.5 text-xs gap-1 border-primary/30 text-primary hover:bg-primary/10 shrink-0"
+                        )}
+                      >
+                        <Kanban className="h-3.5 w-3.5" />
+                        <span>Ir al Pipeline</span>
+                        <ArrowUpRight className="h-3 w-3" />
+                      </Link>
+                    </div>
                   </div>
                 ))}
               </CardContent>
@@ -190,12 +223,25 @@ export default function ActivitiesPage() {
                 {followUps.today.map((f) => (
                   <div
                     key={f.id}
-                    className="p-2.5 rounded-lg bg-card border border-amber-500/20 text-sm"
+                    className="p-2.5 rounded-lg bg-card border border-amber-500/20 text-sm flex flex-col gap-2"
                   >
                     <p className="font-medium leading-snug">{f.description}</p>
-                    <p className="text-xs text-muted-foreground mt-1">
-                      {f.contactName}
-                    </p>
+                    <div className="flex items-center justify-between gap-2 flex-wrap">
+                      <p className="text-xs text-muted-foreground">
+                        {f.contactName}
+                      </p>
+                      <Link
+                        href={pipelineHrefForActivity(f)}
+                        className={cn(
+                          buttonVariants({ variant: "outline", size: "sm" }),
+                          "h-7 px-2.5 text-xs gap-1 border-primary/30 text-primary hover:bg-primary/10 shrink-0"
+                        )}
+                      >
+                        <Kanban className="h-3.5 w-3.5" />
+                        <span>Ir al Pipeline</span>
+                        <ArrowUpRight className="h-3 w-3" />
+                      </Link>
+                    </div>
                   </div>
                 ))}
               </CardContent>
@@ -299,9 +345,22 @@ function ActivityTimeline({ activities }: { activities: ActivityItem[] }) {
                     <p className="text-sm mt-1.5 leading-snug">
                       {activity.description}
                     </p>
-                    <p className="text-xs text-muted-foreground mt-1">
-                      {formatRelativeDate(activity.createdAt)}
-                    </p>
+                    <div className="flex items-center justify-between gap-2 flex-wrap mt-1.5">
+                      <p className="text-xs text-muted-foreground">
+                        {formatRelativeDate(activity.createdAt)}
+                      </p>
+                      <Link
+                        href={pipelineHrefForActivity(activity)}
+                        className={cn(
+                          buttonVariants({ variant: "outline", size: "sm" }),
+                          "h-7 px-2.5 text-xs gap-1 border-primary/30 text-primary hover:bg-primary/10 shrink-0"
+                        )}
+                      >
+                        <Kanban className="h-3.5 w-3.5" />
+                        <span>Ir al Pipeline</span>
+                        <ArrowUpRight className="h-3 w-3" />
+                      </Link>
+                    </div>
                   </div>
                 </div>
               );
