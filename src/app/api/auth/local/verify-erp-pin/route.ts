@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/db";
-import { crmSettings } from "@/db/schema";
-import { eq } from "drizzle-orm";
+import { crmSettings, teamMembers } from "@/db/schema";
+import { and, eq } from "drizzle-orm";
 import { timingSafeEqual } from "node:crypto";
 import { COOKIE_SESION_LOCAL, ID_MIEMBRO_LOCAL } from "@/lib/modo-local";
 import { firmarSesion } from "@/lib/sesion-local";
@@ -74,7 +74,12 @@ export async function POST(request: NextRequest) {
     }
 
     limpiarIntentosLogin(`erp:${ip}`);
-    const crmSessionToken = firmarSesion(ID_MIEMBRO_LOCAL);
+    const [adminActivo] = await db
+      .select({ id: teamMembers.id })
+      .from(teamMembers)
+      .where(and(eq(teamMembers.role, "admin"), eq(teamMembers.active, true)))
+      .limit(1);
+    const crmSessionToken = firmarSesion(adminActivo?.id ?? ID_MIEMBRO_LOCAL);
 
     return NextResponse.json({
       ok: true,
