@@ -47,27 +47,25 @@ export interface ResultadoNotificacionLlegada {
 /**
  * Casos excepcionales manejados de forma personal que deben quedar
  * completamente al margen del rastreo/notificación/alerta automática Shalom.
+ *
+ * P2: Se controla únicamente por marca persistente en notas del pedido
+ * (`[SHALOM_AUTO_EXCLUIDO]`) o etiqueta del contacto (`shalom manual`,
+ * `sin auto shalom`, `shalom excluido`), sin teléfonos ni órdenes hardcodeadas.
  */
-const TELEFONOS_EXCLUIDOS_SHALOM = ["980101006"];
-const ORDENES_EXCLUIDAS_SHALOM = ["1049"];
-
 function esPedidoExcluidoShalom(
-  phone: string | null | undefined,
-  numeroOrden: string | null | undefined,
-  notas: string | null | undefined
+  notas: string | null | undefined,
+  contactTags?: string[] | null
 ): boolean {
-  const digits = (phone || "").replace(/\D/g, "");
-  if (digits && TELEFONOS_EXCLUIDOS_SHALOM.some((t) => digits.endsWith(t))) {
-    return true;
-  }
-  const ordenLimpia = (numeroOrden || "").replace(/^#/, "").trim();
-  if (ordenLimpia && ORDENES_EXCLUIDAS_SHALOM.includes(ordenLimpia)) {
-    return true;
-  }
   if ((notas || "").toUpperCase().includes("[SHALOM_AUTO_EXCLUIDO]")) {
     return true;
   }
-  return false;
+  const tags = (contactTags ?? []).map((t) => t.toLowerCase().trim());
+  return tags.some(
+    (t) =>
+      t === "shalom manual" ||
+      t === "sin auto shalom" ||
+      t === "shalom excluido"
+  );
 }
 
 function horaDecimalLima(): number {
@@ -200,8 +198,8 @@ export async function verificarYNotificarLlegadasShalom(
   for (const c of filtrados) {
     if (!c.numeroGuia || !c.codigoRastreo) continue;
 
-    // Casos excepcionales manejados personalmente (ej. Alberto Ugaz 980 101 006)
-    if (esPedidoExcluidoShalom(c.contactPhone, c.numeroOrden, c.notasPedido)) {
+    // Casos excepcionales manejados personalmente (controlados por nota [SHALOM_AUTO_EXCLUIDO] o etiqueta)
+    if (esPedidoExcluidoShalom(c.notasPedido, c.contactTags)) {
       excluidos++;
       detalles.push({
         numeroOrden: c.numeroOrden,

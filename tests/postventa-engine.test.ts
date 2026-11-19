@@ -4,6 +4,8 @@ import {
   buildMensajeDia7,
   buildMensajeDia25,
   esElegibleParaPostventa,
+  evaluarBackfillPostventa,
+  resolverTituloProductoPostventa,
 } from "@/lib/postventa/engine";
 import {
   DEFAULT_BUSINESS_RULES,
@@ -84,6 +86,38 @@ describe("Postventa y Recompra Automática", () => {
     expect(
       esElegibleParaPostventa({ ...baseContact, tags: ["atencion manual"] }, baseConv).elegible
     ).toBe(false);
+  });
+
+  it("P1: backfill descarta entregas mayores a 30 días y conserva el producto real (Termix vs NAC600)", () => {
+    const ahora = new Date("2026-11-18T12:00:00Z");
+
+    // Pedido entregado hace 40 días -> descartado
+    const hace40d = new Date("2026-10-09T12:00:00Z");
+    expect(evaluarBackfillPostventa(hace40d, ahora).incluir).toBe(false);
+    expect(evaluarBackfillPostventa(hace40d, ahora).motivo).toBe("mayor_a_30_dias");
+
+    // Pedido entregado hace 8 días -> incluido con 8 días reales
+    const hace8d = new Date("2026-11-10T12:00:00Z");
+    const ev8 = evaluarBackfillPostventa(hace8d, ahora);
+    expect(ev8.incluir).toBe(true);
+    expect(ev8.diasTranscurridos).toBe(8);
+
+    // Resolución de producto Termix desde items para que no reciba mensajes de NAC600
+    const tituloTermix = resolverTituloProductoPostventa({
+      numeroOrden: "#1098",
+      items: [{ nombre: "Tobillera Termix Pro", cantidad: 1 }],
+      dealTitle: "Pedido #1098",
+    });
+    expect(tituloTermix).toContain("#1098");
+    expect(/termix|tobillera/i.test(tituloTermix)).toBe(true);
+
+    // Fallback al título del deal cuando items viene vacío
+    const tituloFallback = resolverTituloProductoPostventa({
+      numeroOrden: "#LEG-1015",
+      items: [],
+      dealTitle: "Compra Termix 2x",
+    });
+    expect(/termix/i.test(tituloFallback)).toBe(true);
   });
 });
 

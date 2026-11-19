@@ -134,6 +134,36 @@ export async function POST(request: NextRequest) {
     pedidoRow = p ?? null;
   }
 
+  // R6: Idempotencia contra doble clic — si ya existe exactamente la misma liquidación registrada,
+  // retornar sin duplicar actividad ni notificación al ERP.
+  const targetDealIdPre = body.dealId || pedidoRow?.dealId;
+  let dealRowPre = null;
+  if (targetDealIdPre) {
+    const [d] = await db
+      .select()
+      .from(deals)
+      .where(eq(deals.id, targetDealIdPre))
+      .limit(1);
+    dealRowPre = d ?? null;
+  }
+  const liqExistente =
+    extraerLiquidacionAliclik(pedidoRow?.notas) ||
+    extraerLiquidacionAliclik(dealRowPre?.notes);
+  if (
+    liqExistente &&
+    Math.abs(liqExistente.montoNeto - montoNeto) < 0.01 &&
+    liqExistente.fecha === fecha &&
+    liqExistente.nroOperacion === nroOperacion
+  ) {
+    return NextResponse.json({
+      ok: true,
+      duplicado: true,
+      liquidacion: liqExistente,
+      pedido: pedidoRow,
+      deal: dealRowPre,
+    });
+  }
+
   if (pedidoRow) {
     const nuevasNotas = actualizarTagLiquidacion(pedidoRow.notas, tag, resumen);
     const [act] = await db

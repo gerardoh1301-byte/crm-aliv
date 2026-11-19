@@ -86,15 +86,79 @@ export function esElegibleParaPostventa(
   return { elegible: true };
 }
 
+export interface OpcionesDealPostventa {
+  /** Fecha real de entrega del pedido (evita reiniciar el reloj a "hoy" en backfills). */
+  fechaEntrega?: Date | string | null;
+  /** Si true (usado en backfill), nunca reinicia ni sobrescribe una tarjeta de postventa ya existente. */
+  soloSiNoExiste?: boolean;
+}
+
 /**
- * Crea o reinicia un deal en el Tablero de Postventa y Recompra cuando un pedido
+ * Resuelve un texto descriptivo del producto real del pedido (para distinguir Termix vs NAC600)
+ * combinando `items` de `pedidos_ordenes`, título del deal de venta y número de orden.
+ */
+export function resolverTituloProductoPostventa(input: {
+  numeroOrden?: string | null;
+  items?: unknown;
+  dealTitle?: string | null;
+}): string {
+  const nombres: string[] = [];
+  if (Array.isArray(input.items)) {
+    for (const raw of input.items) {
+      if (!raw || typeof raw !== "object") continue;
+      const item = raw as Record<string, unknown>;
+      const cand =
+        (typeof item.nombre === "string" && item.nombre.trim()) ||
+        (typeof item.producto === "string" && item.producto.trim()) ||
+        (typeof item.title === "string" && item.title.trim()) ||
+        (typeof item.sku === "string" && item.sku.trim()) ||
+        "";
+      if (cand && !nombres.includes(cand)) nombres.push(cand);
+    }
+  }
+  const prodTexto =
+    nombres.join(", ") ||
+    (input.dealTitle && input.dealTitle.trim()) ||
+    "";
+  const orden = (input.numeroOrden || "").trim();
+  if (orden && prodTexto) return `${orden} · ${prodTexto}`;
+  return prodTexto || orden || "Pedido entregado";
+}
+
+/**
+ * Evalúa si un pedido entregado entra al backfill de postventa (P1):
+ * - Descarta entregas con más de 30 días de antigüedad.
+ * - Usa la fecha real de entrega (nunca `hoy`).
+ */
+export function evaluarBackfillPostventa(
+  fechaEntregaReal: Date,
+  ahora: Date = new Date(),
+  maxDias = 30
+): { incluir: boolean; diasTranscurridos: number; motivo?: string } {
+  const ts = fechaEntregaReal.getTime();
+  if (!Number.isFinite(ts)) {
+    return { incluir: false, diasTranscurridos: 999, motivo: "fecha_invalida" };
+  }
+  const diasTranscurridos = Math.max(
+    0,
+    Math.floor((ahora.getTime() - ts) / (1000 * 60 * 60 * 24))
+  );
+  if (diasTranscurridos > maxDias) {
+    return { incluir: false, diasTranscurridos, motivo: "mayor_a_30_dias" };
+  }
+  return { incluir: true, diasTranscurridos };
+}
+
+/**
+ * Crea o actualiza un deal en el Tablero de Postventa y Recompra cuando un pedido
  * es entregado o se confirma su recepción.
  */
 export async function crearOActualizarDealPostventa(
   contactId: string,
   tituloUOrden?: string,
-  montoSoles?: number
-): Promise<{ ok: boolean; dealId?: string }> {
+  montoSoles?: number,
+  opts?: OpcionesDealPostventa
+): Promise<{ ok: boolean; dealId?: string; omitido?: string }> {
   try {
     const [contacto] = await db
       .select({ id: contacts.id, phone: contacts.phone, name: contacts.name })
@@ -116,6 +180,8 @@ export async function crearOActualizarDealPostventa(
       .orderBy(asc(pipelineStages.order));
 
     const stageDia1 = stages.find((s) => s.key === "postventa_dia_1_3") || stages[0];
+    const stageDia7 = stages.find((s) => s.key === "postventa_dia_7") || stageDia1;
+    const stageDia25 = stages.find((s) => s.key === "postventa_dia_25") || stageDia7;
     if (!stageDia1) return { ok: false };
 
     // Buscar si ya tiene un deal en este pipeline
@@ -134,12 +200,22 @@ export async function crearOActualizarDealPostventa(
       .limit(1);
 
     const existingDeal = dealsPostventa[0];
-    const nowIso = new Date().toISOString();
+    // P1: En backfill jamás reiniciar ni tocar tarjetas de postventa ya existentes
+    if (existingDeal && opts?.soloSiNoExiste) {
+      return { ok: false, dealId: existingDeal.id, omitido: "ya_existe" };
+    }
+
+    const fechaEntregaDate = opts?.fechaEntrega ? new Date(opts.fechaEntrega) : new Date();
+    const fechaValida = Number.isFinite(fechaEntregaDate.getTime()) ? fechaEntregaDate : new Date();
+    const dias = Math.max(0, Math.floor((Date.now() - fechaValida.getTime()) / (1000 * 60 * 60 * 24)));
+    const stageInicial = dias >= 25 ? stageDia25 : dias >= 7 ? stageDia7 : stageDia1;
+
     const meta: PostventaMetadata = {
-      fechaEntrega: nowIso,
+      fechaEntrega: fechaValida.toISOString(),
       ordenInfo: tituloUOrden,
-      mensajeDia1Enviado: false,
-      mensajeDia7Enviado: false,
+      // Si se crea desde backfill histórico (>7d o >25d), no disparar hitos ya pasados
+      mensajeDia1Enviado: Boolean(opts?.soloSiNoExiste && dias >= 7),
+      mensajeDia7Enviado: Boolean(opts?.soloSiNoExiste && dias >= 25),
       mensajeDia25Enviado: false,
     };
 
@@ -149,7 +225,7 @@ export async function crearOActualizarDealPostventa(
         .values({
           title: tituloUOrden ? `Postventa · ${tituloUOrden}` : `Postventa · ${contacto.name || "Cliente"}`,
           contactId,
-          stageId: stageDia1.id,
+          stageId: stageInicial.id,
           value: montoSoles ? Math.round(montoSoles * 100) : 0,
           notes: JSON.stringify(meta),
         })
@@ -164,7 +240,7 @@ export async function crearOActualizarDealPostventa(
 
       return { ok: true, dealId: nuevo.id };
     } else {
-      // Si ya existía, reiniciar para el nuevo ciclo de postventa en etapa día 1-3
+      // Si ya existía (y NO es backfill), reiniciar para el nuevo ciclo de postventa en etapa día 1-3
       await db
         .update(deals)
         .set({
@@ -342,10 +418,17 @@ export async function procesarSeguimientosPostventaAutomaticos(opts?: {
 }
 
 /**
- * Backfill para incorporar al Tablero de Postventa a todos los pedidos que ya están
- * en estado "entregado" en la base de datos (resolviendo R12).
+ * Backfill seguro para incorporar al Tablero de Postventa pedidos ya entregados (P1 / R12):
+ * - Usa la fecha real de entrega (`updatedAt ?? createdAt`), nunca "hoy".
+ * - Salta entregas de más de 30 días.
+ * - Nunca reinicia ni sobreescribe tarjetas de postventa ya existentes.
+ * - Pasa el producto real (`items` + título del deal) para distinguir Termix vs NAC600.
  */
-export async function backfillPedidosEntregadosAPostventa(): Promise<{ ingresados: number }> {
+export async function backfillPedidosEntregadosAPostventa(): Promise<{
+  ingresados: number;
+  omitidosAntiguos: number;
+  omitidosExistentes: number;
+}> {
   try {
     const { pedidosOrdenes } = await import("../../../modules/pedidos/tabla");
     const entregados = await db
@@ -353,28 +436,58 @@ export async function backfillPedidosEntregadosAPostventa(): Promise<{ ingresado
         id: pedidosOrdenes.id,
         contactId: pedidosOrdenes.contactId,
         numeroOrden: pedidosOrdenes.numeroOrden,
+        items: pedidosOrdenes.items,
         total: pedidosOrdenes.total,
         updatedAt: pedidosOrdenes.updatedAt,
         createdAt: pedidosOrdenes.createdAt,
+        dealTitle: deals.title,
       })
       .from(pedidosOrdenes)
-      .where(eq(pedidosOrdenes.estado, "entregado"));
+      .leftJoin(deals, eq(deals.id, pedidosOrdenes.dealId))
+      .where(eq(pedidosOrdenes.estado, "entregado"))
+      .orderBy(desc(pedidosOrdenes.updatedAt));
 
     let ingresados = 0;
+    let omitidosAntiguos = 0;
+    let omitidosExistentes = 0;
+    const vistos = new Set<string>();
+
     for (const ord of entregados) {
-      if (ord.contactId) {
-        const res = await crearOActualizarDealPostventa(
-          ord.contactId,
-          ord.numeroOrden ?? "Pedido entregado",
-          Number(ord.total) || 0
-        );
-        if (res.ok) ingresados++;
+      if (!ord.contactId || vistos.has(ord.contactId)) continue;
+      vistos.add(ord.contactId);
+
+      const fechaReal = ord.updatedAt ?? ord.createdAt;
+      const evalFecha = evaluarBackfillPostventa(fechaReal);
+      if (!evalFecha.incluir) {
+        omitidosAntiguos++;
+        continue;
+      }
+
+      const tituloProducto = resolverTituloProductoPostventa({
+        numeroOrden: ord.numeroOrden,
+        items: ord.items,
+        dealTitle: ord.dealTitle,
+      });
+
+      const res = await crearOActualizarDealPostventa(
+        ord.contactId,
+        tituloProducto,
+        Number(ord.total) || 0,
+        {
+          fechaEntrega: fechaReal,
+          soloSiNoExiste: true,
+        }
+      );
+      if (res.ok) {
+        ingresados++;
+      } else if (res.omitido === "ya_existe") {
+        omitidosExistentes++;
       }
     }
-    return { ingresados };
+    return { ingresados, omitidosAntiguos, omitidosExistentes };
   } catch (err) {
     console.error("[postventa] error en backfill:", err);
-    return { ingresados: 0 };
+    return { ingresados: 0, omitidosAntiguos: 0, omitidosExistentes: 0 };
   }
 }
 
