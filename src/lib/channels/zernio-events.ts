@@ -175,7 +175,7 @@ async function handleMessageEvent(
     // platformMessageId (wamid.* en WhatsApp) y no el id interno de Zernio: mantiene la
     // deduplicacion contra los mensajes que pudo haber guardado el webhook de Meta.
     externalId: msg.platformMessageId ?? msg.id ?? null,
-    body: await extractBody(msg),
+    body: await extractBody(msg, direction),
     type: messageType(msg),
     sentAt: parseDate(msg.sentAt ?? payload.timestamp),
     status: direction === "in" && msg.isRead ? "read" : undefined,
@@ -265,12 +265,28 @@ function resolveParticipant(
 }
 
 /** Espeja `extractMessageBody` del webhook de Meta e integra transcripcion de audio e inspeccion visual. */
-async function extractBody(msg: ZernioMessage): Promise<string> {
+async function extractBody(msg: ZernioMessage, direction: "in" | "out" = "in"): Promise<string> {
   const text = msg.text?.trim();
   const attachment = msg.attachments?.[0];
 
   if (attachment) {
     const kind = (attachment.type ?? "adjunto").toLowerCase();
+
+    // R10: Si la imagen/audio sale del negocio (dirección "out"), NO analizar con visión ni etiquetar como enviada por cliente
+    if (direction === "out") {
+      if (text) return text;
+      const label =
+        kind === "image"
+          ? "imagen"
+          : kind === "video"
+            ? "video"
+            : kind === "audio"
+              ? "audio"
+              : kind === "file"
+                ? "documento"
+                : kind;
+      return `[${label}]`;
+    }
 
     if (kind === "audio" || kind === "voice") {
       const transcript = await transcribeAudioAttachment(attachment);

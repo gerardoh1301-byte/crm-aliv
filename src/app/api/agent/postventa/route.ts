@@ -1,5 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
-import { procesarSeguimientosPostventaAutomaticos } from "@/lib/postventa/engine";
+import {
+  procesarSeguimientosPostventaAutomaticos,
+  backfillPedidosEntregadosAPostventa,
+} from "@/lib/postventa/engine";
 import { autorizadoPorSecreto } from "@/lib/secreto-worker";
 
 export const dynamic = "force-dynamic";
@@ -16,9 +19,15 @@ export async function GET(request: NextRequest) {
 
   const { searchParams } = new URL(request.url);
   const forzarHorario = searchParams.get("forzar") === "true";
+  const runBackfill = searchParams.get("backfill") === "true";
+
+  let backfillRes = null;
+  if (runBackfill) {
+    backfillRes = await backfillPedidosEntregadosAPostventa();
+  }
 
   const res = await procesarSeguimientosPostventaAutomaticos({ forzarHorario });
-  return NextResponse.json({ ok: true, ...res });
+  return NextResponse.json({ ok: true, backfill: backfillRes, ...res });
 }
 
 export async function POST(request: NextRequest) {

@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/db";
 import { activities, deals } from "@/db/schema";
 import { eq } from "drizzle-orm";
-import { requireMember } from "@/lib/api-auth";
+import { requireAdmin } from "@/lib/api-auth";
 import { displayName } from "@/lib/team";
 import { pedidosOrdenes } from "@modules/pedidos/tabla";
 
@@ -63,7 +63,8 @@ function actualizarTagLiquidacion(
 }
 
 export async function POST(request: NextRequest) {
-  const auth = await requireMember();
+  // R6: Solo administradores pueden registrar o alterar liquidaciones contables
+  const auth = await requireAdmin();
   if ("response" in auth) return auth.response;
   const { member } = auth;
 

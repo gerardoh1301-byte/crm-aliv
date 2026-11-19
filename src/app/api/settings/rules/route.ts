@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getBusinessRules, saveBusinessRules, type BusinessRulesData } from "@/lib/settings/rules";
-import { requireMember } from "@/lib/api-auth";
+import { requireAdmin, requireMember } from "@/lib/api-auth";
 
 export const dynamic = "force-dynamic";
 
@@ -13,7 +13,8 @@ export async function GET() {
 }
 
 export async function PUT(request: NextRequest) {
-  const auth = await requireMember();
+  // R6: Solo administradores pueden alterar las reglas y FAQs que el bot repite
+  const auth = await requireAdmin();
   if ("response" in auth) return auth.response;
 
   try {

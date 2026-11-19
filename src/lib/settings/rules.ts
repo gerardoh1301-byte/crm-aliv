@@ -32,7 +32,7 @@ export const DEFAULT_BUSINESS_RULES: BusinessRulesData = {
       respuesta: "Generalmente de 24 a 48 horas hábiles según la ciudad de destino. Se envía número de orden y código para rastreo en tiempo real.",
     },
   ],
-  politicas: "Garantía de satisfacción de 30 días para todos nuestros productos. En Lima se paga contraentrega. En provincia se abona adelanto de S/20 para emitir la guía de remisión oficial de Shalom.",
+  politicas: "Garantía oficial Aliv Perú de producto 100% sellado de fábrica y entrega en perfecto estado. En Lima el pago es contraentrega al recibir. En provincia se abona adelanto de S/20 para emitir la guía de remisión oficial de Shalom con código de seguimiento.",
   promocionesTemporales: "NAC600: 1 frasco S/ 119, 2 frascos S/ 189, 3 frascos S/ 199 con envío gratis. Termix Tobillera: 1x S/ 79, 2x S/ 139, 3x S/ 189 con envío gratis.",
   horariosAtencion: "Lunes a Sábado de 8:30 am a 8:00 pm. Despachos diarios a Lima y salidas a provincia por agencia Shalom.",
 };

@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/db";
 import { contacts, deals } from "@/db/schema";
 import { pedidosOrdenes } from "@modules/pedidos/tabla";
-import { eq } from "drizzle-orm";
+import { and, desc, eq, notInArray } from "drizzle-orm";
 import { requireMember } from "@/lib/api-auth";
 import { canAccessContact } from "@/lib/team";
 
@@ -78,22 +78,36 @@ export async function POST(
     .where(eq(contacts.id, id))
     .returning();
 
-  // 2. Actualizar pedidos_ordenes asociados al contacto
+  // 2. Actualizar ÚNICAMENTE el pedido activo/en curso asociado al contacto (R9: no compras pasadas ya entregadas ni canceladas)
   const direccionFinal = nuevaAgencia || nuevaDireccion || (customFieldsActualizados.direccion_envio as string) || null;
   const dniFinal = nuevoDni || (customFieldsActualizados.dni_ruc as string) || null;
   const ciudadFinal = nuevaCiudad || (customFieldsActualizados.departamento_ciudad as string) || null;
   const distritoFinal = nuevoDistrito || (customFieldsActualizados.distrito as string) || null;
 
-  await db
-    .update(pedidosOrdenes)
-    .set({
-      direccionEnvio: direccionFinal,
-      dniCliente: dniFinal,
-      ciudad: ciudadFinal,
-      distrito: distritoFinal,
-      updatedAt: new Date(),
-    })
-    .where(eq(pedidosOrdenes.contactId, id));
+  const [pedidoActivo] = await db
+    .select({ id: pedidosOrdenes.id })
+    .from(pedidosOrdenes)
+    .where(
+      and(
+        eq(pedidosOrdenes.contactId, id),
+        notInArray(pedidosOrdenes.estado, ["entregado", "cancelado"])
+      )
+    )
+    .orderBy(desc(pedidosOrdenes.createdAt))
+    .limit(1);
+
+  if (pedidoActivo) {
+    await db
+      .update(pedidosOrdenes)
+      .set({
+        direccionEnvio: direccionFinal,
+        dniCliente: dniFinal,
+        ciudad: ciudadFinal,
+        distrito: distritoFinal,
+        updatedAt: new Date(),
+      })
+      .where(eq(pedidosOrdenes.id, pedidoActivo.id));
+  }
 
   return NextResponse.json({
     success: true,

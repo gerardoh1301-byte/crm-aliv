@@ -30,6 +30,63 @@ export function buildMensajeDia25(nombreCliente: string): string {
 }
 
 /**
+ * Valida si un contacto es elegible para recibir mensajes automáticos de postventa.
+ * Respeta estrictamente si el bot está apagado (aiEnabled = false), si el cliente
+ * requiere atención humana (needsHuman = true), si está en modo copiloto o si tiene
+ * etiquetas de reclamo, queja o atención manual activa.
+ */
+export function esElegibleParaPostventa(
+  contact: {
+    aiEnabled?: boolean | null;
+    needsHuman?: boolean | null;
+    tags?: string[] | null;
+  },
+  conv?: {
+    aiEnabled?: boolean | null;
+    needsHuman?: boolean | null;
+    metadata?: unknown;
+  } | null
+): { elegible: boolean; motivo?: string } {
+  if (!conv) {
+    return { elegible: false, motivo: "sin_conversacion" };
+  }
+
+  // 1. Interruptor general de IA en contacto y conversación
+  if (contact.aiEnabled === false || conv.aiEnabled === false) {
+    return { elegible: false, motivo: "ai_desactivada" };
+  }
+
+  // 2. Cliente derivado o que requiere atención de un asesor humano
+  if (contact.needsHuman === true || conv.needsHuman === true) {
+    return { elegible: false, motivo: "requiere_humano" };
+  }
+
+  // 3. Modo asistido o agente pausado en metadata
+  const convMeta = (conv.metadata as Record<string, unknown> | null) ?? {};
+  if (convMeta.agentPaused === true || convMeta.copilotMode === true) {
+    return { elegible: false, motivo: "agente_pausado_o_copiloto" };
+  }
+
+  // 4. Etiquetas bloqueantes (reclamos, atención manual, cancelado)
+  const tags = (contact.tags ?? []).map((t) => t.toLowerCase().trim());
+  const tieneTagBloqueante = tags.some(
+    (t) =>
+      t.includes("no reactivar") ||
+      t.includes("reclamo") ||
+      t.includes("queja") ||
+      t.includes("atencion manual") ||
+      t.includes("atendido manual") ||
+      t.includes("cancelado") ||
+      t.includes("baja")
+  );
+  if (tieneTagBloqueante) {
+    return { elegible: false, motivo: "etiqueta_bloqueante" };
+  }
+
+  return { elegible: true };
+}
+
+/**
  * Crea o reinicia un deal en el Tablero de Postventa y Recompra cuando un pedido
  * es entregado o se confirma su recepción.
  */
@@ -215,11 +272,11 @@ export async function procesarSeguimientosPostventaAutomaticos(opts?: {
       .orderBy(desc(conversations.lastMessageAt))
       .limit(1);
 
-    if (!conv) continue;
-
-    // Si la conversación tiene el agente pausado, no enviar mensajes automáticos
-    const convMeta = (conv.metadata as Record<string, unknown> | null) ?? {};
-    if (convMeta.agentPaused === true) continue;
+    // Blindaje de seguridad (R2): validar si el contacto y la conversación son elegibles
+    const evaluacion = esElegibleParaPostventa(contact, conv);
+    if (!evaluacion.elegible) {
+      continue;
+    }
 
     const { nombreLimpio } = resolverNombreHumanoCliente(contact.name);
     const nombre = nombreLimpio || "estimado(a)";
@@ -283,3 +340,41 @@ export async function procesarSeguimientosPostventaAutomaticos(opts?: {
 
   return { procesados, enviados, errores };
 }
+
+/**
+ * Backfill para incorporar al Tablero de Postventa a todos los pedidos que ya están
+ * en estado "entregado" en la base de datos (resolviendo R12).
+ */
+export async function backfillPedidosEntregadosAPostventa(): Promise<{ ingresados: number }> {
+  try {
+    const { pedidosOrdenes } = await import("../../../modules/pedidos/tabla");
+    const entregados = await db
+      .select({
+        id: pedidosOrdenes.id,
+        contactId: pedidosOrdenes.contactId,
+        numeroOrden: pedidosOrdenes.numeroOrden,
+        total: pedidosOrdenes.total,
+        updatedAt: pedidosOrdenes.updatedAt,
+        createdAt: pedidosOrdenes.createdAt,
+      })
+      .from(pedidosOrdenes)
+      .where(eq(pedidosOrdenes.estado, "entregado"));
+
+    let ingresados = 0;
+    for (const ord of entregados) {
+      if (ord.contactId) {
+        const res = await crearOActualizarDealPostventa(
+          ord.contactId,
+          ord.numeroOrden ?? "Pedido entregado",
+          Number(ord.total) || 0
+        );
+        if (res.ok) ingresados++;
+      }
+    }
+    return { ingresados };
+  } catch (err) {
+    console.error("[postventa] error en backfill:", err);
+    return { ingresados: 0 };
+  }
+}
+

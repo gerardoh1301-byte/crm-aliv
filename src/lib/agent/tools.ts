@@ -432,11 +432,18 @@ async function derivarAsesor(args: { motivo?: string; apagarAgente?: boolean }, 
     const { esNumeroEntrenador, notificarSupervisoresCritico } = await import("@/lib/alerts/supervisor-alerts");
     if (!esNumeroEntrenador(c?.phone)) {
       let tipoCritico: "comprobante_pago" | "reclamo_medico" | "pide_humano_llamada" | null = null;
-      if (/\b(abono|pago|yape|plin|transferencia|voucher|captura|adelanto)\b/i.test(motivo)) {
+      // R12: Normalizar tildes y diacríticos para que "médico", "reacción", "daño" disparen siempre la alerta
+      const motivoNorm = (motivo + " " + ultimoCliente)
+        .normalize("NFD")
+        .replace(/[\u0300-\u036f]/g, "")
+        .replace(/ñ/g, "n")
+        .toLowerCase();
+
+      if (/\b(abono|pago|yape|plin|transferencia|voucher|captura|adelanto)\b/i.test(motivoNorm)) {
         tipoCritico = "comprobante_pago";
-      } else if (/\b(reclamo|molestia|enfermedad|dolor|medico|reaccion|danio|mal estado|insatisfaccion)\b/i.test(motivo)) {
+      } else if (/\b(reclamo|molestia|enfermedad|dolor|medic[oa]|reaccion|dan[io]|mal estado|insatisfaccion|alergia|intoxicacion|grave|hospital)\b/i.test(motivoNorm)) {
         tipoCritico = "reclamo_medico";
-      } else if (/\b(llamada|humano|persona|asesor|supervisor|telefonico|urgente|hablar)\b/i.test(motivo)) {
+      } else if (/\b(llamada|humano|persona|asesor|supervisor|telefonico|urgente|hablar)\b/i.test(motivoNorm)) {
         tipoCritico = "pide_humano_llamada";
       }
       if (tipoCritico) {

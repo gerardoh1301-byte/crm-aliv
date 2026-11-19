@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/db";
 import { crmSettings } from "@/db/schema";
 import { eq } from "drizzle-orm";
-import { requireMember } from "@/lib/api-auth";
+import { requireAdmin } from "@/lib/api-auth";
 import { autorizadoPorSecreto } from "@/lib/secreto-worker";
 
 export const dynamic = "force-dynamic";
@@ -11,7 +11,8 @@ const ERP_DB_KEY = "erp.database_json";
 
 async function estaAutorizado(request: NextRequest): Promise<boolean> {
   if (autorizadoPorSecreto(request)) return true;
-  const auth = await requireMember();
+  // R6: Solo administradores pueden leer o escribir el respaldo del ERP
+  const auth = await requireAdmin();
   return !("response" in auth);
 }
 
