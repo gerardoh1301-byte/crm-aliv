@@ -304,18 +304,7 @@ export function DatosEntregaPanel({
             className="w-full h-8 text-xs cursor-pointer font-medium"
           >
             <Save className="h-3.5 w-3.5 mr-1.5" />
-            {saving ? "Guardando..." : "Guardar en Pipeline y AliClik"}
-          </Button>
-
-          <Button
-            type="button"
-            size="sm"
-            variant="outline"
-            onClick={() => setModalAliclikOpen(true)}
-            className="w-full h-7 text-[11px] cursor-pointer text-primary border-primary/30 hover:bg-primary/5"
-          >
-            <Truck className="h-3 w-3 mr-1.5" />
-            Abrir Despacho AliClik
+            {saving ? "Guardando..." : "Guardar datos de entrega"}
           </Button>
         </div>
       </div>

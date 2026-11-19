@@ -532,21 +532,6 @@ export function DealCard({
                 {currentNumeroGuia ? `Shalom #${currentNumeroGuia}` : "Guía Shalom"}
               </span>
             </Button>
-            <Button
-              type="button"
-              size="sm"
-              variant="outline"
-              title="Despachar con AliClik (Alidriver lleva a agencia + AliClik genera guía y rótulo en Shalom PRO)"
-              {...pararArrastre}
-              onClick={(e) => {
-                e.stopPropagation();
-                setAliclikModalOpen(true);
-              }}
-              className="h-7 px-2 text-[11px] font-semibold gap-1 shadow-none cursor-pointer bg-blue-500/10 hover:bg-blue-500/20 text-blue-700 dark:text-blue-400 border-blue-500/30"
-            >
-              <PackageCheck className="h-3.5 w-3.5 shrink-0" aria-hidden />
-              <span>AliClik</span>
-            </Button>
           </div>
         )}
         {accionPrincipal === "motorizado" && (
@@ -682,9 +667,6 @@ export function DealCard({
                   <Printer className="h-4 w-4" /> Rótulo motorizado
                 </DropdownMenuItem>
               )}
-              <DropdownMenuItem onClick={() => setAliclikModalOpen(true)} className="text-emerald-700 dark:text-emerald-400 font-semibold cursor-pointer">
-                <PackageCheck className="h-4 w-4 text-emerald-600" /> Despachar con AliClik (Alidriver)
-              </DropdownMenuItem>
               <DropdownMenuItem onClick={() => setLiquidarOpen(true)} className="text-amber-700 dark:text-amber-400 font-semibold cursor-pointer">
                 <Landmark className="h-4 w-4 text-amber-600" /> {currentLiquidacion ? `Editar Liquidación BCP (S/ ${currentLiquidacion.montoNeto.toFixed(2)})` : "Confirmar Liquidación AliClik (BCP)"}
               </DropdownMenuItem>

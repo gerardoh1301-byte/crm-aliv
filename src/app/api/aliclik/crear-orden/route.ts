@@ -33,6 +33,15 @@ export function agregarNotaSinBorrar(
 }
 
 export async function POST(req: NextRequest) {
+  if (process.env.ALICLIK_DESPACHO_ENABLED !== "true") {
+    return NextResponse.json(
+      {
+        ok: false,
+        error: "Registro automático por AliClik desactivado por decisión logística.",
+      },
+      { status: 410 }
+    );
+  }
   try {
     const body = await req.json();
     const {
