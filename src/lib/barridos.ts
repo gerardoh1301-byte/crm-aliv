@@ -22,6 +22,8 @@ const ENDPOINTS = [
   "/api/shalom/verificar-envios",
   // Formularios EasySell abandonados: mensaje a los 30 min y a las 24 h
   "/api/agent/abandonos",
+  // Seguimiento con hora: le escribe una vez a quien prometió volver y no volvió
+  "/api/agent/seguimientos",
 ];
 
 declare global {

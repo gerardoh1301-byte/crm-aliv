@@ -10,7 +10,9 @@ import { limpiarFormatoWhatsApp, removerMencionClaveSiYaEntregada, removerSaludo
 import { getConfig } from "@/lib/config";
 import { getAgentConfig } from "./config";
 import { renderContexto, renderSystemPrompt } from "./prompt";
-import { esSaludoAutomatico, renderOrigenAnuncio } from "./origen-anuncio";
+import { esSaludoAutomatico, productoDelAnuncio, renderOrigenAnuncio } from "./origen-anuncio";
+import { renderGuionVenta } from "./guion-venta";
+import { registrarPromesaSiAplica } from "./seguimiento";
 import { executeTool, getEnabledToolDefinitions, type ToolContext } from "./tools";
 import { getOpenRouterClient, getAgentModel, hasOpenRouterKey, createChatCompletionWithFallback } from "./openrouter";
 import { autoDetectarYAgendarHorario } from "./scheduler";
@@ -100,6 +102,7 @@ async function executeAgentTurn(
         items: pedidosOrdenes.items,
         claveRecojo: pedidosOrdenes.claveRecojo,
         notas: pedidosOrdenes.notas,
+        createdAt: pedidosOrdenes.createdAt,
       })
       .from(pedidosOrdenes)
       .where(eq(pedidosOrdenes.contactId, contact.id))
@@ -131,17 +134,40 @@ async function executeAgentTurn(
     .limit(1);
   const yaRespondio = Boolean(mensajePrevioSaliente) || collapsed.some((m) => m.role === "assistant");
 
+  // Guion por etapa + ejemplos del banco + prueba A/B del primer mensaje (va al final del prompt).
+  const pedidoReciente = pedidoRecienteRows[0];
+  const tienePedidoReciente = Boolean(
+    pedidoReciente?.createdAt && Date.now() - new Date(pedidoReciente.createdAt).getTime() < 30 * 86_400_000
+  );
+  const guion = renderGuionVenta({
+    conversationId: conversation.id,
+    historial: collapsed,
+    tienePedido: tienePedidoReciente,
+    productoAnuncio: productoDelAnuncio(conversation.metadata),
+  });
+
+  // Seguimiento con hora: si el cliente promete volver ("en 20 min te paso los datos"),
+  // queda un recordatorio que el barrido envía una sola vez si no vuelve.
+  if (!tienePedidoReciente) {
+    const ultimoUsuario = [...collapsed].reverse().find((m) => m.role === "user");
+    const textoUltimo = typeof ultimoUsuario?.content === "string" ? ultimoUsuario.content : "";
+    await registrarPromesaSiAplica(contact.id, conversation.id, textoUltimo).catch((err) =>
+      console.warn("[agent] no se pudo registrar el seguimiento:", err instanceof Error ? err.message : err)
+    );
+  }
+
   const llmMessages: OpenAI.Chat.Completions.ChatCompletionMessageParam[] = [
     {
       role: "system",
       content:
         renderSystemPrompt(config.systemPrompt, { channel: conversation.provider === "simulador" ? "simulador" : channel }) +
         contexto +
-        renderOrigenAnuncio(conversation.metadata, yaRespondio) +
+        renderOrigenAnuncio(conversation.metadata, yaRespondio, guion.variante === "B") +
         (yaRespondio
           ? "\n\n# ESTADO DEL CHAT: CONVERSACIÓN EN CURSO (PROHIBIDO SALUDAR DE NUEVO Y PROHIBIDO REPETIR TABLA DE PRECIOS)\nYa has saludado al cliente en mensajes anteriores de este chat. ESTÁ ESTRICTAMENTE PROHIBIDO volver a decir '¡Hola', 'Hola [nombre]' o saludar de nuevo. Si ya enviaste los precios en un turno anterior, NO vuelvas a pegar la lista de precios (• 1 frasco... • 2 frascos...). Responde DIRECTAMENTE a lo que dijo o preguntó el cliente en 2 a 3 líneas cortas y naturales, como un vendedor humano por WhatsApp."
           : "") +
-        equipo,
+        equipo +
+        guion.bloque,
     },
     ...collapsed,
   ];

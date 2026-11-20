@@ -1,3 +1,5 @@
+import { nombreParaSaludo } from "@/lib/nombres";
+
 /**
  * Reglas puras del rescate de formularios abandonados (EasySell COD en alivstore.shop).
  *
@@ -157,9 +159,7 @@ export interface DatosMensajeAbandono {
 
 /** Primer nombre presentable o null (evita "WhatsApp 1234", alias con números). */
 export function primerNombre(nombre: string | null | undefined): string | null {
-  const p = (nombre ?? "").trim().split(/\s+/)[0] ?? "";
-  if (!p || /\d/.test(p) || p.length < 2 || /^(whatsapp|web|cliente|lead|desconocido)$/i.test(p)) return null;
-  return p.charAt(0).toUpperCase() + p.slice(1).toLowerCase();
+  return nombreParaSaludo(nombre);
 }
 
 /**

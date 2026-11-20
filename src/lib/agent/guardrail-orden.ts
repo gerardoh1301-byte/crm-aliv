@@ -139,10 +139,16 @@ export function validarRespuestaBotContraOrden(
       texto
     );
 
-  // 2. Si NO tiene orden activa pero el bot afirma un saldo restante o datos de un pedido supuesto
+  // 2. Si NO tiene orden activa pero el bot afirma un saldo restante o una clave de un pedido supuesto.
+  // En plena venta es normal decir "te dejo tu pedido separado: 2 tobilleras por S/139" o explicar
+  // "adelanto de S/20 y el saldo lo pagas cuando llegue": eso NO se bloquea (antes se bloqueaba y
+  // el cliente recibía "un asesor revisará tu pedido" a mitad del cierre). Solo se bloquea un monto
+  // de saldo concreto ("saldo de S/169", "te faltan S/99") o la mención de liberar una clave.
+  const afirmaSaldoConcreto =
+    /(saldo(?:\s+(?:restante|pendiente))?|resta(?:n)?(?:\s+pagar)?|restar[ií]a|te\s+falta(?:n)?|queda(?:n)?\s+(?:un\s+saldo\s+)?(?:de|por\s+pagar))[^.\n]{0,30}?S\/\s*\d+/i.test(texto) ||
+    /(liberar\s+tu\s+clave|clave\s+de\s+(?:recojo|retiro))[^.\n]*S\/\s*\d+|S\/\s*\d+[^.\n]*(liberar\s+tu\s+clave|clave\s+de\s+(?:recojo|retiro))/i.test(texto);
   if (!ordenActiva && hablaDePedidoOSaldo && !esListadoCatalogo) {
-    const mencionaMontoEspecifico = /S\/\s*\d+(?:\.\d{1,2})?/i.test(texto);
-    if (mencionaMontoEspecifico) {
+    if (afirmaSaldoConcreto) {
       return {
         bloqueado: true,
         requiereHumano: true,

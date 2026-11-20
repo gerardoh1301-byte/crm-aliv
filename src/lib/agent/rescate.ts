@@ -1,4 +1,5 @@
 import "server-only";
+import { nombreParaSaludo } from "@/lib/nombres";
 import { mostrarNumeroOrden } from "@/lib/pedidos/numero-formato";
 import { db } from "@/db";
 import { activities, contacts, conversations, deals, messages, pipelineStages } from "@/db/schema";
@@ -214,8 +215,7 @@ export function determinarEscenarioRescate(
     };
   }
 
-  const nombre = (contact.name || "hola").split(" ")[0].trim();
-  const nombreLimpio = nombre && nombre.toLowerCase() !== "desconocido" && nombre.toLowerCase() !== "lead" ? nombre : "";
+  const nombreLimpio = nombreParaSaludo(contact.name) ?? "";
   const saludo = nombreLimpio ? `¡Hola ${nombreLimpio}!` : "¡Hola!";
 
   const bodyUltimo = (ultimoMensaje.body || "").toLowerCase();
@@ -755,7 +755,7 @@ export async function auditarChatsAbandonados(opts?: { limite?: number; forzarHo
         continue;
       }
 
-      const nombreCliente = (c.contactName || "estimado(a)").trim().split(/\s+/)[0] || "estimado(a)";
+      const nombreCliente = nombreParaSaludo(c.contactName) ?? "estimado(a)";
       const prodRescate = detectarProductoRescate(contexto);
 
       // Primer toque: auditoría contextual con IA. Segundo toque: mensaje corto y fijo
@@ -767,7 +767,7 @@ export async function auditarChatsAbandonados(opts?: { limite?: number; forzarHo
           continue;
         }
       } else {
-        const nombreReal = /\d/.test(nombreCliente) || /^(estimado|whatsapp|web)/i.test(nombreCliente) ? null : nombreCliente;
+        const nombreReal = nombreParaSaludo(c.contactName);
         evaluacionFinal = {
           ...evaluacion,
           mensajeRescate: mensajeSegundoToque(evaluacion.escenario!, nombreReal, prodRescate),

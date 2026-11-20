@@ -1,6 +1,7 @@
 import "server-only";
 import { sql } from "drizzle-orm";
 import { db } from "@/db";
+import { varianteAB } from "@/lib/agent/guion-venta";
 
 /**
  * Metricas del CRM para el panel de crecimiento del sistema integrado (Claude lee esto
@@ -280,6 +281,8 @@ export async function calcularMetricas({ desde, hasta }: RangoMetricas) {
     return { tipo, texto };
   });
 
+  const embudo = await calcularEmbudoChat(ini, fin);
+
   const d = demoraWebhook[0] ?? {};
   const a = respuestaAgente[0] ?? {};
   const j = jobs[0] ?? {};
@@ -315,6 +318,7 @@ export async function calcularMetricas({ desde, hasta }: RangoMetricas) {
       cerrados_sin_compra: num(sg.cerrados),
       errores_envio: num(sg.errores),
     },
+    embudo_chat: embudo,
     rescate_chats: {
       primer_toque: num(sg.rescate_toque1),
       segundo_toque: num(sg.rescate_toque2),
@@ -352,5 +356,71 @@ export async function calcularMetricas({ desde, hasta }: RangoMetricas) {
       bot_activo: Boolean(r.ai_enabled),
       ultimo_mensaje: r.ultimo_mensaje,
     })),
+  };
+}
+
+/**
+ * Embudo de los chats que empezaron en el rango (plan de entrenamiento del bot, paso 7):
+ * cuántos recibieron respuesta del bot, cuántos siguieron después del primer mensaje,
+ * a cuántos se les cotizó, a cuántos se les pidió datos y cuántos terminaron en pedido
+ * (dentro de 7 días). Separado por variante de la prueba A/B del primer mensaje y por largo
+ * del primer mensaje. Sin datos personales.
+ */
+async function calcularEmbudoChat(ini: ReturnType<typeof sql>, fin: ReturnType<typeof sql>) {
+  const rows = await filas(sql`
+    with conv as (
+      select c.id, c.contact_id, c.created_at
+      from conversations c
+      where c.created_at >= ${ini} and c.created_at < ${fin} and c.provider <> 'simulador'
+    ),
+    base as (
+      select conv.id, conv.contact_id,
+        (select min(m.created_at) from messages m where m.conversation_id = conv.id and m.direction = 'in') as t_in,
+        (select m.body from messages m where m.conversation_id = conv.id and m.direction = 'out'
+           and m.origin = 'agent' order by m.created_at limit 1) as primer_bot,
+        (select min(m.created_at) from messages m where m.conversation_id = conv.id and m.direction = 'out'
+           and m.origin = 'agent') as t_bot
+      from conv
+    )
+    select b.id,
+      char_length(coalesce(b.primer_bot, '')) as largo_primer,
+      (b.t_bot is not null) as bot_respondio,
+      exists(select 1 from messages m where m.conversation_id = b.id and m.direction = 'in' and m.created_at > b.t_bot) as siguio,
+      exists(select 1 from messages m where m.conversation_id = b.id and m.direction = 'out'
+        and m.body ~* 'S/ ?(79|119|139|189|199)') as cotizado,
+      exists(select 1 from messages m where m.conversation_id = b.id and m.direction = 'out'
+        and m.body ~* '(direcci[oó]n|referencia|dni|adelanto de s/ ?20|agencia shalom)') as pidio_datos,
+      exists(select 1 from pedidos_ordenes p where p.contact_id = b.contact_id
+        and p.created_at >= b.t_in and p.created_at < b.t_in + interval '7 days') as pedido
+    from base b
+    where b.t_in is not null`);
+
+  type Cuenta = { chats: number; bot_respondio: number; siguio: number; cotizado: number; pidio_datos: number; pedido: number };
+  const vacia = (): Cuenta => ({ chats: 0, bot_respondio: 0, siguio: 0, cotizado: 0, pidio_datos: 0, pedido: 0 });
+  const total = vacia();
+  const porVariante: Record<string, Cuenta> = { A: vacia(), B: vacia() };
+  const porLargo: Record<string, Cuenta> = { "hasta_350": vacia(), "351_a_700": vacia(), "mas_de_700": vacia() };
+  for (const r of rows) {
+    const largo = num(r.largo_primer);
+    const grupos = [total, porVariante[varianteAB(String(r.id), "on")]];
+    if (r.bot_respondio) grupos.push(porLargo[largo <= 350 ? "hasta_350" : largo <= 700 ? "351_a_700" : "mas_de_700"]);
+    for (const g of grupos) {
+      g.chats++;
+      if (r.bot_respondio) g.bot_respondio++;
+      if (r.siguio) g.siguio++;
+      if (r.cotizado) g.cotizado++;
+      if (r.pidio_datos) g.pidio_datos++;
+      if (r.pedido) g.pedido++;
+    }
+  }
+  const tasa = (c: Cuenta) => ({ ...c, conversion_pct: c.chats ? Math.round((c.pedido / c.chats) * 1000) / 10 : 0 });
+  return {
+    total: tasa(total),
+    prueba_ab_primer_mensaje: {
+      nota: "B = primer mensaje corto (≤ 350 caracteres). Vigente desde el despliegue del 19/11/2026; antes de esa fecha la división es solo de referencia. Con menos de ~150 chats por variante la diferencia no es concluyente.",
+      A: tasa(porVariante.A),
+      B: tasa(porVariante.B),
+    },
+    por_largo_primer_mensaje: Object.fromEntries(Object.entries(porLargo).map(([k, v]) => [k, tasa(v)])),
   };
 }

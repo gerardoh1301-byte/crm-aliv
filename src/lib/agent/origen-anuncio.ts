@@ -65,7 +65,7 @@ const PRIMERA_RESPUESTA: Record<ProductoAnuncio, string> = {
  * anuncio. La instruccion de "primera respuesta" solo va mientras el agente no haya
  * respondido nada en este hilo; despues queda solo como dato de contexto.
  */
-export function renderOrigenAnuncio(metadata: unknown, agenteYaRespondio: boolean): string {
+export function renderOrigenAnuncio(metadata: unknown, agenteYaRespondio: boolean, primeraCorta = false): string {
   if (!metadata || typeof metadata !== "object") return "";
   const md = metadata as Record<string, unknown>;
   const titular = texto(md.ctwa_headline) || texto(md.meta_ad_title);
@@ -80,7 +80,16 @@ export function renderOrigenAnuncio(metadata: unknown, agenteYaRespondio: boolea
   ];
   if (producto) {
     partes.push(`- Producto del anuncio: ${producto === "termix" ? "Termix Tobillera" : "NAC600 + NAD+"}`);
-    if (!agenteYaRespondio) partes.push("", PRIMERA_RESPUESTA[producto]);
+    if (!agenteYaRespondio) {
+      // Variante B de la prueba A/B: el guion de venta pide una primera respuesta corta; aquí
+      // solo queda el dato del producto para no contradecirla con el folleto largo.
+      partes.push(
+        "",
+        primeraCorta
+          ? "El cliente escribio desde este anuncio: NO le preguntes que producto le interesa, ya lo sabes. Sigue el GUION PARA ESTE MENSAJE del final."
+          : PRIMERA_RESPUESTA[producto]
+      );
+    }
   }
   return partes.join("\n");
 }
