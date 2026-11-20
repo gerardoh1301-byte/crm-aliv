@@ -841,8 +841,21 @@ function normalizarDireccionClave(dir: string): string {
  * Construye el padrón maestro combinando las agencias curadas con el directorio
  * oficial de más de 500 agencias de Shalom a nivel nacional en todo el Perú.
  */
+/**
+ * Agencias curadas a mano que NO están en el padrón oficial de Shalom (revisado el 20/11).
+ * "pucallpa-centenario" (Av. Centenario Km 4.2) se le propuso a un cliente y su pedido
+ * salió a otra sede. No se proponen más; esas ciudades quedan cubiertas por sus sedes
+ * oficiales.
+ */
+export const CURADAS_SIN_PADRON_OFICIAL = new Set([
+  "sullana-jose-de-lama", "talara-centro", "chiclayo-bolognesi", "arequipa-bustamante", "arequipa-cayma",
+  "nazca-centro", "ilo-puerto", "moquegua-centro", "cajamarca-evitamiento", "jaen-pakamuros",
+  "tingo-maria-raimondi", "moyobamba-centro", "pucallpa-centenario", "ayacucho-caceres", "abancay-arenas",
+  "andahuaylas-centro", "puerto-maldonado-centro", "huacho-28-julio",
+]);
+
 function construirPadronCompleto(): AgenciaShalom[] {
-  const padron: AgenciaShalom[] = AGENCIAS_CURADAS.map((ag) => ({
+  const padron: AgenciaShalom[] = AGENCIAS_CURADAS.filter((ag) => !CURADAS_SIN_PADRON_OFICIAL.has(ag.id)).map((ag) => ({
     ...ag,
     curada: true,
   }));
@@ -951,6 +964,10 @@ export function buscarAgenciaShalomCercana(params: {
     // 2. Coincidencia con distrito específico (alta prioridad para no enviar al centro a quien vive en otro distrito)
     const matchDistrito =
       (distritoNorm && (contienePalabra(agDist, distritoNorm) || contienePalabra(distritoNorm, agDist))) ||
+      // En el padrón oficial el distrito real suele estar en la zona ("CAYMA"), no en el
+      // campo distrito (que es el nombre de la sede: "AV CHARCANI").
+      (distritoNorm.length >= 4 && agZona.length >= 4 && agZona !== ciudadNorm &&
+        (contienePalabra(agZona, distritoNorm) || contienePalabra(distritoNorm, agZona))) ||
       (agDist.length >= 4 && agDist !== agCiudad && todoJunto.includes(agDist));
     if (matchDistrito) {
       score += 60;
@@ -1072,4 +1089,127 @@ export function buscarAgenciaShalomCercana(params: {
     ciudadDetectada: params.ciudad || mejorOpcion.provincia || mejorOpcion.departamento,
     todasDeCiudad: hayMultiples ? todasDeCiudad : [mejorOpcion],
   };
+}
+
+// ---------------------------------------------------------------------------
+// Resolución estricta: ¿la agencia que dio el cliente existe en el directorio oficial?
+
+/** Palabras que no identifican una calle concreta. */
+const PALABRAS_GENERICAS = new Set([
+  "avenida", "jiron", "calle", "carretera", "ctra", "mza", "lote", "pasaje", "psje", "sector",
+  "agencia", "shalom", "frente", "costado", "altura", "cuadra", "cdra", "entre", "esquina",
+  "asentamiento", "humano", "urbanizacion", "peru", "norte", "oeste", "centro", "principal",
+  "prolongacion", "espalda", "cerca", "local", "tienda", "oficina", "sede",
+]);
+
+/** Vías con dos nombres en la misma ciudad (en Pucallpa, Av. Centenario = Carretera Federico Basadre). */
+const SINONIMOS_VIA: Array<{ zona: RegExp; nombres: string[] }> = [
+  { zona: /pucallpa|yarinacocha|ucayali|coronel portillo|calleria|manantay/, nombres: ["centenario", "federico basadre"] },
+];
+
+function kilometros(texto: string | null | undefined): number[] {
+  const out: number[] = [];
+  const re = /km\.?\s*(\d+(?:[.,]\d+)?)/gi;
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(texto || ""))) {
+    const n = Number(m[1].replace(",", "."));
+    if (Number.isFinite(n)) out.push(n);
+  }
+  return out;
+}
+
+export interface ResolucionAgenciaOficial {
+  /** La agencia del padrón OFICIAL de Shalom que corresponde, o null si no hay una sola segura. */
+  agencia: AgenciaShalom | null;
+  /** Opciones reales (padrón oficial) para preguntarle al cliente cuando no hay certeza. */
+  opciones: AgenciaShalom[];
+  motivo: "exacta" | "no_encontrada" | "ambigua" | "km_distinto";
+}
+
+/**
+ * Padrón oficial de Shalom (569 sedes) con el nombre de la sede tal como sale en la guía
+ * ("YARINACOCHA CENTRO", "ICA AV. JJ ELIAS"). Las agencias curadas a mano no cuentan: una
+ * de ellas ("Av. Centenario Km 4.2", Pucallpa) no existe en el padrón y mandó mal un pedido.
+ */
+const PADRON_OFICIAL: AgenciaShalom[] = AGENCIAS_SHALOM_OFICIALES.map((o) => ({
+  id: o.id,
+  nombre: `Shalom ${capitalizarPalabra(o.distrito || o.zona || o.provincia)}`,
+  departamento: capitalizarPalabra(o.departamento),
+  provincia: capitalizarPalabra(o.provincia),
+  distrito: capitalizarPalabra(o.distrito),
+  direccion: o.direccion,
+  referencia: o.referencia,
+  horario: o.horario,
+  coincidencias: o.coincidencias || [],
+  zona: o.zona,
+}));
+
+/** Texto canónico para guardar en el pedido: "Agencia Shalom <sede> (<dirección> · ref: ...)". */
+export function textoAgenciaOficial(ag: AgenciaShalom): string {
+  const ref = (ag.referencia || "").replace(/^[\s:]+/, "").trim();
+  return `Agencia ${ag.nombre} (${ag.direccion.trim()}${ref ? ` · ref: ${ref}` : ""})`;
+}
+
+/**
+ * Decide si lo que dijo el cliente ("Av. Centenario Km 6.800", "Shalom Yarinacocha Centro",
+ * "agencia de Cutervo") corresponde a UNA sede del padrón oficial. Exige que coincida la
+ * calle, la referencia o el nombre de la sede (no basta la ciudad) y, si ambos dan
+ * kilómetro, que sea el mismo: "Centenario Km 4.2" no es la sede del Km 6.800.
+ */
+export function resolverAgenciaOficial(params: {
+  texto: string | null | undefined;
+  ciudad?: string | null;
+}): ResolucionAgenciaOficial {
+  const crudo = `${params.texto || ""} ${params.ciudad || ""}`;
+  let norm = ` ${normalizarTexto(crudo)} `;
+  for (const s of SINONIMOS_VIA) {
+    if (s.zona.test(norm) && s.nombres.some((n) => norm.includes(n))) norm += ` ${s.nombres.join(" ")} `;
+  }
+  const kmCliente = kilometros(params.texto);
+  const ciudadNorm = normalizarTexto(params.ciudad);
+  const palabrasCiudad = ciudadNorm.split(" ").filter((w) => w.length >= 4);
+
+  // Sedes de la zona: la ciudad del cliente aparece en su ubicación oficial.
+  const enZona = PADRON_OFICIAL.filter((ag) => {
+    const ubic = ` ${normalizarTexto([ag.departamento, ag.provincia, ag.zona, ag.distrito, ag.direccion].join(" "))} `;
+    return palabrasCiudad.length ? palabrasCiudad.some((w) => ubic.includes(` ${w} `)) : true;
+  });
+
+  let kmDistinto = false;
+  const evaluadas = enZona
+    .map((ag) => {
+      const lugar = new Set(
+        [ag.zona, ag.provincia, ag.departamento, params.ciudad].flatMap((t) => normalizarTexto(t).split(" ")).filter(Boolean)
+      );
+      const sede = normalizarTexto(ag.distrito);
+      const distintivas = normalizarTexto(`${ag.direccion} ${ag.referencia || ""} ${sede}`)
+        .split(" ")
+        .filter((w) => w.length >= 4 && !/\d/.test(w) && !PALABRAS_GENERICAS.has(w) && !lugar.has(w));
+      const coincideCalle = distintivas.some((w) => norm.includes(` ${w} `));
+      const coincideSede = sede.split(" ").length >= 2 && norm.includes(` ${sede} `);
+
+      const kmAgencia = kilometros(`${ag.direccion} ${ag.referencia || ""}`);
+      // Si el cliente dio un kilómetro, la sede tiene que estar en ese mismo kilómetro.
+      const kmOk = !kmCliente.length || kmCliente.some((k) => kmAgencia.some((a) => Math.abs(a - k) < 0.05));
+      if ((coincideCalle || coincideSede) && !kmOk) kmDistinto = true;
+
+      const tokensNumericos = normalizarTexto(ag.direccion)
+        .split(" ")
+        .filter((w) => /\d/.test(w) && /[a-z]/.test(w) && w.length >= 2);
+      const desempate =
+        distintivas.filter((w) => norm.includes(` ${w} `)).length +
+        tokensNumericos.filter((t) => norm.includes(` ${t} `)).length * 2 +
+        (coincideSede ? 3 : 0) +
+        (kmCliente.length && kmAgencia.length && kmOk ? 3 : 0);
+      return { ag, segura: (coincideCalle || coincideSede) && kmOk, desempate };
+    })
+    .filter((e) => e.segura)
+    .sort((a, b) => b.desempate - a.desempate);
+
+  const opciones = (evaluadas.length ? evaluadas.map((e) => e.ag) : enZona).slice(0, 6);
+  if (evaluadas.length === 1 || (evaluadas.length > 1 && evaluadas[0].desempate > evaluadas[1].desempate)) {
+    return { agencia: evaluadas[0].ag, opciones, motivo: "exacta" };
+  }
+  if (evaluadas.length > 1) return { agencia: null, opciones, motivo: "ambigua" };
+  return { agencia: null, opciones: palabrasCiudad.length ? opciones : [], motivo: kmDistinto ? "km_distinto" : "no_encontrada" };
 }

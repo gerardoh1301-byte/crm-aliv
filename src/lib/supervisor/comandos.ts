@@ -36,13 +36,16 @@ export function esSupervisorPagos(phone: string | null | undefined): boolean {
   return d === SUPERVISOR_PAGOS || d === `51${SUPERVISOR_PAGOS}`;
 }
 
-type Accion = "pago" | "flete" | "entregado" | "enviar_clave";
+type Accion = "pago" | "flete" | "entregado" | "enviar_clave" | "guia";
 
 interface Pendiente {
   accion: Accion;
   pedidoId: string;
   numeroOrden: string;
   monto: number | null;
+  guia?: string;
+  codigo?: string;
+  destino?: string;
   creado: number;
 }
 
@@ -262,6 +265,7 @@ const AYUDA = [
   "• *clave 1140* → te muestro la clave de retiro (solo si el saldo está pagado)",
   "• *entregado 1140* → marca el pedido como entregado",
   "• *estado 1140* → resumen del pedido",
+  "• *guia 1066 104169999 AB12* → registra la guía nueva (por ejemplo tras un cambio de destino)",
   "Antes de cambiar algo te pido confirmar con *SI 1140*. Para mandar la clave al cliente: *ENVIAR 1140*. *NO* cancela.",
   "Si no pones número, uso el pedido de la última alerta.",
 ].join("\n");
@@ -371,6 +375,36 @@ async function proponer(
     ].join("\n");
   }
 
+  if (cmd.tipo === "guia") {
+    if (!cmd.guia || !cmd.codigo) {
+      return `Escribe el número de orden Shalom y el código, por ejemplo: «guia ${n} 104169999 AB12».`;
+    }
+    const { consultarEstadoShalom } = await import("@/lib/agencias/shalom-rastreo");
+    const rastro = await consultarEstadoShalom(cmd.guia, cmd.codigo);
+    if (!rastro.ok) {
+      return `⚠️ Shalom no reconoce la orden ${cmd.guia} con el código ${cmd.codigo}${rastro.mensaje ? ` (${rastro.mensaje})` : ""}. Revisa los datos; no se cambió nada.`;
+    }
+    const destino = rastro.agenciaDestino || "-";
+    await guardarPendiente({
+      accion: "guia",
+      pedidoId: p.id,
+      numeroOrden: p.numeroOrden,
+      monto: null,
+      guia: cmd.guia,
+      codigo: cmd.codigo,
+      destino,
+    });
+    return [
+      `📦 *${encabezado(p)}* (estado: ${p.estado})`,
+      `Guía actual: ${datosRastreo(p)}`,
+      `Guía nueva: orden ${cmd.guia} · código ${cmd.codigo} · destino Shalom: *${destino}*${rastro.ciudadDestino ? ` (${rastro.ciudadDestino})` : ""}`,
+      p.estado === "entregado" ? "El pedido vuelve a *En camino* (no estaba entregado de verdad)." : null,
+      `Responde *SI ${n}* para registrarla o *NO*.`,
+    ]
+      .filter(Boolean)
+      .join("\n");
+  }
+
   if (cmd.tipo === "entregado") {
     if (p.estado === "entregado") return `${encabezado(p)} ya figura como entregado.`;
     await guardarPendiente({ accion: "entregado", pedidoId: p.id, numeroOrden: p.numeroOrden, monto: null });
@@ -432,6 +466,44 @@ async function ejecutarPendiente(cmd: Comando, conversationId: string): Promise<
     );
     if (!res.ok) return `❌ No se pudo registrar: ${res.error}`;
     return `✅ Flete de ${soles(pend.monto)} registrado en ${encabezado(p)} y enviado al ERP.`;
+  }
+
+  if (pend.accion === "guia" && pend.guia && pend.codigo) {
+    // Las marcas de aviso eran de la guía vieja: se quitan para que la nueva tenga sus avisos.
+    const notasLimpias = (p.notas || "")
+      .split("\n")
+      .filter((l) => !/\[(AVISO_LLEGADA_ENVIADO|ENVIO_CONFIRMADO_AVISADO)/i.test(l))
+      .join("\n");
+    const marca = `[GUIA_NUEVA:${pend.guia}/${pend.codigo} antes=${p.numeroGuia || "-"}/${p.codigoRastreo || "-"}]`;
+    const volvioAEnCamino = p.estado === "entregado";
+    await db
+      .update(pedidosOrdenes)
+      .set({
+        numeroGuia: pend.guia,
+        codigoRastreo: pend.codigo,
+        ...(pend.destino && pend.destino !== "-" ? { direccionEnvio: `Agencia Shalom ${pend.destino}` } : {}),
+        ...(volvioAEnCamino ? { estado: "enviado" as const } : {}),
+        notas: notasLimpias ? `${notasLimpias}\n${marca}` : marca,
+        updatedAt: new Date(),
+      })
+      .where(eq(pedidosOrdenes.id, p.id));
+    if (volvioAEnCamino && p.contactId) {
+      const { sincronizarEtapaPipeline } = await import("@modules/pedidos/servidor");
+      const producto = p.items?.[0]?.titulo ?? "Pedido Aliv";
+      await sincronizarEtapaPipeline(p.contactId, "enviado", `${p.numeroOrden} · ${producto}`, Number(p.total) || 0, p.id, p.dealId);
+    }
+    await nota(
+      p,
+      `[GUIA NUEVA] ${AUTOR} registró la guía ${pend.guia} (código ${pend.codigo}) hacia Shalom ${pend.destino || "-"}; antes ${p.numeroGuia || "-"}.`
+    );
+    if (p.dealId) notificarCambioDealAlErp(p.dealId).catch(() => {});
+    return [
+      `✅ Guía nueva registrada en ${encabezado(p)}: orden ${pend.guia} · código ${pend.codigo} → ${pend.destino || "-"}.`,
+      volvioAEnCamino ? "El pedido volvió a *En camino* en el pipeline." : null,
+      "El CRM seguirá esta guía y le avisará al cliente cuando llegue.",
+    ]
+      .filter(Boolean)
+      .join("\n");
   }
 
   if (pend.accion === "entregado") {

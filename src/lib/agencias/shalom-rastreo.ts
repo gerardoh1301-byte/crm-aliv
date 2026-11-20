@@ -41,6 +41,11 @@ export interface ResultadoRastreoShalom {
   enDestinoListoParaRecojo: boolean;
   yaEntregado: boolean;
   /**
+   * La guía se cerró por un CAMBIO DE DESTINO (Shalom la marca "entregada" a un cliente
+   * llamado "CAMBIO DE DESTINO" y emite una guía nueva). NO es una entrega real.
+   */
+  cambioDeDestino?: boolean;
+  /**
    * true cuando la agencia de origen ya recibió el paquete (el almacén lo dejó y Shalom lo
    * confirmó). Mientras es solo preguía, Shalom devuelve `origen: null` y Págalo responde
    * "Su envío aún no ha sido confirmado".
@@ -129,7 +134,8 @@ export async function consultarEstadoShalom(
     const rawEst: DetalleEstadosShalom = dataEstados.data || {};
 
     const destinoLlego = Boolean(rawEst.destino?.completo);
-    const entregado = Boolean(rawGuia.entregado || rawEst.entregado);
+    const cambioDeDestino = esCambioDeDestino(rawEst);
+    const entregado = !cambioDeDestino && Boolean(rawGuia.entregado || rawEst.entregado);
     const enDestinoListo = destinoLlego && !entregado;
 
     let estadoGeneral: ResultadoRastreoShalom["estadoGeneral"] = "en_transito";
@@ -148,6 +154,7 @@ export async function consultarEstadoShalom(
       estadoGeneral,
       enDestinoListoParaRecojo: enDestinoListo,
       yaEntregado: entregado,
+      cambioDeDestino,
       confirmadoEnOrigen: Boolean(rawEst.origen || rawEst.transito || rawEst.destino || entregado),
       fechaConfirmacion: rawEst.origen?.fecha,
       tipoPago: rawGuia.tipo_pago,
@@ -230,4 +237,14 @@ export function textoRastreoShalom(numeroGuia: string | null, codigoRastreo: str
     return `N° de orden ${numeroGuia}, pero falta el codigo de seguimiento: no lo inventes; di que un asesor se lo envia y deriva.`;
   }
   return `Dale AMBOS datos: N° de orden ${numeroGuia} y codigo ${codigoRastreo}, para rastrear en https://shalom.com.pe/rastrea/ o la app de Shalom. La clave de recojo de 4 digitos NO se entrega aqui.`;
+}
+
+/**
+ * Shalom cierra la guía original como "entregada" al redirigir el paquete a otra agencia:
+ * el receptor figura como "CAMBIO DE DESTINO" (DNI ficticio) y la entrega no queda
+ * completa. Visto el 20/11 con la guía 104169133 (#LEG-1066).
+ */
+export function esCambioDeDestino(estados: DetalleEstadosShalom | null | undefined): boolean {
+  const nombre = estados?.entregado?.cliente?.nombre || "";
+  return /cambio\s+de\s+destino/i.test(nombre);
 }

@@ -786,7 +786,7 @@ const tools: ToolModulo[] = [
       const totalSoles = subtotales.reduce((acc, s) => acc + s, 0);
       const ciudad = String(args.ciudad ?? "Lima").trim();
       const distrito = args.distrito ? String(args.distrito).trim() : null;
-      const direccionEnvio = String(args.direccion_envio ?? "").trim();
+      let direccionEnvio = String(args.direccion_envio ?? "").trim();
       const dniCliente = args.dni_cliente ? String(args.dni_cliente).trim() : null;
       let modalidadPago =
         typeof args.modalidad_pago === "string" ? args.modalidad_pago : "contraentrega";
@@ -838,20 +838,26 @@ const tools: ToolModulo[] = [
       const esProvinciaChat = esProvinciaPorDestino || modalidadPago === "adelanto_agencia";
       // Provincia: el envío va a una agencia Shalom concreta. Una dirección de calle no sirve
       // para emitir la guía; el bot debe confirmar la agencia antes de registrar.
-      if (esProvinciaChat && !/shalom|agencia/i.test(direccionEnvio)) {
-        const { buscarAgenciaShalomCercana } = await import("@/lib/agencias/shalom-directorio");
-        const r = buscarAgenciaShalomCercana({ ciudad, distrito, direccion: direccionEnvio });
-        const opciones = [r.mejorOpcion, ...r.otrasOpciones]
-          .filter((a): a is NonNullable<typeof a> => Boolean(a))
-          .slice(0, 4)
-          .map((a) => `${a.nombre} (${a.direccion})`);
-        return {
-          ok: false,
-          error:
-            "Pedido de provincia sin agencia Shalom confirmada. Antes de registrar, confirma con el cliente a qué agencia Shalom se envía" +
-            (opciones.length ? `. Opciones cercanas: ${opciones.join("; ")}` : " (pregúntale cuál le queda más cerca)") +
-            ". Luego vuelve a registrar con direccion_envio = \"Agencia Shalom <nombre>\".",
-        };
+      // Tiene que ser una sede del padrón OFICIAL de Shalom (no basta escribir "Agencia
+      // Shalom ..."): #LEG-1066 se registró con una agencia que no existe y la guía salió a
+      // otra sede. Se guarda con el nombre y la dirección oficiales.
+      if (esProvinciaChat) {
+        const { resolverAgenciaOficial, textoAgenciaOficial } = await import("@/lib/agencias/shalom-directorio");
+        const r = resolverAgenciaOficial({ texto: [direccionEnvio, distrito].filter(Boolean).join(" "), ciudad });
+        if (!r.agencia) {
+          const opciones = r.opciones
+            .slice(0, 5)
+            .map((a) => `${a.nombre} (${a.direccion.trim()}${a.referencia ? ` - ref: ${a.referencia.replace(/^[\s:]+/, "")}` : ""})`);
+          return {
+            ok: false,
+            error:
+              "Pedido de provincia sin una agencia Shalom del padrón oficial. NO lo registres todavía ni digas que quedó registrado. " +
+              "Pregúntale al cliente a qué sede oficial se envía" +
+              (opciones.length ? `: ${opciones.join("; ")}` : " (pídele ciudad y dirección o referencia de la agencia)") +
+              ". Cuando confirme, vuelve a registrar con direccion_envio = el nombre y la dirección de esa sede.",
+          };
+        }
+        direccionEnvio = textoAgenciaOficial(r.agencia);
       }
       const estadoInicial = esProvinciaChat ? "por_confirmar_cod" : "confirmado";
       const dealId = await sincronizarEtapaPipeline(

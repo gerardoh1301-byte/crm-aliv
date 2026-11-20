@@ -46,7 +46,9 @@ export type TipoSituacionCritica =
   | "pedido_shopify"
   | "guardrail_bloqueo"
   | "bot_sin_respuesta"
-  | "shalom_envio_confirmado";
+  | "shalom_envio_confirmado"
+  | "cambio_agencia_con_guia"
+  | "shalom_cambio_destino";
 
 export interface AlertaSupervisorInput {
   tipo: TipoSituacionCritica;
@@ -71,6 +73,8 @@ const TITULOS_ALERTA: Record<TipoSituacionCritica, string> = {
   guardrail_bloqueo: "🛑 Respuesta del bot bloqueada (clave o monto)",
   bot_sin_respuesta: "🔇 El bot no pudo responder",
   shalom_envio_confirmado: "✅ Envío confirmado en Shalom · ya puedes pagarlo",
+  cambio_agencia_con_guia: "🔀 Cliente pide otra agencia y la guía ya salió",
+  shalom_cambio_destino: "🔀 Shalom registró un cambio de destino · registra la guía nueva",
 };
 
 /** Tipos que pueden repetirse en ráfaga (p. ej. Gemini caído): un aviso por chat cada 30 min. */

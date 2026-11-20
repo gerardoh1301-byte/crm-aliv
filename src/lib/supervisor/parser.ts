@@ -19,7 +19,8 @@ export type TipoComando =
   | "flete"
   | "pago"
   | "entregado"
-  | "estado";
+  | "estado"
+  | "guia";
 
 export interface TokenNumero {
   /** Texto tal cual, sin el #: "1140", "LEG-1049", "179.50". */
@@ -38,6 +39,9 @@ export interface Comando {
   nombre: string | null;
   /** "pago completo" / "pagó todo": cubre el saldo sin decir el monto. */
   completo: boolean;
+  /** Orden «guia»: número de orden Shalom (8-10 cifras) y código alfanumérico. */
+  guia?: string | null;
+  codigo?: string | null;
 }
 
 const PALABRAS_RELLENO = new Set([
@@ -106,6 +110,19 @@ export function interpretarComando(texto: string | null | undefined): Comando | 
   if (/^(no|cancelar|cancela|anular|anula)$/.test(n)) return comando("cancelar", n);
   if (/^(enviar|envia|enviala|mandale|mandar)\b/.test(n) && /\d{3,}/.test(n)) return comando("enviar_clave", n);
   if (/^(estado|como va|donde esta|info)\b/.test(n)) return comando("estado", n);
+  if (/^(guia|nueva guia)\b/.test(n)) {
+    const c = comando("guia", n);
+    const guia = c.numeros.find((t) => /^\d{8,10}$/.test(t.texto)) ?? null;
+    c.numeros = c.numeros.filter((t) => t !== guia);
+    c.guia = guia?.texto ?? null;
+    c.codigo =
+      n
+        .split(" ")
+        .find((w) => /^[a-z0-9]{4}$/.test(w) && /[a-z]/.test(w) && !["guia", "nueva", "orden"].includes(w))
+        ?.toUpperCase() ?? null;
+    c.nombre = null;
+    return c;
+  }
   if (/\bclave\b/.test(n)) return comando("clave", n);
   if (/\bflete\b/.test(n)) return comando("flete", n);
   if (/\b(entregado|entregada|recogio|ya recogio|lo recogio)\b/.test(n) && !/\bpag/.test(n)) {

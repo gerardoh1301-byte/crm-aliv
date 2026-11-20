@@ -248,6 +248,52 @@ export async function verificarYNotificarLlegadasShalom(
     const nombreLimpio = (c.contactName || "Cliente").split(" ")[0].trim();
     const agenciaNombre = rastro.agenciaDestino || c.ciudad || "Provincia";
 
+    // CASO -1: Shalom redirigió el paquete a otra agencia. La guía vieja figura "entregada"
+    // a un cliente llamado "CAMBIO DE DESTINO", pero el paquete NO se entregó: hay una guía
+    // nueva. No se marca entregado, no se le escribe al cliente y se avisa a Gerardo una vez
+    // para que registre la guía nueva (con la orden «guia» por WhatsApp o desde el CRM).
+    if (rastro.cambioDeDestino) {
+      const marcaCambio = `[CAMBIO_DESTINO_AVISADO guia=${c.numeroGuia}]`;
+      if (!(c.notasPedido || "").includes(marcaCambio) && esHorarioAlertaSupervisores()) {
+        try {
+          const { notificarSupervisoresCritico, SUPERVISOR_PAGOS } = await import("@/lib/alerts/supervisor-alerts");
+          const res = await notificarSupervisoresCritico({
+            tipo: "shalom_cambio_destino",
+            titulo: `Cambio de destino ${c.numeroOrden}`,
+            detalle:
+              `La guía ${c.numeroGuia} de ${c.numeroOrden} se cerró por CAMBIO DE DESTINO en Shalom (antes iba a ${agenciaNombre}). ` +
+              `Registra la guía nueva escribiendo: guia ${c.numeroOrden.replace(/^#/, "")} <número> <código>.`,
+            clienteNombre: c.contactName,
+            clienteTelefono: c.contactPhone,
+            contactId: c.contactId,
+            conversationId: c.convId,
+            soloA: [SUPERVISOR_PAGOS],
+          });
+          if (res.notificados > 0) {
+            c.notasPedido = c.notasPedido ? `${c.notasPedido}\n${marcaCambio}` : marcaCambio;
+            await db
+              .update(pedidosOrdenes)
+              .set({ notas: c.notasPedido, updatedAt: new Date() })
+              .where(eq(pedidosOrdenes.id, c.pedidoId));
+          }
+        } catch (errCambio) {
+          console.warn("[notificar-llegada] Error avisando cambio de destino:", errCambio);
+        }
+      }
+      detalles.push({
+        numeroOrden: c.numeroOrden,
+        cliente: c.contactName,
+        phone: c.contactPhone,
+        guia: c.numeroGuia,
+        agencia: agenciaNombre,
+        saldo: saldoSoles,
+        estadoLive: "Cambio de destino en Shalom (guía nueva pendiente de registrar)",
+        notificado: false,
+        motivoNoNotificado: "Shalom cerró la guía por cambio de destino",
+      });
+      continue;
+    }
+
     // CASO 0: el almacén dejó el paquete en la agencia de origen y Shalom lo confirmó.
     // Desde ese momento el envío se puede pagar en Págalo: aviso SOLO a Gerardo, una vez.
     if (debeAvisarEnvioConfirmado(rastro, c.notasPedido) && esHorarioAlertaSupervisores()) {

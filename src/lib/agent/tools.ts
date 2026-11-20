@@ -235,7 +235,20 @@ async function actualizarContacto(
     set.notes = actual.notes ? `${actual.notes}\n${nota}` : nota;
     cambios.push("notas");
   }
+  let instruccionAgencia: string | null = null;
   if (args.campos && typeof args.campos === "object") {
+    // Agencia Shalom: solo una sede del padrón oficial, y se aplica también al pedido en curso.
+    const { aplicarAgenciaDelChat } = await import("./agencia-pedido");
+    const ag = await aplicarAgenciaDelChat({
+      contactId: ctx.contactId,
+      campos: args.campos,
+      camposActuales: (actual.customFields as Record<string, unknown> | null) ?? {},
+    });
+    if (ag.tipo === "rechazada") return { ok: false, error: ag.error };
+    if (ag.tipo === "aceptada") {
+      args.campos = { ...args.campos, [ag.campo]: ag.valor };
+      instruccionAgencia = ag.instruccion;
+    }
     const v = validarCamposPersonalizados(camposContacto(), args.campos, { parcial: true });
     if (!v.ok) return { ok: false, error: v.error };
     set.customFields = { ...((actual.customFields as Record<string, unknown> | null) ?? {}), ...v.valores };
@@ -244,7 +257,7 @@ async function actualizarContacto(
 
   if (cambios.length === 0) return { ok: false, error: "nada para actualizar" };
   await db.update(contacts).set(set).where(eq(contacts.id, ctx.contactId));
-  return { ok: true, data: { actualizado: cambios } };
+  return { ok: true, data: { actualizado: cambios, ...(instruccionAgencia ? { agencia: instruccionAgencia } : {}) } };
 }
 
 const TIPOS_ACTIVIDAD: Record<string, string> = {
