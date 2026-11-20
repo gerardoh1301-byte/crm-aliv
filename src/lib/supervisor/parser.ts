@@ -134,6 +134,27 @@ export function interpretarComando(texto: string | null | undefined): Comando | 
   return null;
 }
 
+const PALABRAS_CORRECCION =
+  "no|nop|noo|era|es|el|la|del|pedido|orden|numero|nro|n|me|equivoque|equivocaste|equivocado|" +
+  "perdon|disculpa|corrijo|correccion|corrige|otro|otra|sino|mejor|ese|ese no|de";
+const RE_CORRECCION = new RegExp(
+  `^(?:(?:${PALABRAS_CORRECCION})\\s+)*#?((?:leg|chat|aliv)-)?(\\d{3,})$`
+);
+
+/**
+ * Corrección del pedido a mitad de una orden: «no no pedido es 1084», «era el 1084»,
+ * «1084». Devuelve el token del pedido ("1084", "LEG-1066") o null. Solo acepta
+ * palabras de relleno y un único número al final, para no confundir montos.
+ */
+export function interpretarCorreccion(texto: string | null | undefined): string | null {
+  if (!texto) return null;
+  const n = normalizarTexto(texto);
+  if (!n || n.length > 60) return null;
+  const m = n.match(RE_CORRECCION);
+  if (!m) return null;
+  return (m[1] ? m[1].toUpperCase() : "") + m[2];
+}
+
 /** Dígitos del número de pedido: "#LEG-1049" -> "1049". */
 export function digitosPedido(numeroOrden: string): string {
   return numeroOrden.match(/\d{3,}/)?.[0] ?? "";

@@ -55,3 +55,28 @@ describe("órdenes del supervisor por WhatsApp", () => {
     expect(interpretarComando("pago completo 1140")!.completo).toBe(true);
   });
 });
+
+describe("corrección del pedido a mitad de una orden", () => {
+  it("toma el número de pedido de una corrección", async () => {
+    const { interpretarCorreccion } = await import("@/lib/supervisor/parser");
+    expect(interpretarCorreccion("no no pedido es 1084")).toBe("1084");
+    expect(interpretarCorreccion("No, era el 1084")).toBe("1084");
+    expect(interpretarCorreccion("me equivoqué, es el #1084")).toBe("1084");
+    expect(interpretarCorreccion("1084")).toBe("1084");
+    expect(interpretarCorreccion("pedido LEG-1066")).toBe("LEG-1066");
+  });
+
+  it("no confunde montos, órdenes ni conversación con una corrección", async () => {
+    const { interpretarCorreccion } = await import("@/lib/supervisor/parser");
+    expect(interpretarCorreccion("no")).toBeNull();
+    expect(interpretarCorreccion("pagó 1084 99")).toBeNull();
+    expect(interpretarCorreccion("1084 99")).toBeNull();
+    expect(interpretarCorreccion("quiero 3 frascos de 199")).toBeNull();
+    expect(interpretarCorreccion("es S/ 99.50")).toBeNull();
+    expect(interpretarCorreccion("12")).toBeNull();
+  });
+
+  it("«no no pedido es 1084» no es una orden nueva ni un cancelar", () => {
+    expect(tipo("no no pedido es 1084")).toBeNull();
+  });
+});

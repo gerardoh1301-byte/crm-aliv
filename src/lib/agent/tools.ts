@@ -460,10 +460,22 @@ async function derivarAsesor(args: { motivo?: string; apagarAgente?: boolean }, 
         tipoCritico = "pide_humano_llamada";
       }
       if (tipoCritico) {
+        // El aviso de pago lleva el pedido y su saldo al inicio: Gerardo responde
+        // «envíale su clave» sin número y la orden debe ir a ESTE pedido, no a uno anterior.
+        let detalle = motivo;
+        if (tipoCritico === "comprobante_pago") {
+          try {
+            const { resumenPedidoParaAviso } = await import("@/lib/supervisor/comandos");
+            const resumen = await resumenPedidoParaAviso(ctx.contactId);
+            detalle = resumen ? `${resumen} · ${motivo}` : `Sin pedido registrado · ${motivo}`;
+          } catch (errPedido) {
+            console.warn("[tools] No se pudo adjuntar el pedido al aviso de pago:", errPedido);
+          }
+        }
         await notificarSupervisoresCritico({
           tipo: tipoCritico,
           titulo: `Alerta: ${c?.name ?? "Cliente"}`,
-          detalle: motivo,
+          detalle,
           clienteNombre: c?.name,
           clienteTelefono: c?.phone,
           contactId: ctx.contactId,

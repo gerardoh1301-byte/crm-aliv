@@ -11,6 +11,7 @@ import { notificarCambioDealAlErp } from "@/lib/finanzas/notificar-erp";
 import {
   digitosPedido,
   interpretarComando,
+  interpretarCorreccion,
   separarPedidoYMonto,
   type Comando,
   type TokenNumero,
@@ -115,6 +116,69 @@ async function guardarPendiente(p: Omit<Pendiente, "creado"> | null): Promise<vo
     .onConflictDoUpdate({ target: crmSettings.key, set: { value } });
 }
 
+// Última orden propuesta (aunque no dejara nada pendiente, p. ej. una clave bloqueada):
+// permite corregir el pedido con «pedido es 1084» sin repetir toda la orden.
+const CLAVE_ULTIMA = "supervisor_whatsapp_ultima_orden";
+type TipoCorregible = "pago" | "flete" | "clave" | "entregado" | "estado" | "guia";
+const CORREGIBLES = new Set<string>(["pago", "flete", "clave", "entregado", "estado", "guia"]);
+
+async function guardarUltimaOrden(u: { tipo: string; numeroOrden: string }): Promise<void> {
+  if (!CORREGIBLES.has(u.tipo)) return;
+  const value = JSON.stringify({ ...u, creado: Date.now() });
+  await db
+    .insert(crmSettings)
+    .values({ key: CLAVE_ULTIMA, value })
+    .onConflictDoUpdate({ target: crmSettings.key, set: { value } });
+}
+
+async function leerUltimaOrden(): Promise<{ tipo: TipoCorregible; numeroOrden: string } | null> {
+  const [row] = await db.select().from(crmSettings).where(eq(crmSettings.key, CLAVE_ULTIMA)).limit(1);
+  if (!row) return null;
+  try {
+    const u = JSON.parse(row.value) as { tipo: string; numeroOrden: string; creado: number };
+    if (!CORREGIBLES.has(u.tipo) || Date.now() - u.creado > VIGENCIA_PENDIENTE_MS) return null;
+    return { tipo: u.tipo as TipoCorregible, numeroOrden: u.numeroOrden };
+  } catch {
+    return null;
+  }
+}
+
+const TIPO_POR_ACCION: Record<Accion, TipoCorregible> = {
+  pago: "pago",
+  flete: "flete",
+  entregado: "entregado",
+  enviar_clave: "clave",
+  guia: "guia",
+};
+
+/**
+ * «no no pedido es 1084»: repite la última orden con el pedido correcto. Cancela lo
+ * pendiente del pedido equivocado y NO arrastra su monto (era el saldo de otro cliente):
+ * si hace falta, se vuelve a preguntar. Devuelve null si no hay orden reciente que corregir.
+ */
+async function corregirPedido(token: string, conversationId: string): Promise<string | null> {
+  const pend = await leerPendiente();
+  const ultima = await leerUltimaOrden();
+  const tipo = pend ? TIPO_POR_ACCION[pend.accion] : ultima?.tipo;
+  if (!tipo) return null;
+  const anterior = pend?.numeroOrden ?? ultima?.numeroOrden ?? "";
+  if (digitosPedido(anterior) === digitosPedido(token)) {
+    return pend
+      ? `Ya estamos con el pedido ${pend.numeroOrden}. Responde *SI ${digitosPedido(pend.numeroOrden)}* o *NO*.`
+      : null;
+  }
+  if (pend) await guardarPendiente(null);
+  const cmd: Comando = {
+    tipo,
+    numeros: [{ texto: token, esPedido: true, esMonto: false, valor: Number(digitosPedido(token)) || 0 }],
+    nombre: null,
+    completo: false,
+    ...(pend?.accion === "guia" ? { guia: pend.guia ?? null, codigo: pend.codigo ?? null } : {}),
+  };
+  const texto = await proponer(cmd, conversationId);
+  return `↩️ Corregido: dejo ${anterior || "el pedido anterior"} sin cambios y sigo con el ${token}.\n\n${texto}`;
+}
+
 // ---------------------------------------------------------------------------
 // Búsqueda del pedido
 
@@ -179,27 +243,77 @@ async function pedidosPorNombre(nombre: string): Promise<Pedido[]> {
   return enCurso.length ? enCurso : pedidos;
 }
 
-/** Último aviso de pedido enviado a este chat: permite escribir "pagó 179" sin número. */
-async function ultimaAlerta(conversationId: string): Promise<{ token: string; flete: number | null } | null> {
+/**
+ * Pedido en curso de un contacto: el más reciente que no está cancelado, y entre ellos
+ * el que aún no se entregó. Lo usan los avisos y la resolución por celular.
+ */
+export async function pedidoActivoDeContacto(contactId: string): Promise<Pedido | null> {
+  const rows = await db
+    .select(columnasPedido)
+    .from(pedidosOrdenes)
+    .leftJoin(contacts, eq(contacts.id, pedidosOrdenes.contactId))
+    .where(and(eq(pedidosOrdenes.contactId, contactId), ne(pedidosOrdenes.estado, "cancelado")))
+    .orderBy(desc(pedidosOrdenes.createdAt))
+    .limit(5);
+  const pedidos = rows.map((r) => ({ ...r.pedido, contactName: r.contactName }));
+  return pedidos.find((p) => p.estado !== "entregado") ?? pedidos[0] ?? null;
+}
+
+/** «Pedido #1084 · saldo pendiente S/ 99.00» para los avisos al supervisor, o null. */
+export async function resumenPedidoParaAviso(contactId: string | null | undefined): Promise<string | null> {
+  if (!contactId) return null;
+  const p = await pedidoActivoDeContacto(contactId);
+  if (!p) return null;
+  const c = cuentasDelPedido(p);
+  const saldo =
+    c.saldoCubierto ? "saldo ya registrado como pagado" : `saldo pendiente ${soles(c.saldoPendiente)}`;
+  return `Pedido ${p.numeroOrden} · ${saldo}`;
+}
+
+async function pedidoPorCelular(celular: string): Promise<Pedido | null> {
+  const nueve = normalizarTelefono(celular).slice(-9);
+  if (nueve.length !== 9) return null;
+  const [c] = await db
+    .select({ id: contacts.id })
+    .from(contacts)
+    .where(or(eq(contacts.phone, `+51${nueve}`), eq(contacts.phone, nueve), eq(contacts.phone, `51${nueve}`)))
+    .limit(1);
+  return c ? pedidoActivoDeContacto(c.id) : null;
+}
+
+/**
+ * Pedido del ÚLTIMO aviso enviado a este chat: permite escribir "pagó 179" sin número.
+ * Solo mira el aviso más reciente. Si no trae número de pedido, se busca por el celular
+ * del cliente del aviso; nunca se salta a un aviso anterior (eso llevó a tomar el #1095
+ * de otro cliente cuando el aviso era del pago de Roger, #1084).
+ */
+async function ultimaAlerta(
+  conversationId: string
+): Promise<{ pedido: Pedido; flete: number | null; cliente: string | null } | null> {
   const rows = await db
     .select({ body: messages.body })
     .from(messages)
     .where(and(eq(messages.conversationId, conversationId), eq(messages.direction, "out")))
     .orderBy(desc(messages.createdAt))
     .limit(30);
-  for (const r of rows) {
-    const body = r.body || "";
-    if (!/ALERTA/i.test(body)) continue;
-    const m = body.match(/#+((?:LEG-|CHAT-|ALIV-)?\d{3,})/i);
-    if (!m) continue;
-    const f = body.match(/flete\s+S\/\s*([\d.]+)/i);
-    return { token: m[1].toUpperCase(), flete: f ? Number(f[1]) : null };
+  const body = rows.map((r) => r.body || "").find((b) => /ALERTA/i.test(b));
+  if (!body) return null;
+  const f = body.match(/flete\s+S\/\s*([\d.]+)/i);
+  const flete = f ? Number(f[1]) : null;
+  const cliente = body.match(/Cliente:\**\s*([^(\n]+?)\s*\(/i)?.[1]?.trim() ?? null;
+  const m = body.match(/#+((?:LEG-|CHAT-|ALIV-)?\d{3,})/i);
+  if (m) {
+    const p = await pedidoPorToken(m[1].toUpperCase());
+    return p ? { pedido: p, flete, cliente } : null;
   }
-  return null;
+  const cel = body.match(/\+?51\s?(9\d{8})\b/);
+  if (!cel) return null;
+  const p = await pedidoPorCelular(cel[1]);
+  return p ? { pedido: p, flete, cliente } : null;
 }
 
 type Resolucion =
-  | { ok: true; pedido: Pedido; monto: number | null; fleteAlerta: number | null }
+  | { ok: true; pedido: Pedido; monto: number | null; fleteAlerta: number | null; delAviso?: string }
   | { ok: false; texto: string };
 
 async function resolverPedido(cmd: Comando, conversationId: string): Promise<Resolucion> {
@@ -216,7 +330,7 @@ async function resolverPedido(cmd: Comando, conversationId: string): Promise<Res
     const p = existentes.get(tokenPedido) ?? (await pedidoPorToken(tokenPedido.texto));
     if (!p) return { ok: false, texto: `No encuentro el pedido ${tokenPedido.texto}. Revisa el número.` };
     const alerta = await ultimaAlerta(conversationId);
-    const fleteAlerta = alerta && digitosPedido(alerta.token) === digitosPedido(p.numeroOrden) ? alerta.flete : null;
+    const fleteAlerta = alerta && alerta.pedido.id === p.id ? alerta.flete : null;
     return { ok: true, pedido: p, monto, fleteAlerta };
   }
 
@@ -234,8 +348,13 @@ async function resolverPedido(cmd: Comando, conversationId: string): Promise<Res
 
   const alerta = await ultimaAlerta(conversationId);
   if (alerta) {
-    const p = await pedidoPorToken(alerta.token);
-    if (p) return { ok: true, pedido: p, monto, fleteAlerta: alerta.flete };
+    return {
+      ok: true,
+      pedido: alerta.pedido,
+      monto,
+      fleteAlerta: alerta.flete,
+      delAviso: alerta.cliente ?? alerta.pedido.contactName ?? "el cliente del último aviso",
+    };
   }
   return {
     ok: false,
@@ -309,12 +428,19 @@ async function nota(p: Pedido, descripcion: string): Promise<void> {
   await db.insert(activities).values({ type: "note", description: descripcion, contactId: p.contactId, dealId: p.dealId });
 }
 
-async function proponer(
-  cmd: Comando,
-  conversationId: string
-): Promise<string> {
+async function proponer(cmd: Comando, conversationId: string): Promise<string> {
   const r = await resolverPedido(cmd, conversationId);
   if (!r.ok) return r.texto;
+  await guardarUltimaOrden({ tipo: cmd.tipo, numeroOrden: r.pedido.numeroOrden });
+  const texto = await proponerPara(cmd, r);
+  // Sin número en el mensaje: decir de qué aviso se tomó el pedido, para que se note
+  // al instante si no es el cliente que el supervisor tenía en mente.
+  return r.delAviso
+    ? `ℹ️ Tomé el pedido del último aviso (${r.delAviso}). Si es otro, responde «pedido es 1234».\n\n${texto}`
+    : texto;
+}
+
+async function proponerPara(cmd: Comando, r: Extract<Resolucion, { ok: true }>): Promise<string> {
   const p = r.pedido;
   const c = cuentasDelPedido(p);
   const n = digitosPedido(p.numeroOrden);
@@ -571,6 +697,20 @@ export async function manejarComandoSupervisor(conversationId: string, phone: st
 
   const cmd = interpretarComando(ultimo.body);
   if (!cmd) {
+    const token = interpretarCorreccion(ultimo.body);
+    if (token) {
+      let correccion: string | null = null;
+      try {
+        correccion = await corregirPedido(token, conversationId);
+      } catch (err) {
+        console.error("[supervisor-comandos] error al corregir el pedido:", err);
+        correccion = "❌ Hubo un error al cambiar de pedido. No se cambió nada; repite la orden con el número.";
+      }
+      if (correccion) {
+        await responder(conversationId, correccion);
+        return true;
+      }
+    }
     // Un "sí" / "ok" suelto con algo pendiente no va al bot de ventas (que podría
     // inventar que registró algo): se le recuerda cómo confirmar.
     const pend = await leerPendiente();
