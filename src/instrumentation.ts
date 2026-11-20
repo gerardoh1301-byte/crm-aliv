@@ -27,6 +27,15 @@ export async function register() {
     } catch (err) {
       console.error("[boot] no se pudo sincronizar el pipeline:", err instanceof Error ? err.message : err);
     }
+    try {
+      const { repararVentasChatConNumeroShopify } = await import("./lib/pedidos/reparar-numeracion");
+      const { renombrados } = await repararVentasChatConNumeroShopify();
+      if (renombrados.length > 0) {
+        console.log(`[boot] ventas de chat renumeradas: ${renombrados.map((r) => `${r.antes} -> ${r.despues}`).join(", ")}`);
+      }
+    } catch (err) {
+      console.error("[boot] no se pudo reparar la numeración de ventas de chat:", err instanceof Error ? err.message : err);
+    }
   }
 
   if (process.env.VERCEL || process.env.SWEEPERS_DISABLED === "true") return;

@@ -1,4 +1,5 @@
 import { db } from "@/db";
+import { mostrarNumeroOrden } from "@/lib/pedidos/numero-formato";
 import { activities, contacts, deals } from "@/db/schema";
 import { pedidosOrdenes } from "../../../modules/pedidos/tabla";
 import { and, desc, eq, gte, inArray, isNull } from "drizzle-orm";
@@ -344,7 +345,7 @@ export async function agendarEventoCalendario(params: AgendarParams) {
     ? (pedidoReal.items as Array<{ cantidad: number; titulo: string }>).map((i) => `${i.cantidad}x ${i.titulo}`).join(", ")
     : "Productos Aliv";
 
-  const numOrden = pedidoReal?.numeroOrden ? `#${pedidoReal.numeroOrden}` : "S/N";
+  const numOrden = pedidoReal?.numeroOrden ? mostrarNumeroOrden(pedidoReal.numeroOrden) : "S/N";
   const totalMonto = monto ? String(monto) : (pedidoReal?.total ? String(pedidoReal.total) : "");
   const direccionDestino = direccion || pedidoReal?.direccionEnvio || "";
 

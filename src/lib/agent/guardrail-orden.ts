@@ -1,3 +1,4 @@
+import { mostrarNumeroOrden } from "@/lib/pedidos/numero-formato";
 export interface OrdenVerificada {
   numeroOrden: string | null;
   total: number;
@@ -64,7 +65,7 @@ function armarMensajeDerivacionSeguro(
 ): string {
   if (orden) {
     const numTxt = orden.numeroOrden
-      ? ` ${orden.numeroOrden.startsWith("#") ? orden.numeroOrden : `#${orden.numeroOrden}`}`
+      ? ` ${mostrarNumeroOrden(orden.numeroOrden)}`
       : "";
     return `Un asesor de nuestro equipo está revisando en este momento tu pedido${numTxt} (${orden.unidades} ${orden.unidades === 1 ? "unidad" : "unidades"} por S/ ${orden.total.toFixed(2)}) y te responderá por aquí en unos minutos para atenderte personalmente. 🙌`;
   }

@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/db";
-import { contacts, crmSettings } from "@/db/schema";
+import { activities, contacts, crmSettings } from "@/db/schema";
 import { pedidosOrdenes, type ItemPedido } from "../../../../../modules/pedidos/tabla";
 import { sincronizarEtapaPipeline } from "../../../../../modules/pedidos/servidor";
 import { emitAutomationEvent } from "@/lib/automations";
@@ -9,6 +9,7 @@ import { requireAdmin } from "@/lib/api-auth";
 import { resolveDefaultTenantId } from "@/lib/tenants";
 import { sincronizarConGoogleDrive } from "@/lib/drive-sync";
 import { extraerDatosFormularioShopify } from "@/lib/shopify/form-extractor";
+import { debeAvisarPedidoImportado, HORAS_AVISO_PEDIDO_IMPORTADO } from "@/lib/pedidos/numero-formato";
 
 export const dynamic = "force-dynamic";
 
@@ -425,7 +426,18 @@ export async function POST(req: NextRequest) {
         const totalNum = Number(po.total_price) || 0;
         const saldoNum = Math.max(0, totalNum - 20);
 
-        await emitAutomationEvent({
+        // Pedido antiguo recuperado: se registra sin repetir el mensaje de pedido nuevo.
+        const avisar = debeAvisarPedidoImportado(po.created_at as string | undefined);
+        if (!avisar) {
+          await db.insert(activities).values({
+            type: "note",
+            description: `Pedido web ${name} recuperado por sincronización con Shopify. No se envió el mensaje automático porque el pedido tiene más de ${HORAS_AVISO_PEDIDO_IMPORTADO} horas; revisa si el cliente ya fue contactado.`,
+            contactId,
+            dealId,
+          }).catch(() => {});
+        }
+
+        if (avisar) await emitAutomationEvent({
           trigger: "order.created",
           contactId,
           payload: {

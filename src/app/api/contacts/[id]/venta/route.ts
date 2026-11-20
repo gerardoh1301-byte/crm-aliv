@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { generarNumeroChat } from "@/lib/pedidos/numeracion";
 import { db } from "@/db";
 import { activities, contacts, deals, pipelineStages, pipelines } from "@/db/schema";
 import { pedidosOrdenes } from "@modules/pedidos/tabla";
@@ -264,22 +265,8 @@ export async function POST(
     pedidoId = pAct.id;
     numeroOrden = pAct.numeroOrden;
   } else {
-    // Generar nuevo correlativo de orden numérico
-    const ordenesRecientes = await db
-      .select({ numeroOrden: pedidosOrdenes.numeroOrden })
-      .from(pedidosOrdenes)
-      .orderBy(desc(pedidosOrdenes.createdAt))
-      .limit(50);
-
-    let maxNum = 1145;
-    for (const r of ordenesRecientes) {
-      const match = (r.numeroOrden || "").match(/^#?(\d+)$/);
-      if (match) {
-        const n = parseInt(match[1], 10);
-        if (!isNaN(n) && n > maxNum) maxNum = n;
-      }
-    }
-    numeroOrden = `#${maxNum + 1}`;
+    // Venta cerrada por chat o llamada: serie propia CHAT-0001 (la serie "#1148" es de Shopify).
+    numeroOrden = await generarNumeroChat();
 
     const [pNuevo] = await db
       .insert(pedidosOrdenes)

@@ -18,6 +18,7 @@ import { sincronizarConGoogleDrive } from "@/lib/drive-sync";
 import { extraerDatosFormularioShopify } from "@/lib/shopify/form-extractor";
 import { sincronizarDealEnSheets } from "@/lib/sheets/envios-sync";
 import { notificarCambioDealAlErp } from "@/lib/finanzas/notificar-erp";
+import { generarNumeroChat } from "@/lib/pedidos/numeracion";
 import type { ModuloServidor, HandlerModulo, ToolModulo } from "@/lib/modules/types";
 import manifiesto from "./manifiesto";
 import { pedidosOrdenes, type ItemPedido } from "./tabla";
@@ -42,23 +43,10 @@ const MAPA_ESTADO_A_ETAPA: Record<EstadoPedido, string> = {
   cancelado: "cancelado_rechazado",
 };
 
-// A6: Usar una sola serie numérica (#1151, #1152...) para todos los canales, sin choques entre #1049 y #ALIV-1049
+// Los pedidos que nacen en el CRM (bot o asesor) usan la serie CHAT-0001: la serie "#1148"
+// es de Shopify y compartirla hacía que un pedido web se diera por repetido.
 async function generarNumeroOrden(): Promise<string> {
-  const rows = await db
-    .select({ numeroOrden: pedidosOrdenes.numeroOrden })
-    .from(pedidosOrdenes);
-  let maxNum = 1150;
-  for (const r of rows) {
-    const raw = String(r.numeroOrden || "");
-    if (/^#?LEG-/i.test(raw)) continue;
-    const digits = raw.replace(/\D/g, "");
-    const n = parseInt(digits, 10);
-    if (Number.isFinite(n) && n >= 1000 && n < 90000 && n > maxNum) {
-      maxNum = n;
-    }
-  }
-  const siguiente = maxNum + 1;
-  return `#${siguiente}`;
+  return generarNumeroChat();
 }
 
 export async function sincronizarEtapaPipeline(
@@ -637,11 +625,12 @@ async function contactosDelCliente(contactId: string): Promise<string[]> {
   return Array.from(new Set([contactId, ...mismos.map((c) => c.id)]));
 }
 
-/** "#1234", "1234" o "#ALIV-1234" -> numeros de orden que terminan exactamente en 1234. */
+/** "#1234", "1234", "CHAT-0012" o "#ALIV-1234" -> numeros de orden que terminan exactamente en 1234. */
 function condicionNumeroOrden(texto: string): SQL | null {
   const digitos = texto.match(/\d{3,}/)?.[0];
   if (!digitos) return null;
   return or(
+    eq(pedidosOrdenes.numeroOrden, `#${digitos}`),
     eq(pedidosOrdenes.numeroOrden, `#ALIV-${digitos}`),
     ilike(pedidosOrdenes.numeroOrden, `%-${digitos}`)
   ) ?? null;

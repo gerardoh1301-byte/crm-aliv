@@ -1,4 +1,5 @@
 import "server-only";
+import { mostrarNumeroOrden } from "@/lib/pedidos/numero-formato";
 import { db } from "@/db";
 import { activities, contacts, conversations, deals, messages, pipelineStages } from "@/db/schema";
 import { and, desc, eq, gte, lte, sql } from "drizzle-orm";
@@ -354,7 +355,7 @@ export function determinarEscenarioRescate(
       );
 
     if (pedidoReciente && (direccionCortaOIncompleta || botPreguntoPorDireccion)) {
-      const ordenTxt = pedidoReciente.numeroOrden ? `#${pedidoReciente.numeroOrden} ` : "";
+      const ordenTxt = pedidoReciente.numeroOrden ? `${mostrarNumeroOrden(pedidoReciente.numeroOrden)} ` : "";
       return {
         esElegible: true,
         escenario: "direccion_incompleta",
@@ -503,7 +504,7 @@ ${transcripcion || `Aliv Perú: ${ultimoMensaje?.body ?? ""}`}
 DATOS DEL CLIENTE:
 - Nombre: ${nombre}
 - Producto principal: ${producto}
-- Pedido Shopify en sistema: ${pedidoReciente?.numeroOrden ? `#${pedidoReciente.numeroOrden}` : "Ninguno aún"}
+- Pedido Shopify en sistema: ${pedidoReciente?.numeroOrden ? mostrarNumeroOrden(pedidoReciente.numeroOrden) : "Ninguno aún"}
 - Evaluación heurística previa: Escenario "${evaluacionHeuristica.escenario}", mensaje propuesto: "${evaluacionHeuristica.mensajeRescate}"
 
 REGLAS DE DECISIÓN CRÍTICAS (CUMPLIMIENTO ESTRICTO):
