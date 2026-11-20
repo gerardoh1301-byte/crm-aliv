@@ -250,11 +250,13 @@ export function DealCard({
 
   // Es Provincia / Shalom si la ciudad no es Lima o la transportadora indica Shalom
   const esProvincia = Boolean(ciudadLower) && !esLima;
-  const esShalom =
+  // Pagado directo (Yape, Plin o tarjeta) con entrega propia: no pasa por AliClik ni por Shalom
+  const pagoDirecto = ["yape", "plin", "tarjeta"].includes((ordenModalidadPago || "").toLowerCase());
+  const esShalom = !pagoDirecto && (
     transportadoraLower.includes("shalom") ||
     esProvincia ||
     Boolean(currentNumeroGuia) ||
-    Boolean(currentClaveRecojo);
+    Boolean(currentClaveRecojo));
 
   // Aplica cuando la orden está confirmada, preparando o en reparto
   const stageKeyLower = (stageKey || "").toLowerCase();
@@ -593,7 +595,12 @@ export function DealCard({
             </span>
           </Button>
         ) : (esEntregado || Boolean(currentLiquidacion)) && (
-          !esShalom || Boolean(currentLiquidacion) ? (
+          pagoDirecto && !currentLiquidacion ? (
+            <div className="rounded-md border border-emerald-500/30 bg-emerald-500/10 px-2 py-1 text-[10px] font-medium text-emerald-800 dark:text-emerald-300">
+              🏦 Cobrado por {(ordenModalidadPago || "").toUpperCase()} al BCP: S/{" "}
+              {(ordenTotal ? Number(ordenTotal) : value > 500 ? value / 100 : value).toFixed(2)}
+            </div>
+          ) : !esShalom || Boolean(currentLiquidacion) ? (
             <Button
               type="button"
               size="sm"
