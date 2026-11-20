@@ -29,7 +29,7 @@ export async function repararVentasChatConNumeroShopify(): Promise<{ renombrados
       and(
         isNull(pedidosOrdenes.shopifyOrderId),
         sql`${pedidosOrdenes.numeroOrden} ~ '^#[0-9]+$'`,
-        like(pedidosOrdenes.notas, "Venta confirmada por asesor humano%")
+        like(pedidosOrdenes.notas, "Venta confirmada por asesor%")
       )
     )
     .orderBy(pedidosOrdenes.createdAt);
