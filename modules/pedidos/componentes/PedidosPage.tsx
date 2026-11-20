@@ -860,7 +860,7 @@ export function PedidosPage() {
 
       {/* Dialogo para Modificar Pedido COD (Producto, Cantidad, Precio y Motivo) */}
       <Dialog open={editOpen} onOpenChange={(open) => !guardandoEdicion && setEditOpen(open)}>
-        <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto">
+        <DialogContent className="max-w-lg sm:max-w-lg max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2 text-base">
               <Pencil className="h-4 w-4 text-emerald-600" />
@@ -1012,7 +1012,7 @@ export function PedidosPage() {
         open={Boolean(despachoPedido)}
         onOpenChange={(o) => !o && setDespachoPedido(null)}
       >
-        <DialogContent className="max-w-md">
+        <DialogContent className="max-w-md sm:max-w-md">
           <DialogHeader>
             <DialogTitle>
               Despachar Pedido {despachoPedido?.numeroOrden}
@@ -1103,7 +1103,7 @@ export function PedidosPage() {
 
       {/* Modal para Registrar Nuevo Pedido COD manualmente */}
       <Dialog open={nuevoOpen} onOpenChange={setNuevoOpen}>
-        <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto">
+        <DialogContent className="max-w-lg sm:max-w-lg max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>Registrar Nuevo Pedido COD — Aliv Store</DialogTitle>
           </DialogHeader>

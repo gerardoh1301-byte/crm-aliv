@@ -198,7 +198,7 @@ export function DespacharAliclikModal({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-lg">
+      <DialogContent className="max-w-lg sm:max-w-lg">
         <DialogHeader>
           <div className="flex items-center gap-2 text-primary font-bold">
             <PackageCheck className="h-5 w-5" />

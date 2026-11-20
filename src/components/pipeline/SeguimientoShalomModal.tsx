@@ -415,7 +415,7 @@ Recuerda acudir con tu DNI físico original para el retiro. ¡Que disfrutes tus 
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-md p-5 bg-card">
+      <DialogContent className="max-w-md sm:max-w-md max-h-[92vh] overflow-y-auto p-5 bg-card">
         <DialogHeader className="space-y-1">
           <div className="flex items-center gap-2">
             <span className="flex h-7 w-7 items-center justify-center rounded-lg bg-red-500/10 text-red-600 font-bold">
@@ -429,6 +429,20 @@ Recuerda acudir con tu DNI físico original para el retiro. ¡Que disfrutes tus 
             Orden <span className="font-semibold text-foreground">{data.numeroOrden}</span> ·{" "}
             {data.clienteNombre} ({destinoLimpio || "Provincia"})
           </DialogDescription>
+          <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs">
+            <span className="text-muted-foreground">
+              DNI:{" "}
+              <span className="font-mono font-semibold text-foreground select-all">
+                {data.dni?.trim() || "sin registrar"}
+              </span>
+            </span>
+            <span className="text-muted-foreground">
+              Celular:{" "}
+              <span className="font-mono font-semibold text-foreground select-all">
+                {(data.telefono || "").replace(/^\+?51/, "").trim() || "sin registrar"}
+              </span>
+            </span>
+          </div>
         </DialogHeader>
 
         {/* Ficha Resumen de Envío Shalom */}

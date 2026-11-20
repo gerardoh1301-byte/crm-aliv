@@ -515,7 +515,7 @@ export function RotuloShalomModal({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-[780px] p-4 sm:p-5 overflow-hidden">
+      <DialogContent className="max-w-[780px] sm:max-w-[780px] p-4 sm:p-5 overflow-hidden">
         <DialogHeader className="pb-2 border-b border-border/50">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2">

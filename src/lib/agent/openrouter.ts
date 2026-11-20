@@ -134,6 +134,10 @@ export async function createChatCompletionWithFallback(
 
   const triedKeys = new Set<string>();
   let lastErr: unknown = null;
+  // Primer error de Gemini (el proveedor principal). Si los respaldos también fallan, se
+  // lanza ESTE y no el último: el 20/11 un 429 de Gemini quedó tapado por un 413 de Groq
+  // ("Request too large"), el turno no se reintentó y el cliente recibió "Disculpa la demora".
+  let geminiErr: unknown = null;
 
   // 1. Probar con hasta 3 claves del pool de Gemini y reservar al menos 15s para Groq/OpenRouter.
   // Si el modelo principal se satura o no contesta a tiempo, los intentos siguientes usan el
@@ -172,6 +176,7 @@ export async function createChatCompletionWithFallback(
       );
     } catch (err: unknown) {
       lastErr = err;
+      if (!geminiErr) geminiErr = err;
       const error = err as { status?: number; code?: string | number; message?: string };
       const status = error?.status;
 
@@ -318,5 +323,5 @@ export async function createChatCompletionWithFallback(
   }
 
   // Si todos los respaldos fallaron, lanzar el error original para trazabilidad
-  throw lastErr || new Error("No hay proveedores de LLM disponibles");
+  throw geminiErr || lastErr || new Error("No hay proveedores de LLM disponibles");
 }

@@ -443,7 +443,9 @@ async function executeAgentTurn(
 
     // R9a: reintento unico. Solo si el turno no ejecuto ninguna herramienta todavia
     // (repetirlo no puede duplicar pedidos ni operaciones) y el error es transitorio.
-    const transitorio = status === undefined || status === 429 || status === 500 || status === 503 || /timeout|timed out/i.test(rawMsg);
+    // 413: un respaldo rechazó el prompt por tamaño; al reintentar vuelve a probar Gemini.
+    const transitorio =
+      status === undefined || status === 413 || status === 429 || status === 500 || status === 503 || /timeout|timed out|too large/i.test(rawMsg);
     if (opts.reintento !== false && toolCalls === 0 && transitorio) {
       console.warn(`[agent] Reintentando turno de ${conversation.id} en ${REINTENTO_MS / 1000}s tras: ${categoriaError}`);
       await new Promise((r) => setTimeout(r, REINTENTO_MS));

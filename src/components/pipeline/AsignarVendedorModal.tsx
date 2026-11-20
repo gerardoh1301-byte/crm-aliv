@@ -139,7 +139,7 @@ export function AsignarVendedorModal({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-md p-5 rounded-2xl">
+      <DialogContent className="max-w-md sm:max-w-md p-5 rounded-2xl">
         <DialogHeader className="space-y-1">
           <div className="flex items-center gap-2">
             <div className="p-2 bg-emerald-500/10 text-emerald-600 rounded-xl">

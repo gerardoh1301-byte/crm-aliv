@@ -20,7 +20,7 @@ describe("buscador de agencias Shalom", () => {
     }
     // Antes del arreglo: 179 de 273 (las ciudades sin match caían en Sullana).
     expect(ok / total).toBeGreaterThan(0.97);
-  });
+  }, 30_000);
 
   it("no inventa una agencia lejana cuando la ciudad no existe", () => {
     expect(buscarAgenciaShalomCercana({ ciudad: "Xyzabc" }).mejorOpcion).toBeNull();

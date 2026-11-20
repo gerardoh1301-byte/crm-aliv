@@ -8,6 +8,7 @@ import { resolverNombreHumanoCliente } from "@/lib/agent/prompt";
 import { sincronizarPipelinePostventa } from "@/lib/pipeline/sincronizar";
 import { esHorarioPermitidoRescate } from "@/lib/agent/rescate";
 import { getConfig } from "@/lib/config";
+import { pedidosOrdenes } from "../../../modules/pedidos/tabla";
 
 export interface PostventaMetadata {
   fechaEntrega: string;
@@ -384,6 +385,18 @@ export async function procesarSeguimientosPostventaAutomaticos(opts?: {
       meta = { fechaEntrega: deal.createdAt.toISOString() };
     }
     if (posventaEnEspera(meta, ahora)) continue;
+
+    // Solo se le escribe a quien de verdad tiene el producto: si su último pedido volvió a
+    // estar en camino (p. ej. Shalom cerró la guía por CAMBIO DE DESTINO y luego se registró
+    // la guía nueva, #LEG-1066), la posventa espera a que se entregue.
+    const [ultimoPedido] = await db
+      .select({ estado: pedidosOrdenes.estado })
+      .from(pedidosOrdenes)
+      .where(eq(pedidosOrdenes.contactId, contact.id))
+      .orderBy(desc(pedidosOrdenes.createdAt))
+      .limit(1);
+    if (ultimoPedido && ultimoPedido.estado !== "entregado") continue;
+
     const metaOriginal: PostventaMetadata = { ...meta };
 
     const fechaEntrega = meta.fechaEntrega ? new Date(meta.fechaEntrega) : deal.createdAt;
@@ -527,7 +540,7 @@ export async function backfillPedidosEntregadosAPostventa(): Promise<{
   omitidosExistentes: number;
 }> {
   try {
-    const { pedidosOrdenes } = await import("../../../modules/pedidos/tabla");
+    // pedidosOrdenes ya importado arriba
     const entregados = await db
       .select({
         id: pedidosOrdenes.id,

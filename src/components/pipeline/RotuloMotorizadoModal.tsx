@@ -309,7 +309,7 @@ ${data.referencia ? `Referencia: ${data.referencia}\n` : ""}Total a cobrar: ${fo
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-md p-5 bg-card">
+      <DialogContent className="max-w-md sm:max-w-md p-5 bg-card">
         <DialogHeader className="space-y-1">
           <div className="flex items-center justify-between">
             <DialogTitle className="text-base font-bold flex items-center gap-2">

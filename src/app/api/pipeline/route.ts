@@ -48,6 +48,7 @@ export async function GET() {
       ordenNumeroGuia: pedidosOrdenes.numeroGuia,
       ordenCodigoRastreo: pedidosOrdenes.codigoRastreo,
       ordenClaveRecojo: pedidosOrdenes.claveRecojo,
+      ordenDni: pedidosOrdenes.dniCliente,
       ordenModalidadPago: pedidosOrdenes.modalidadPago,
       ordenEstado: pedidosOrdenes.estado,
       ordenNotas: pedidosOrdenes.notas,
@@ -95,7 +96,7 @@ export async function GET() {
             distrito: d.ordenDistrito || (custom.distrito as string) || null,
             direccion: d.ordenDireccion || (custom.direccion_envio as string) || (custom.agencia_shalom as string) || null,
             numeroOrden: d.ordenNumero || null,
-            dniCliente: (custom.dni_ruc as string) || (custom.dni as string) || null,
+            dniCliente: (custom.dni_ruc as string) || (custom.dni as string) || d.ordenDni || null,
             adelantoVerificado: Boolean(
               notasCombinadas.includes("[ADELANTO VERIFICADO]") ||
               stage.key === "adelanto_pagado" ||
