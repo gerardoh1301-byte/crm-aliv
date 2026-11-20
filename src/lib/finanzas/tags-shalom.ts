@@ -84,3 +84,16 @@ export function reemplazarTag(
   const limpio = (notas || "").replace(new RegExp(`\\[${nombre}:[^\\]]+\\]\\n?`, "gi"), "").trim();
   return [limpio, tag].filter(Boolean).join("\n");
 }
+
+/** Operación con la que se marca el saldo puesto por la regla "clave entregada". */
+export const OP_CLAVE_ENTREGADA = "Clave entregada";
+
+/**
+ * Regla (20/11): la clave de retiro de 4 dígitos solo se entrega cuando el cliente ya depositó
+ * el saldo, así que un pedido Shalom en "Entregado y Cobrado" tiene el saldo cobrado:
+ * total del pedido menos el adelanto (S/ 20 si no se registró otro monto).
+ */
+export function saldoPorClaveEntregada(totalSoles: number, finanzas: FinanzasShalom | null): number {
+  const adelanto = finanzas?.adelantoMonto ?? 20;
+  return Math.max(0, Math.round((totalSoles - adelanto) * 100) / 100);
+}

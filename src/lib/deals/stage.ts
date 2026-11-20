@@ -9,6 +9,7 @@ import { cleanStr, esEtiquetaDeEtapa, obtenerEtiquetaDeEtapa, quitarLogisticaSiC
 import { sincronizarDealEnSheets } from "@/lib/sheets/envios-sync";
 import { notificarCambioDealAlErp } from "@/lib/finanzas/notificar-erp";
 import { crearOActualizarDealPostventa, cancelarDealPostventa } from "@/lib/postventa/engine";
+import { aplicarReglaClaveEntregada } from "@/lib/finanzas/regla-clave-entregada";
 
 /**
  * Mueve una operacion de etapa y emite `deal.stage_changed`.
@@ -89,6 +90,16 @@ export async function setDealStage(input: {
       } catch (cancelErr) {
         console.warn("[stage] error al desvincular postventa:", cancelErr);
       }
+    }
+
+    // Regla: tarjeta Shalom en "Entregado y Cobrado" = clave entregada = saldo ya depositado (ese día)
+    const nombreEtapa = (stage.name || "").toLowerCase();
+    const etapaEntregado = stageKey === "entregado" || nuevoEstado === "entregado" ||
+      nombreEtapa.includes("entregado") || nombreEtapa.includes("cobrado");
+    try {
+      await aplicarReglaClaveEntregada(deal.id, etapaEntregado);
+    } catch (reglaErr) {
+      console.warn("[stage] error al aplicar la regla de clave entregada:", reglaErr);
     }
   }
 

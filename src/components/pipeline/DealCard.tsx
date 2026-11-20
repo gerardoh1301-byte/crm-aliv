@@ -38,7 +38,7 @@ import { AsignarVendedorModal } from "./AsignarVendedorModal";
 import { DespacharAliclikModal, type DespacharAliclikModalData } from "./DespacharAliclikModal";
 import { LiquidarAliclikModal, type LiquidacionAliclikData } from "./LiquidarAliclikModal";
 import { FinanzasShalomModal } from "./FinanzasShalomModal";
-import type { FinanzasShalom } from "@/lib/finanzas/tags-shalom";
+import { saldoPorClaveEntregada, type FinanzasShalom } from "@/lib/finanzas/tags-shalom";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -263,6 +263,9 @@ export function DealCard({
     stageKeyLower === "entregado" ||
     stageNameLower.includes("entregado") ||
     stageNameLower.includes("cobrado");
+  // Regla: en "Entregado y Cobrado" la clave ya se entregó, así que el saldo Shalom está cobrado
+  const saldoShalomVisible: number | null =
+    currentFinanzas?.saldoMonto ?? (esEntregado ? saldoPorClaveEntregada(value / 100, currentFinanzas) : null);
   const esConfirmadoODespacho =
     stageKeyLower.includes("confirmad") ||
     stageKeyLower.includes("reparto") ||
@@ -576,7 +579,7 @@ export function DealCard({
             className={cn(
               "w-full h-7 text-[11px] font-semibold gap-1.5 shadow-none cursor-pointer",
               currentFinanzas?.fleteShalom !== null && currentFinanzas?.fleteShalom !== undefined &&
-                (!esEntregado || (currentFinanzas?.saldoMonto !== null && currentFinanzas?.saldoMonto !== undefined))
+                (!esEntregado || saldoShalomVisible !== null)
                 ? "bg-emerald-600/15 hover:bg-emerald-600/25 text-emerald-800 dark:text-emerald-300 border-emerald-600/40"
                 : "bg-amber-500/15 hover:bg-amber-500/25 text-amber-800 dark:text-amber-300 border-amber-500/40"
             )}
@@ -584,8 +587,8 @@ export function DealCard({
           >
             <Landmark className="h-3.5 w-3.5 shrink-0" aria-hidden />
             <span className="truncate">
-              {currentFinanzas
-                ? `Envío ${currentFinanzas.fleteShalom !== null ? `S/${currentFinanzas.fleteShalom.toFixed(2)}` : "?"} · Saldo ${currentFinanzas.saldoMonto !== null ? `S/${currentFinanzas.saldoMonto.toFixed(2)}` : "pendiente"}`
+              {currentFinanzas || saldoShalomVisible !== null
+                ? `Envío ${currentFinanzas?.fleteShalom != null ? `S/${currentFinanzas.fleteShalom.toFixed(2)}` : "?"} · Saldo ${saldoShalomVisible !== null ? `S/${saldoShalomVisible.toFixed(2)} cobrado` : "pendiente"}`
                 : "Registrar dinero Shalom"}
             </span>
           </Button>
