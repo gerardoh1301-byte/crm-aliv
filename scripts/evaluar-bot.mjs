@@ -60,7 +60,7 @@ const PROHIBIDO = [
   [/\btarjeta\b(?! de)/i, "menciona tarjeta"],
   [/\b(cura|curar|elimina el h[ií]gado graso|garantizad[oa]s? (los )?resultados)\b/i, "promete curar o resultados"],
   [/clave (de (recojo|retiro) )?(es|:)\s*\d{3,}/i, "da una clave de retiro"],
-  [/detox|desintox|funci[oó]n hep[aá]tica|salud (de tu |del )?h[ií]gado|(limpi|proteg|cuid)\w* (el |tu )?h[ií]gado|est[aá]ndares/i, "promesa de salud o 'estándares' (regla 2 y 3)"],
+  [/h[ií]gado[^.?!\n]*\b(apoy|ayud|favorec|benefici|mejor|cuid|salud|funci)|\b(apoy|ayud|favorec|benefici|mejor|cuid|salud|funci)\w*[^.?!\n]*h[ií]gado(?![^.?!\n]*m[eé]dico)|detox|desintox|funci[oó]n hep[aá]tica|(limpi|proteg|cuid)\w* (el |tu )?h[ií]gado|est[aá]ndares/i, "promesa de salud o 'estándares' (regla 2 y 3)"],
 ];
 const CIERRE_DEBIL = /(alguna (otra )?(duda|consulta)[^?]*|pudiste revisar|qu[eé] te parece|te gustar[ií]a saber|quieres m[aá]s informaci[oó]n)\??\s*$/i;
 

@@ -7,6 +7,7 @@ import { activities, contacts, conversations, deals, messages, pipelineStages } 
 import { and, desc, eq, gte, lte, sql } from "drizzle-orm";
 import { getConfig } from "@/lib/config";
 import { deliverMessage } from "@/lib/channels/deliver";
+import { corregirFrasesSalud } from "./filtro-salud";
 import { aplicarEtiquetaAContacto } from "./etiquetado";
 import { pedidosOrdenes } from "../../../modules/pedidos/tabla";
 import { esPedidoDeProvincia } from "@/lib/pedidos/adelanto";
@@ -589,7 +590,8 @@ Responde ÚNICAMENTE un objeto JSON válido con la siguiente estructura:
       return {
         esElegible: true,
         escenario: evaluacionHeuristica.escenario,
-        mensajeRescate: limpiarFormatoWhatsApp(mensajeFinal),
+        // Reglas 2 y 3: sin promesas de salud ni "estándares" también en el rescate.
+        mensajeRescate: limpiarFormatoWhatsApp(corregirFrasesSalud(mensajeFinal).texto),
       };
     }
   } catch (err) {

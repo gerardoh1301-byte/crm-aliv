@@ -15,6 +15,7 @@ import { esSaludoAutomatico, productoDelAnuncio, renderOrigenAnuncio } from "./o
 import { renderGuionVenta } from "./guion-venta";
 import { detectarSenalesPrompt } from "./prompt-bloques";
 import { MARCA_COD_PROVINCIA } from "@/lib/aliclik/cobertura-cod";
+import { corregirFrasesSalud } from "./filtro-salud";
 import { registrarPromesaSiAplica } from "./seguimiento";
 import { executeTool, getEnabledToolDefinitions, type ToolContext } from "./tools";
 import { getOpenRouterClient, getAgentModel, hasOpenRouterKey, createChatCompletionWithFallback } from "./openrouter";
@@ -297,6 +298,7 @@ async function executeAgentTurn(
       if (claveYaEntregada && reply) {
         reply = removerMencionClaveSiYaEntregada(reply);
       }
+      if (reply) reply = await aplicarFiltroSalud(reply, contact.id);
       if (!reply) {
         // A1: a veces el modelo cierra el turno sin texto. Se le pide una vez que responda
         // (las herramientas ya ejecutadas quedan en el historial, no se repiten).
@@ -404,6 +406,7 @@ async function executeAgentTurn(
     if (claveYaEntregada && textoFinal) {
       textoFinal = removerMencionClaveSiYaEntregada(textoFinal);
     }
+    if (textoFinal) textoFinal = await aplicarFiltroSalud(textoFinal, contact.id);
     if (textoFinal) {
       const checkFinal = validarRespuestaBotContraOrden(textoFinal, ordenActiva);
       if (checkFinal.bloqueado) {
@@ -641,3 +644,22 @@ export const agentConfig = {
   maxToolRounds: MAX_TOOL_ROUNDS,
   historyLimit: HISTORY_LIMIT,
 };
+
+/**
+ * Reglas 2 y 3 sin depender del modelo: quita promesas de salud y "estándares/certificaciones"
+ * antes de enviar, y deja una nota en el contacto para que el equipo vea qué se corrigió.
+ */
+async function aplicarFiltroSalud(texto: string, contactId: string): Promise<string> {
+  const r = corregirFrasesSalud(texto);
+  if (!r.corregido) return texto;
+  console.warn(`[filtro-salud] corregido en contacto ${contactId}: ${r.frasesQuitadas.join(" | ").slice(0, 300)}`);
+  await db
+    .insert(activities)
+    .values({
+      type: "note",
+      description: `[FILTRO SALUD] Se corrigió la respuesta del bot antes de enviarla. Frase quitada: "${r.frasesQuitadas.join(" / ").slice(0, 400)}"`,
+      contactId,
+    })
+    .catch((err) => console.warn("[filtro-salud] no se pudo guardar la nota:", err instanceof Error ? err.message : err));
+  return r.texto;
+}
