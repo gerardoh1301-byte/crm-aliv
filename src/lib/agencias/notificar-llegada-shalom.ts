@@ -410,6 +410,22 @@ ${marca}` : marca;
 
       const tags = (c.contactTags || []).map((t) => t.toLowerCase().trim());
       const notasPed = (c.notasPedido || "").toLowerCase();
+      // Si el saldo ya se cobró (p. ej. registrado desde el WhatsApp del supervisor), no
+      // se le vuelve a pedir el pago al cliente.
+      if (notasPed.includes("[saldo_cobrado:")) {
+        detalles.push({
+          numeroOrden: c.numeroOrden,
+          cliente: c.contactName,
+          phone: c.contactPhone,
+          guia: c.numeroGuia,
+          agencia: agenciaNombre,
+          saldo: 0,
+          estadoLive: "En destino (saldo ya cobrado)",
+          notificado: false,
+          motivoNoNotificado: "Saldo ya cobrado: no se le pide el pago otra vez",
+        });
+        continue;
+      }
       const yaNotificadoEnPedido = notasPed.includes("[aviso_llegada_enviado");
       const yaNotificado =
         yaNotificadoEnPedido ||

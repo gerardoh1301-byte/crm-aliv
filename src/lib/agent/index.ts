@@ -74,6 +74,16 @@ async function executeAgentTurn(
   const [contact] = await db.select().from(contacts).where(eq(contacts.id, conversation.contactId)).limit(1);
   if (!contact) return { ok: false, reason: "contact_not_found" };
 
+  // Ordenes por WhatsApp del supervisor de pagos (pagos, flete, clave...). Va antes de
+  // los interruptores del bot: funcionan aunque el bot este apagado en ese chat. Si el
+  // mensaje no es una orden, sigue al bot como chat de prueba.
+  if (conversation.channel === "whatsapp") {
+    const { esSupervisorPagos, manejarComandoSupervisor } = await import("@/lib/supervisor/comandos");
+    if (esSupervisorPagos(contact.phone) && (await manejarComandoSupervisor(conversation.id, contact.phone))) {
+      return { ok: true, reason: "comando_supervisor" };
+    }
+  }
+
   // El contacto es el kill-switch global; la conversacion pausa solo este hilo.
   // "Avisar sin apagar": needsHuman sirve como insignia y filtro de bandeja para asesores,
   // pero NO silencia al bot. Solo aiEnabled = false detiene la atención automática.
