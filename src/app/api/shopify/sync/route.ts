@@ -81,6 +81,8 @@ export async function POST(req: NextRequest) {
 
   const body = (await req.json().catch(() => ({}))) as {
     action?: "save_settings" | "sync_api" | "import_manual";
+    /** Importar sin el mensaje automático de pedido nuevo (el cliente ya fue contactado). */
+    sinMensaje?: boolean;
     storeUrl?: string;
     accessToken?: string;
     webhookSecret?: string;
@@ -211,7 +213,16 @@ export async function POST(req: NextRequest) {
         const totalNum = Number(total) || 199;
         const saldoNum = Math.max(0, totalNum - 20);
 
-        await emitAutomationEvent({
+        if (body.sinMensaje) {
+          await db.insert(activities).values({
+            type: "note",
+            description: `Pedido web ${numeroOrden} registrado a mano sin mensaje automático (el cliente ya fue contactado).`,
+            contactId,
+            dealId,
+          }).catch(() => {});
+        }
+
+        if (!body.sinMensaje) await emitAutomationEvent({
           trigger: "order.created",
           contactId,
           payload: {
