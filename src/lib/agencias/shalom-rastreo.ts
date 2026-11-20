@@ -219,3 +219,15 @@ export function debeAvisarEnvioConfirmado(
   if (rastro.enDestinoListoParaRecojo || rastro.yaEntregado) return false;
   return !(notasPedido || "").includes(MARCA_ENVIO_CONFIRMADO);
 }
+
+/**
+ * Instruccion de rastreo para el bot. Shalom pide N° de orden + codigo
+ * alfanumerico (no la clave de recojo de 4 digitos, que es secreta).
+ */
+export function textoRastreoShalom(numeroGuia: string | null, codigoRastreo: string | null): string {
+  if (!numeroGuia) return "Aun no tiene N° de orden: el pedido sigue en preparacion.";
+  if (!codigoRastreo) {
+    return `N° de orden ${numeroGuia}, pero falta el codigo de seguimiento: no lo inventes; di que un asesor se lo envia y deriva.`;
+  }
+  return `Dale AMBOS datos: N° de orden ${numeroGuia} y codigo ${codigoRastreo}, para rastrear en https://shalom.com.pe/rastrea/ o la app de Shalom. La clave de recojo de 4 digitos NO se entrega aqui.`;
+}

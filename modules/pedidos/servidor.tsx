@@ -35,6 +35,7 @@ import {
   validarTelefonoPeruano,
 } from "@/lib/pedidos/validacion-datos";
 import { crearOActualizarDealPostventa } from "@/lib/postventa/engine";
+import { textoRastreoShalom } from "@/lib/agencias/shalom-rastreo";
 
 const MAPA_ESTADO_A_ETAPA: Record<EstadoPedido, string> = {
   por_confirmar_cod: "agendar_entrega",
@@ -171,7 +172,7 @@ async function notificarDespachoPorChat(
   numeroOrden: string,
   transportadora: string | null,
   numeroGuia: string | null,
-  claveRecojo: string | null,
+  codigoRastreo: string | null,
   total: string
 ) {
   try {
@@ -188,8 +189,12 @@ async function notificarDespachoPorChat(
       `¡Hola! Te escribimos de *Aliv Store* para avisarte que tu pedido *${numeroOrden}* ya fue despachado y está en camino.`,
     ];
     if (transportadora) partes.push(`• Empresa de envío: *${transportadora}*`);
-    if (numeroGuia) partes.push(`• N° de Guía / Seguimiento: *${numeroGuia}*`);
-    if (claveRecojo) partes.push(`• Clave de recojo en agencia: *${claveRecojo}*`);
+    if (numeroGuia) partes.push(`• N° de Orden: *${numeroGuia}*`);
+    if (codigoRastreo) partes.push(`• Código: *${codigoRastreo}*`);
+    if (numeroGuia && codigoRastreo) {
+      partes.push(`Con ambos datos puedes rastrear tu envío en https://shalom.com.pe/rastrea/`);
+    }
+    // La clave de recojo de 4 digitos NUNCA va aqui: se entrega al pagar el saldo.
     partes.push(`• Monto total: *S/ ${Number(total).toFixed(2)}*`);
     partes.push(`Cualquier consulta sobre tu entrega, escríbenos por aquí.`);
 
@@ -538,7 +543,7 @@ const actualizar: HandlerModulo = async (req, { member, params }) => {
         row.numeroOrden,
         row.transportadora,
         row.numeroGuia,
-        row.claveRecojo,
+        row.codigoRastreo,
         row.total
       );
     }
@@ -949,7 +954,7 @@ const tools: ToolModulo[] = [
       function: {
         name: "consultar_pedido",
         description:
-          "Consulta el estado actual, productos, monto en Soles, empresa de envio (Motorizado Lima o Shalom) y numero de guia de los pedidos del cliente.",
+          "Consulta el estado actual, productos, monto en Soles, empresa de envio (Motorizado Lima o Shalom), numero de orden Shalom y codigo de seguimiento de los pedidos del cliente. Para rastrear en Shalom el cliente necesita AMBOS: el N° de orden y el codigo alfanumerico (ej. 104493000 + 3KJP). Nunca des solo el numero.",
         parameters: {
           type: "object",
           properties: {
@@ -1004,6 +1009,8 @@ const tools: ToolModulo[] = [
             destino: [p.direccionEnvio, p.distrito, p.ciudad].filter(Boolean).join(", "),
             empresa_envio: p.transportadora ?? "Pendiente de asignación de reparto",
             numero_guia: p.numeroGuia ?? "Aún en preparación en almacén",
+            codigo_seguimiento: p.codigoRastreo ?? null,
+            como_rastrear: textoRastreoShalom(p.numeroGuia, p.codigoRastreo),
             // C2: Jamás exponer claveRecojo al modelo IA; la clave solo la entrega un humano
             fecha_registro: p.createdAt,
           })),
