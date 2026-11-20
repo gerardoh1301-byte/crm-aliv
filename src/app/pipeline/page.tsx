@@ -8,6 +8,8 @@ import { getCurrentMember, ownerFilter } from "@/lib/team";
 import { countDocumentsByContact } from "@/lib/documents";
 import { PipelineWorkspace } from "@/components/pipeline/PipelineWorkspace";
 import type { Pipeline, DealWithContact } from "@/types";
+import { extraerLiquidacionAliclik } from "@/app/api/pedidos/liquidar-aliclik/route";
+import { extraerFinanzasShalom } from "@/lib/finanzas/tags-shalom";
 
 export const dynamic = "force-dynamic";
 
@@ -58,6 +60,7 @@ export default async function PipelinePage() {
       ordenItems: pedidosOrdenes.items,
       ordenTotal: pedidosOrdenes.total,
       ordenModalidadPago: pedidosOrdenes.modalidadPago,
+      ordenNotas: pedidosOrdenes.notas,
     })
     .from(deals)
     .leftJoin(contacts, eq(deals.contactId, contacts.id))
@@ -91,6 +94,7 @@ export default async function PipelinePage() {
     const direccion = cf.agencia_shalom || d.ordenDireccion || cf.direccion_envio || cf.direccion || null;
     const dni = cf.dni_ruc || d.ordenDni || cf.dni || null;
     const stage = allStages.find((s) => s.id === d.stageId);
+    const notasCombinadas = [d.ordenNotas, d.notes].filter(Boolean).join("\n");
     const esConsulta =
       stage?.key === "consulta_catalogo" ||
       Boolean(stage?.name && stage.name.toLowerCase().includes("consulta"));
@@ -136,6 +140,10 @@ export default async function PipelinePage() {
       ownerId: d.contactOwnerId || null,
       ownerName: d.contactOwnerName || null,
       tags: (d.contactTags || []) as string[],
+      // El dinero ya registrado (liquidación AliClik y dinero Shalom) vive en las notas del pedido y del deal.
+      // Sin esto, al recargar la página la tarjeta volvía a mostrar "Registrar dinero Shalom" aunque estuviera guardado.
+      liquidacionAliclik: extraerLiquidacionAliclik(notasCombinadas),
+      finanzasShalom: extraerFinanzasShalom(notasCombinadas),
     };
   });
 
