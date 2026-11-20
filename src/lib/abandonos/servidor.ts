@@ -1,5 +1,6 @@
 import "server-only";
 import { db } from "@/db";
+import { esNumeroEntrenador } from "@/lib/alerts/supervisor-alerts";
 import {
   activities,
   channelAccounts,
@@ -348,6 +349,7 @@ export async function procesarAbandonos(opts: { ahora?: Date; limite?: number } 
     .select({
       id: contacts.id,
       name: contacts.name,
+      phone: contacts.phone,
       tags: contacts.tags,
       customFields: contacts.customFields,
       updatedAt: contacts.updatedAt,
@@ -363,6 +365,8 @@ export async function procesarAbandonos(opts: { ahora?: Date; limite?: number } 
     .limit(limite);
 
   for (const c of candidatos) {
+    // Lista blanca: un supervisor que prueba el formulario no recibe la secuencia de abandono.
+    if (esNumeroEntrenador(c.phone)) continue;
     res.revisados++;
     const a = ((c.customFields as Record<string, unknown> | null)?.abandono ?? null) as AbandonoGuardado | null;
     const capturadoEn = a?.capturadoEn ? new Date(a.capturadoEn) : c.updatedAt;

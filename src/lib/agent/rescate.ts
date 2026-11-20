@@ -1,5 +1,6 @@
 import "server-only";
 import { nombreParaSaludo } from "@/lib/nombres";
+import { esNumeroEntrenador } from "@/lib/alerts/supervisor-alerts";
 import { mostrarNumeroOrden } from "@/lib/pedidos/numero-formato";
 import { db } from "@/db";
 import { activities, contacts, conversations, deals, messages, pipelineStages } from "@/db/schema";
@@ -684,6 +685,8 @@ export async function auditarChatsAbandonados(opts?: { limite?: number; forzarHo
 
     for (const c of candidatas) {
       if (rescatados >= limite) break;
+      // Lista blanca: los supervisores prueban el bot; no se les manda rescate.
+      if (esNumeroEntrenador(c.contactPhone)) continue;
 
       // Obtener los últimos mensajes de la conversación para evaluar el contexto completo
       const ultimosMensajes = await db

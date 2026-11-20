@@ -6,6 +6,7 @@ import { and, eq, gte, ne, or } from "drizzle-orm";
 import { resolveDefaultTenantId } from "@/lib/tenants";
 import { sincronizarConGoogleDrive } from "@/lib/drive-sync";
 import { alertarEquipo } from "@/lib/agent/alertas";
+import { notificarSupervisoresCritico } from "@/lib/alerts/supervisor-alerts";
 import { pedidosOrdenes, type ItemPedido } from "../../../../../modules/pedidos/tabla";
 import { sincronizarEtapaPipeline } from "../../../../../modules/pedidos/servidor";
 import { emitAutomationEvent } from "@/lib/automations";
@@ -418,6 +419,15 @@ export async function POST(req: NextRequest) {
           origen: "shopify",
         },
       }).catch((err) => console.error("[shopify-webhook] error disparando automatizaciones:", err));
+
+      await notificarSupervisoresCritico({
+        tipo: "pedido_shopify",
+        titulo: `Pedido web ${numeroOrden}`,
+        detalle: `${numeroOrden} por S/ ${totalNum.toFixed(2)} (${items.map((i) => `${i.cantidad}x ${i.titulo}`).join(", ")}) · ${distrito ? `${distrito}, ` : ""}${ciudad}${esProv ? " · provincia: falta adelanto S/20" : ""}`,
+        clienteNombre: nombre,
+        clienteTelefono: telefono,
+        contactId,
+      }).catch((err) => console.warn("[shopify-webhook] aviso a supervisores falló:", err));
     }
 
     await db.insert(activities).values({

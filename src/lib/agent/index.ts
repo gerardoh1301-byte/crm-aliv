@@ -6,6 +6,7 @@ import { deliverMessage, getConversationRow } from "@/lib/channels/deliver";
 import { isChannel, type Channel } from "@/lib/channels/types";
 import { displayName, listMembers } from "@/lib/team";
 import { alertarEquipo } from "./alertas";
+import { esNumeroEntrenador, notificarSupervisoresCritico } from "@/lib/alerts/supervisor-alerts";
 import { limpiarFormatoWhatsApp, removerMencionClaveSiYaEntregada, removerSaludoRepetido } from "./formato";
 import { getConfig } from "@/lib/config";
 import { getAgentConfig } from "./config";
@@ -151,7 +152,7 @@ async function executeAgentTurn(
   if (!tienePedidoReciente) {
     const ultimoUsuario = [...collapsed].reverse().find((m) => m.role === "user");
     const textoUltimo = typeof ultimoUsuario?.content === "string" ? ultimoUsuario.content : "";
-    await registrarPromesaSiAplica(contact.id, conversation.id, textoUltimo).catch((err) =>
+    if (!esNumeroEntrenador(contact.phone)) await registrarPromesaSiAplica(contact.id, conversation.id, textoUltimo).catch((err) =>
       console.warn("[agent] no se pudo registrar el seguimiento:", err instanceof Error ? err.message : err)
     );
   }
@@ -279,6 +280,15 @@ async function executeAgentTurn(
           titulo: `⚠️ Guardrail C2 (${contact.name})`,
           cuerpo: `${checkOrden.detalle ?? "El bot intentó enviar clave o monto inválido"}. Se derivó a asesor humano.`,
         });
+        await notificarSupervisoresCritico({
+          tipo: "guardrail_bloqueo",
+          titulo: "Respuesta bloqueada",
+          detalle: `${checkOrden.detalle ?? "El bot intentó enviar una clave o un monto inválido"} El cliente recibió el mensaje de derivación; respóndele a mano.`,
+          clienteNombre: contact.name,
+          clienteTelefono: contact.phone,
+          contactId: contact.id,
+          conversationId: conversation.id,
+        }).catch((err) => console.warn("[agent] aviso a supervisores falló:", err));
       }
 
       const convMeta = (conversation.metadata as Record<string, unknown> | null) ?? {};
@@ -492,6 +502,15 @@ async function avisarSinRespuesta(
     titulo: `Chat sin respuesta: ${contact.name}`,
     cuerpo: `El bot no pudo responder a ${contact.name} (${contact.phone || "sin teléfono"}): ${categoria}. Responde a mano.`,
   });
+  await notificarSupervisoresCritico({
+    tipo: "bot_sin_respuesta",
+    titulo: "Bot sin respuesta",
+    detalle: `Motivo: ${categoria}. El cliente está esperando: respóndele a mano.`,
+    clienteNombre: contact.name,
+    clienteTelefono: contact.phone,
+    contactId: contact.id,
+    conversationId,
+  }).catch((err) => console.warn("[agent] aviso a supervisores falló:", err));
 
   return { ok: false, reason, toolCalls };
 }

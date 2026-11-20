@@ -19,6 +19,8 @@ import { extraerDatosFormularioShopify } from "@/lib/shopify/form-extractor";
 import { sincronizarDealEnSheets } from "@/lib/sheets/envios-sync";
 import { notificarCambioDealAlErp } from "@/lib/finanzas/notificar-erp";
 import { generarNumeroChat } from "@/lib/pedidos/numeracion";
+import { mostrarNumeroOrden } from "@/lib/pedidos/numero-formato";
+import { esNumeroEntrenador, notificarSupervisoresCritico } from "@/lib/alerts/supervisor-alerts";
 import type { ModuloServidor, HandlerModulo, ToolModulo } from "@/lib/modules/types";
 import manifiesto from "./manifiesto";
 import { pedidosOrdenes, type ItemPedido } from "./tabla";
@@ -709,6 +711,19 @@ const tools: ToolModulo[] = [
         return { ok: false, error: "Debes indicar al menos un producto para crear el pedido" };
       }
 
+      // Lista blanca: los supervisores (951365418 y 945226853) prueban el bot; nunca se les
+      // registra un pedido real, aunque el modelo ignore la instrucción del prompt.
+      if (esNumeroEntrenador(ctx.contactPhone)) {
+        return {
+          ok: true,
+          data: {
+            simulado: true,
+            message:
+              "MODO SUPERVISOR: este número es de un supervisor en prueba. NO se registró ningún pedido. Dile que el pedido de prueba no se guarda y continúa la prueba.",
+          },
+        };
+      }
+
       // Un solo pedido de chat abierto por cliente: el bot a veces volvia a llamar esta
       // herramienta en el turno siguiente y duplicaba el pedido (#ALIV-1038 y #ALIV-1039).
       const hace72h = new Date(Date.now() - 72 * 60 * 60 * 1000);
@@ -884,6 +899,18 @@ const tools: ToolModulo[] = [
       });
 
       await sincronizarConGoogleDrive().catch(() => {});
+
+      await notificarSupervisoresCritico({
+        tipo: "pedido_chat",
+        titulo: `Pedido ${numeroOrden}`,
+        detalle: `El bot registró ${mostrarNumeroOrden(numeroOrden)} por S/ ${totalSoles.toFixed(2)} (${itemsFinales
+          .map((i) => `${i.cantidad}x ${i.titulo}`)
+          .join(", ")}) · ${distrito ? `${distrito}, ` : ""}${ciudad}${esProvinciaChat ? " · adelanto S/20 por verificar" : ""}`,
+        clienteNombre: typeof args.nombre_cliente === "string" && args.nombre_cliente.trim() ? args.nombre_cliente.trim() : contactoActual?.name,
+        clienteTelefono: ctx.contactPhone,
+        contactId: ctx.contactId,
+        conversationId: ctx.conversationId,
+      }).catch((err) => console.warn("[pedidos] aviso a supervisores falló:", err));
 
       return {
         ok: true,

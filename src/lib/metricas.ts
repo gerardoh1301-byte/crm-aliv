@@ -2,6 +2,15 @@ import "server-only";
 import { sql } from "drizzle-orm";
 import { db } from "@/db";
 import { varianteAB } from "@/lib/agent/guion-venta";
+import { SUPERVISORES_DIGITOS } from "@/lib/alerts/supervisor-alerts";
+
+/** Excluye las conversaciones de los supervisores (sus chats son pruebas, no clientes). */
+function sinSupervisores(columnaContacto: string) {
+  const lista = SUPERVISORES_DIGITOS.map((d) => `'${d}'`).join(",");
+  return sql.raw(
+    `${columnaContacto} not in (select id from contacts where right(regexp_replace(coalesce(phone, ''), '[^0-9]', '', 'g'), 9) in (${lista}))`
+  );
+}
 
 /**
  * Metricas del CRM para el panel de crecimiento del sistema integrado (Claude lee esto
@@ -96,7 +105,7 @@ export async function calcularMetricas({ desde, hasta }: RangoMetricas) {
   ] = await Promise.all([
     filas(sql`
       select ${dia(sql`created_at`)} as fecha, channel as canal, count(*)::int as n
-      from conversations where created_at >= ${ini} and created_at < ${fin}
+      from conversations where created_at >= ${ini} and created_at < ${fin} and ${sinSupervisores("contact_id")}
       group by 1, 2`),
     filas(sql`
       select ${dia(sql`created_at`)} as fecha, direction, coalesce(origin, '') as origen, count(*)::int as n
@@ -104,7 +113,7 @@ export async function calcularMetricas({ desde, hasta }: RangoMetricas) {
       group by 1, 2, 3`),
     filas(sql`
       select ${dia(sql`needs_human_at`)} as fecha, count(*)::int as n
-      from conversations where needs_human_at >= ${ini} and needs_human_at < ${fin}
+      from conversations where needs_human_at >= ${ini} and needs_human_at < ${fin} and ${sinSupervisores("contact_id")}
       group by 1`),
     filas(sql`
       select ${dia(sql`created_at`)} as fecha,
@@ -122,7 +131,7 @@ export async function calcularMetricas({ desde, hasta }: RangoMetricas) {
              count(*)::int as conversaciones,
              array_agg(distinct contact_id) as contactos
       from conversations
-      where created_at >= ${ini} and created_at < ${fin}
+      where created_at >= ${ini} and created_at < ${fin} and ${sinSupervisores("contact_id")}
         and coalesce(metadata->>'ctwa_source_id', metadata->>'meta_ad_id') is not null
       group by 1`),
     filas(sql`
@@ -191,7 +200,7 @@ export async function calcularMetricas({ desde, hasta }: RangoMetricas) {
              left(coalesce(last_message_body, ''), 80) as ultimo_mensaje,
              floor(extract(epoch from (now() - last_inbound_at)) / 60)::int as minutos
       from conversations
-      where last_direction = 'in'
+      where last_direction = 'in' and ${sinSupervisores("contact_id")}
         and last_inbound_at < now() - interval '60 minutes'
         and last_inbound_at > now() - interval '48 hours'
       order by last_inbound_at
@@ -371,7 +380,7 @@ async function calcularEmbudoChat(ini: ReturnType<typeof sql>, fin: ReturnType<t
     with conv as (
       select c.id, c.contact_id, c.created_at
       from conversations c
-      where c.created_at >= ${ini} and c.created_at < ${fin} and c.provider <> 'simulador'
+      where c.created_at >= ${ini} and c.created_at < ${fin} and c.provider <> 'simulador' and ${sinSupervisores("c.contact_id")}
     ),
     base as (
       select conv.id, conv.contact_id,

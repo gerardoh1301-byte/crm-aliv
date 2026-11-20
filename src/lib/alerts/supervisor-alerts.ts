@@ -16,6 +16,9 @@ export const SUPERVISORES_PHONES = [
   "945226853",
 ];
 
+/** Últimos 9 dígitos de cada supervisor (para consultas SQL y comparaciones). */
+export const SUPERVISORES_DIGITOS = ["951365418", "945226853"] as const;
+
 export function normalizarTelefono(phone: string | null | undefined): string {
   if (!phone) return "";
   return phone.replace(/\D/g, "");
@@ -28,10 +31,7 @@ export function esNumeroEntrenador(phone: string | null | undefined): boolean {
   if (!phone) return false;
   const digits = normalizarTelefono(phone);
   // Revisa terminaciones de 9 dígitos para Perú
-  return (
-    digits.endsWith("951365418") ||
-    digits.endsWith("945226853")
-  );
+  return SUPERVISORES_DIGITOS.some((d) => digits.endsWith(d));
 }
 
 export type TipoSituacionCritica =
@@ -39,7 +39,11 @@ export type TipoSituacionCritica =
   | "reclamo_medico"
   | "pide_humano_llamada"
   | "shalom_24h_retraso"
-  | "shalom_preguia_pago_almacen";
+  | "shalom_preguia_pago_almacen"
+  | "pedido_chat"
+  | "pedido_shopify"
+  | "guardrail_bloqueo"
+  | "bot_sin_respuesta";
 
 export interface AlertaSupervisorInput {
   tipo: TipoSituacionCritica;
@@ -57,7 +61,30 @@ const TITULOS_ALERTA: Record<TipoSituacionCritica, string> = {
   pide_humano_llamada: "📞 Solicitud de Asesor Humano / Llamada",
   shalom_24h_retraso: "📦 Paquete >24h en Agencia Shalom sin retirar",
   shalom_preguia_pago_almacen: "📦 Preguía Shalom + AliClik lista · Verificar y Pagar Almacén",
+  pedido_chat: "🛒 Pedido nuevo registrado por el bot",
+  pedido_shopify: "🛍️ Pedido nuevo de la web (Shopify)",
+  guardrail_bloqueo: "🛑 Respuesta del bot bloqueada (clave o monto)",
+  bot_sin_respuesta: "🔇 El bot no pudo responder",
 };
+
+/** Tipos que pueden repetirse en ráfaga (p. ej. Gemini caído): un aviso por chat cada 30 min. */
+const TIPOS_CON_PAUSA = new Set<TipoSituacionCritica>(["guardrail_bloqueo", "bot_sin_respuesta"]);
+const PAUSA_MS = 30 * 60 * 1000;
+const ultimoAviso = new Map<string, number>();
+
+/** Decide si un aviso repetido debe omitirse (exportado para pruebas). */
+export function avisoEnPausa(
+  tipo: TipoSituacionCritica,
+  clave: string | null | undefined,
+  ahora = Date.now()
+): boolean {
+  if (!TIPOS_CON_PAUSA.has(tipo) || !clave) return false;
+  const k = `${tipo}:${clave}`;
+  const prev = ultimoAviso.get(k);
+  if (prev && ahora - prev < PAUSA_MS) return true;
+  ultimoAviso.set(k, ahora);
+  return false;
+}
 
 /**
  * Envía una alerta inmediata a los 2 números de supervisión (951365418 y 945226853)
@@ -67,6 +94,9 @@ export async function notificarSupervisoresCritico(input: AlertaSupervisorInput)
   notificados: number;
   errores: string[];
 }> {
+  // Nunca avisar sobre los propios supervisores (sus chats son pruebas).
+  if (esNumeroEntrenador(input.clienteTelefono)) return { notificados: 0, errores: [] };
+  if (avisoEnPausa(input.tipo, input.conversationId ?? input.contactId)) return { notificados: 0, errores: [] };
   const encTitle = TITULOS_ALERTA[input.tipo] ?? input.titulo;
   const clienteStr = input.clienteNombre ? `${input.clienteNombre} (${input.clienteTelefono ?? "sin número"})` : input.clienteTelefono ?? "Cliente";
   
