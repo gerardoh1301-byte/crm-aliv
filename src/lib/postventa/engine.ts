@@ -15,6 +15,24 @@ export interface PostventaMetadata {
   mensajeDia1Enviado?: boolean;
   mensajeDia7Enviado?: boolean;
   mensajeDia25Enviado?: boolean;
+  /** Fallos de envío seguidos (plantilla sin aprobar, fuera de la ventana de 24 h...). */
+  intentosFallidos?: number;
+  ultimoIntentoFallido?: string;
+}
+
+/** Tras un fallo se reintenta cada 6 h, máximo 3 veces, para no llenar el chat de errores. */
+export const POSVENTA_MAX_INTENTOS = 3;
+const POSVENTA_ESPERA_REINTENTO_MS = 6 * 60 * 60 * 1000;
+
+export function posventaEnEspera(meta: PostventaMetadata, ahora: Date = new Date()): boolean {
+  if ((meta.intentosFallidos ?? 0) >= POSVENTA_MAX_INTENTOS) return true;
+  if (!meta.ultimoIntentoFallido) return false;
+  return ahora.getTime() - new Date(meta.ultimoIntentoFallido).getTime() < POSVENTA_ESPERA_REINTENTO_MS;
+}
+
+/** Quita prefijos "Postventa · " repetidos del título de origen. */
+export function tituloBasePostventa(titulo: string | null | undefined): string {
+  return (titulo || "").replace(/^(\s*postventa\s*·\s*)+/i, "").trim();
 }
 
 export function buildMensajeDia1(nombreCliente: string): string {
@@ -161,6 +179,7 @@ export async function crearOActualizarDealPostventa(
   opts?: OpcionesDealPostventa
 ): Promise<{ ok: boolean; dealId?: string; omitido?: string }> {
   try {
+    tituloUOrden = tituloBasePostventa(tituloUOrden) || undefined;
     const [contacto] = await db
       .select({ id: contacts.id, phone: contacts.phone, name: contacts.name })
       .from(contacts)
@@ -364,6 +383,8 @@ export async function procesarSeguimientosPostventaAutomaticos(opts?: {
     } catch {
       meta = { fechaEntrega: deal.createdAt.toISOString() };
     }
+    if (posventaEnEspera(meta, ahora)) continue;
+    const metaOriginal: PostventaMetadata = { ...meta };
 
     const fechaEntrega = meta.fechaEntrega ? new Date(meta.fechaEntrega) : deal.createdAt;
     const diasTranscurridos = Math.floor((ahora.getTime() - fechaEntrega.getTime()) / (1000 * 60 * 60 * 24));
@@ -471,15 +492,26 @@ export async function procesarSeguimientosPostventaAutomaticos(opts?: {
           });
         } else {
           errores++;
+          await registrarFalloPostventa(deal.id, metaOriginal, ahora);
         }
       } catch (err) {
         console.error("[postventa] error enviando seguimiento:", err);
         errores++;
+        await registrarFalloPostventa(deal.id, metaOriginal, ahora).catch(() => {});
       }
     }
   }
 
   return { procesados, enviados, errores };
+}
+
+async function registrarFalloPostventa(dealId: string, meta: PostventaMetadata, ahora: Date) {
+  const nueva: PostventaMetadata = {
+    ...meta,
+    intentosFallidos: (meta.intentosFallidos ?? 0) + 1,
+    ultimoIntentoFallido: ahora.toISOString(),
+  };
+  await db.update(deals).set({ notes: JSON.stringify(nueva) }).where(eq(deals.id, dealId));
 }
 
 /**

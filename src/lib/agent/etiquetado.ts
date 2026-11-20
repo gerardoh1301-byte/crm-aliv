@@ -2,7 +2,7 @@ import "server-only";
 import { db } from "@/db";
 import { activities, contacts, deals, messages, pipelineStages } from "@/db/schema";
 import { desc, eq } from "drizzle-orm";
-import { cleanStr, esEtiquetaDeEtapa, TODAS_LAS_ETIQUETAS } from "@/lib/tags";
+import { cleanStr, esEtiquetaDeEtapa, etiquetaRetrocede, obtenerEtiquetaDeEtapa, TODAS_LAS_ETIQUETAS } from "@/lib/tags";
 import { pedidosOrdenes } from "../../../modules/pedidos/tabla";
 import { adelantoRegistrado, esPedidoDeProvincia } from "@/lib/pedidos/adelanto";
 
@@ -64,6 +64,27 @@ export function normalizarNombreEtiqueta(nombre: string): string {
   return nombre.trim();
 }
 
+/** Etiqueta que corresponde a la tarjeta de venta más reciente del contacto (sin posventa). */
+async function etiquetaDeEtapaDelContacto(contactId: string): Promise<string | null> {
+  const filas = await db
+    .select({
+      title: deals.title,
+      key: pipelineStages.key,
+      name: pipelineStages.name,
+      isWon: pipelineStages.isWon,
+      isLost: pipelineStages.isLost,
+    })
+    .from(deals)
+    .innerJoin(pipelineStages, eq(deals.stageId, pipelineStages.id))
+    .where(eq(deals.contactId, contactId))
+    .orderBy(desc(deals.updatedAt))
+    .limit(5);
+  const venta = filas.find(
+    (f) => !/^postventa\b/i.test(f.title || "") && !(f.key || "").startsWith("postventa")
+  );
+  return venta ? obtenerEtiquetaDeEtapa(venta) : null;
+}
+
 /**
  * Aplica una etiqueta a un contacto de forma segura y consistente.
  */
@@ -100,6 +121,15 @@ export async function aplicarEtiquetaAContacto(params: {
     // "establecer_estado": si es una etiqueta de etapa/estado del funnel,
     // reemplaza cualquier estado anterior pero conserva tags de sistema (shopify, etc.) y secundarias.
     const esEstado = esEtiquetaDeEtapa(etiquetaNorm) || cleanStr(etiquetaNorm) === "cancelado";
+
+    // La etapa del pipeline manda: el bot no puede dejar la etiqueta por detrás de ella
+    // (antes ponía "Informativo" a clientes con pedido en "Agendar entrega" o "Entregado").
+    if (esEstado) {
+      const etiquetaDeEtapa = await etiquetaDeEtapaDelContacto(contactId);
+      if (etiquetaRetrocede(etiquetaNorm, etiquetaDeEtapa)) {
+        return { ok: true, tags: tagsActuales, etiquetaNormalizada: etiquetaNorm };
+      }
+    }
 
     if (esEstado) {
       const sinEtapas = tagsActuales.filter((t) => !esEtiquetaDeEtapa(t) && cleanStr(t) !== "cancelado");

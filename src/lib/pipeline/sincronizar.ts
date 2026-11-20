@@ -3,7 +3,7 @@ import { db } from "@/db";
 import { contacts, pipelines, pipelineStages, deals } from "@/db/schema";
 import { and, asc, desc, eq, inArray, sql } from "drizzle-orm";
 import { getConfig } from "@/lib/config";
-import { cleanStr, esEtiquetaDeEtapa, obtenerEtiquetaDeEtapa } from "@/lib/tags";
+import { cleanStr, esEtiquetaDeEtapa, obtenerEtiquetaDeEtapa, quitarLogisticaSiCierra } from "@/lib/tags";
 
 /**
  * Lleva el pipeline por defecto al estado que describe config/cliente.ts.
@@ -400,13 +400,17 @@ export async function sincronizarEtiquetasDesdePipeline(): Promise<{ actualizado
       continue;
     }
 
-    const sinEtapas = tagsActuales.filter((t) => !esEtiquetaDeEtapa(t));
+    const sinEtapas = quitarLogisticaSiCierra(
+      tagsActuales.filter((t) => !esEtiquetaDeEtapa(t)),
+      nuevaEtiqueta
+    );
     const tieneEtiqueta = tagsActuales.some((t) => t.toLowerCase() === nuevaEtiqueta.toLowerCase());
     const tieneOtrasEtapas = tagsActuales.some(
       (t) => esEtiquetaDeEtapa(t) && t.toLowerCase() !== nuevaEtiqueta.toLowerCase()
     );
+    const sobraLogistica = sinEtapas.length !== tagsActuales.filter((t) => !esEtiquetaDeEtapa(t)).length;
 
-    if (!tieneEtiqueta || tieneOtrasEtapas) {
+    if (!tieneEtiqueta || tieneOtrasEtapas || sobraLogistica) {
       const finalTags = [...sinEtapas, nuevaEtiqueta];
       await db
         .update(contacts)

@@ -303,3 +303,63 @@ export function getTagStyle(tag: string): { label: string; color: string; badge:
     dot: "bg-muted-foreground",
   };
 }
+
+
+/**
+ * Etiquetas de logística del envío. Sirven mientras el pedido está en curso; cuando la
+ * tarjeta llega a "Entregado y Cobrado" o "Cancelado" ya no aplican y se quitan solas.
+ */
+export const ETIQUETAS_LOGISTICA: string[] = [
+  "en agencia shalom",
+  "aviso_llegada_enviado",
+  "adelanto por verificar",
+  "pendiente de cobro",
+  "pendiente de envío",
+  "pendiente de courier",
+  "esperando respuesta",
+  "pedido confirmado",
+  "motorizado lima",
+];
+
+/** Si la nueva etiqueta de etapa cierra el pedido, devuelve las etiquetas sin las de logística. */
+export function quitarLogisticaSiCierra(tags: string[], nuevaEtiqueta: string | null | undefined): string[] {
+  const n = cleanStr(nuevaEtiqueta || "");
+  if (n !== "compra exitosa" && n !== "cancelado") return tags;
+  const logistica = new Set(ETIQUETAS_LOGISTICA.map(cleanStr));
+  return tags.filter((t) => !logistica.has(cleanStr(t)));
+}
+
+/**
+ * Orden de avance de las etiquetas de estado. Sirve para que el bot no "baje" una
+ * etiqueta por debajo de la etapa real del pipeline (p. ej. "Informativo" a quien ya
+ * tiene un pedido en "Agendar entrega" o "Entregado").
+ */
+const RANGO_ETIQUETA: Record<string, number> = {
+  informativo: 0,
+  // Mismo nivel que "Agendar entrega": en provincia el pedido puede estar en esa columna
+  // con el adelanto aún sin pagar, y la etiqueta lo dice con más precisión.
+  "pendiente de adelanto": 2,
+  "pedido confirmado": 1,
+  "agendar entrega": 2,
+  "adelanto pagado": 2,
+  "orden en camino": 3,
+  "compra exitosa": 4,
+};
+
+export function rangoEtiqueta(tag: string | null | undefined): number | null {
+  const r = RANGO_ETIQUETA[cleanStr(tag || "")];
+  return r === undefined ? null : r;
+}
+
+/**
+ * true si poner `nueva` dejaría al contacto por detrás de la etapa de su pipeline.
+ * "Cancelado" solo se bloquea si el pedido ya está en camino o entregado.
+ */
+export function etiquetaRetrocede(nueva: string, etiquetaDeEtapa: string | null | undefined): boolean {
+  const rEtapa = rangoEtiqueta(etiquetaDeEtapa);
+  if (rEtapa === null) return false;
+  if (cleanStr(nueva) === "cancelado") return rEtapa >= 3;
+  const rNueva = rangoEtiqueta(nueva);
+  if (rNueva === null) return false;
+  return rNueva < rEtapa;
+}

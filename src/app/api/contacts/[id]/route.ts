@@ -170,12 +170,18 @@ export async function PUT(
           .limit(1);
 
         if (stageRow) {
-          const [dealRow] = await db
-            .select({ id: deals.id, stageId: deals.stageId })
+          // Solo la tarjeta de venta: nunca la de posventa (antes la movía a "Entregado y
+          // Cobrado" y eso creaba una segunda tarjeta de posventa).
+          const candidatas = await db
+            .select({ id: deals.id, stageId: deals.stageId, title: deals.title, stageKey: pipelineStages.key })
             .from(deals)
+            .innerJoin(pipelineStages, eq(deals.stageId, pipelineStages.id))
             .where(eq(deals.contactId, id))
             .orderBy(desc(deals.updatedAt))
-            .limit(1);
+            .limit(10);
+          const dealRow = candidatas.find(
+            (d) => !/^postventa\b/i.test(d.title || "") && !(d.stageKey || "").startsWith("postventa")
+          );
 
           if (dealRow && dealRow.stageId !== stageRow.id) {
             await setDealStage({ dealId: dealRow.id, stageId: stageRow.id });

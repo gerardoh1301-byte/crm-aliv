@@ -5,7 +5,7 @@ import { pedidosOrdenes } from "../../../modules/pedidos/tabla";
 import { eq } from "drizzle-orm";
 import { emitAutomationEvent } from "@/lib/automations";
 import type { DealStageChangedPayload } from "@/lib/automations/triggers";
-import { cleanStr, esEtiquetaDeEtapa, obtenerEtiquetaDeEtapa } from "@/lib/tags";
+import { cleanStr, esEtiquetaDeEtapa, obtenerEtiquetaDeEtapa, quitarLogisticaSiCierra } from "@/lib/tags";
 import { sincronizarDealEnSheets } from "@/lib/sheets/envios-sync";
 import { notificarCambioDealAlErp } from "@/lib/finanzas/notificar-erp";
 import { crearOActualizarDealPostventa, cancelarDealPostventa } from "@/lib/postventa/engine";
@@ -74,7 +74,10 @@ export async function setDealStage(input: {
 
     if ((stageKey === "entregado" || nuevoEstado === "entregado") && deal.contactId) {
       try {
-        await crearOActualizarDealPostventa(deal.contactId, deal.title);
+        // Una tarjeta de posventa arrastrada a "Entregado" no crea otra posventa encima.
+        if (!/^postventa\b/i.test(deal.title || "")) {
+          await crearOActualizarDealPostventa(deal.contactId, deal.title);
+        }
       } catch (postventaErr) {
         console.warn("[stage] error al vincular postventa:", postventaErr);
       }
@@ -108,7 +111,10 @@ export async function setDealStage(input: {
         if (tieneAgendarEntrega && cleanStr(nuevaEtiqueta) === "pendiente de adelanto") {
           // Mantener "Agendar entrega" intacta
         } else {
-          const sinEtapas = tagsActuales.filter((t) => !esEtiquetaDeEtapa(t));
+          const sinEtapas = quitarLogisticaSiCierra(
+            tagsActuales.filter((t) => !esEtiquetaDeEtapa(t)),
+            nuevaEtiqueta
+          );
           const actualizadas = [...sinEtapas, nuevaEtiqueta];
           await db
             .update(contacts)
