@@ -22,8 +22,8 @@ import {
  *
  * Nada que cambie datos se aplica sin una confirmación explícita con el número del
  * pedido ("SI 1140" / "ENVIAR 1140"). La pendiente vive 15 minutos en crm_settings.
- * La clave de retiro solo se muestra si el saldo ya está registrado como pagado, y solo
- * llega al cliente con "ENVIAR <pedido>".
+ * La clave llega al cliente solo con "ENVIAR <pedido>". Entregarla equivale a decir que el
+ * saldo se verificó: se registra como cobrado y el pedido pasa a «Entregado y cobrado».
  */
 
 const AUTOR = "Gerardo (WhatsApp)";
@@ -381,7 +381,7 @@ const AYUDA = [
   "🤖 *Órdenes por WhatsApp (solo este número)*",
   "• *pagó 1140 179* → registra el pago del saldo (también «Jaime pagó 179» o «pago completo 1140»)",
   "• *flete 1140 10* → flete pagado en Págalo",
-  "• *clave 1140* → te muestro la clave de retiro (solo si el saldo está pagado)",
+  "• *clave 1140* → te muestro la clave; al *ENVIAR* el saldo queda cobrado y el pedido entregado",
   "• *entregado 1140* → marca el pedido como entregado",
   "• *estado 1140* → resumen del pedido",
   "• *guia 1066 104169999 AB12* → registra la guía nueva (por ejemplo tras un cambio de destino)",
@@ -408,9 +408,78 @@ function mensajeClaveParaSupervisor(p: Pedido, c: CuentasPedido): string {
   const nombre = (p.contactName || "el cliente").split(" ")[0];
   return [
     `🔑 Clave de retiro ${encabezado(p)}: *${p.claveRecojo}*`,
-    `📦 ${datosRastreo(p)} · saldo cobrado ${soles(c.saldoCobrado ?? 0)}`,
+    `📦 ${datosRastreo(p)} · ${
+      c.saldoCubierto
+        ? `saldo cobrado ${soles(c.saldoCobrado ?? 0)}`
+        : `⚠️ al enviarla registro el saldo de ${soles(c.saldoPendiente)} como cobrado`
+    }`,
+    `El pedido pasa a *Entregado y cobrado* al enviar la clave.`,
     `¿Se la envío a ${nombre} por WhatsApp? Responde *ENVIAR ${digitosPedido(p.numeroOrden)}* (o *NO*).`,
   ].join("\n");
+}
+
+// ---------------------------------------------------------------------------
+// Clave entregada = saldo cobrado + pedido entregado
+
+/** Pedido a «Entregado» (pedido, pipeline, posventa y ERP). */
+async function marcarEntregado(p: Pedido, autor: string): Promise<void> {
+  const { sincronizarEtapaPipeline } = await import("@modules/pedidos/servidor");
+  const { crearOActualizarDealPostventa } = await import("@/lib/postventa/engine");
+  await db
+    .update(pedidosOrdenes)
+    .set({ estado: "entregado", updatedAt: new Date() })
+    .where(eq(pedidosOrdenes.id, p.id));
+  const producto = p.items?.[0]?.titulo ?? "Pedido Aliv";
+  if (p.contactId) {
+    await sincronizarEtapaPipeline(p.contactId, "entregado", `${p.numeroOrden} · ${producto}`, Number(p.total) || 0, p.id, p.dealId);
+    await crearOActualizarDealPostventa(p.contactId, p.numeroOrden, Number(p.total) || 0).catch((err) =>
+      console.warn("[supervisor-comandos] posventa:", err)
+    );
+  }
+  await nota(p, `Pedido ${p.numeroOrden} marcado como Entregado por ${autor}.`);
+  if (p.dealId) notificarCambioDealAlErp(p.dealId).catch(() => {});
+}
+
+/**
+ * Se entregó la clave de retiro (botón «Enviar Clave Auto» o «ENVIAR 1084» por chat).
+ * Entregarla implica que Gerardo ya verificó el saldo, así que:
+ * 1. si el saldo no estaba registrado, se registra completo como cobrado (cuenta BCP);
+ * 2. el pedido pasa a «Entregado y cobrado» (pipeline, posventa y ERP).
+ * Es idempotente: si ya estaba cobrado y entregado, no cambia nada.
+ */
+export async function registrarClaveEntregada(
+  pedidoId: string,
+  autor: string
+): Promise<{ ok: boolean; saldoRegistrado: number | null; entregado: boolean; texto: string }> {
+  const p = await pedidoPorId(pedidoId);
+  if (!p) return { ok: false, saldoRegistrado: null, entregado: false, texto: "No encontré el pedido." };
+  const c = cuentasDelPedido(p);
+  let saldoRegistrado: number | null = null;
+  if (!c.saldoCubierto && c.saldoPendiente > 0) {
+    const res = await registrarFinanzasShalom(
+      { pedidoId: p.id, dealId: p.dealId, numeroOrden: p.numeroOrden, saldoMonto: c.saldoPendiente, saldoCuenta: "BCP" },
+      autor
+    );
+    if (!res.ok) {
+      await nota(p, `[CLAVE ENTREGADA] No se pudo registrar el saldo de ${soles(c.saldoPendiente)}: ${res.error}`);
+      return {
+        ok: false,
+        saldoRegistrado: null,
+        entregado: false,
+        texto: `⚠️ No pude registrar el saldo de ${soles(c.saldoPendiente)} (${res.error}); regístralo a mano. El pedido no cambió de etapa.`,
+      };
+    }
+    saldoRegistrado = c.saldoPendiente;
+    await nota(p, `[CLAVE ENTREGADA] Saldo de ${soles(c.saldoPendiente)} registrado como cobrado al entregar la clave (${autor}).`);
+  }
+  const yaEntregado = p.estado === "entregado";
+  if (!yaEntregado) await marcarEntregado((await pedidoPorId(p.id)) ?? p, autor);
+  else if (saldoRegistrado !== null && p.dealId) notificarCambioDealAlErp(p.dealId).catch(() => {});
+  const partes = [
+    saldoRegistrado !== null ? `💰 Saldo de ${soles(saldoRegistrado)} registrado como cobrado.` : null,
+    yaEntregado ? `${encabezado(p)} ya estaba como Entregado.` : `📦 ${encabezado(p)} pasó a *Entregado y cobrado*; la posventa arranca sola.`,
+  ].filter(Boolean);
+  return { ok: true, saldoRegistrado, entregado: true, texto: partes.join("\n") };
 }
 
 // ---------------------------------------------------------------------------
@@ -459,9 +528,8 @@ async function proponerPara(cmd: Comando, r: Extract<Resolucion, { ok: true }>):
 
   if (cmd.tipo === "clave") {
     if (!p.claveRecojo) return `${encabezado(p)} todavía no tiene la clave de retiro registrada en el CRM.`;
-    if (!c.saldoCubierto) {
-      return `🔒 ${encabezado(p)}: el saldo de ${soles(c.saldoPendiente)} aún no está registrado como pagado. Primero confirma el pago: «pagó ${n} ${c.saldoPendiente}».`;
-    }
+    // Pedir la clave implica que el saldo ya se verificó: al ENVIAR se registra como
+    // cobrado y el pedido pasa a «Entregado y cobrado» (ver registrarClaveEntregada).
     await guardarPendiente({ accion: "enviar_clave", pedidoId: p.id, numeroOrden: p.numeroOrden, monto: null });
     return mensajeClaveParaSupervisor(p, c);
   }
@@ -633,27 +701,13 @@ async function ejecutarPendiente(cmd: Comando, conversationId: string): Promise<
   }
 
   if (pend.accion === "entregado") {
-    const { sincronizarEtapaPipeline } = await import("@modules/pedidos/servidor");
-    const { crearOActualizarDealPostventa } = await import("@/lib/postventa/engine");
-    await db
-      .update(pedidosOrdenes)
-      .set({ estado: "entregado", updatedAt: new Date() })
-      .where(eq(pedidosOrdenes.id, p.id));
-    const producto = p.items?.[0]?.titulo ?? "Pedido Aliv";
-    if (p.contactId) {
-      await sincronizarEtapaPipeline(p.contactId, "entregado", `${p.numeroOrden} · ${producto}`, Number(p.total) || 0, p.id, p.dealId);
-      await crearOActualizarDealPostventa(p.contactId, p.numeroOrden, Number(p.total) || 0).catch((err) =>
-        console.warn("[supervisor-comandos] posventa:", err)
-      );
-    }
-    await nota(p, `Pedido ${p.numeroOrden} marcado como Entregado por ${AUTOR}.`);
-    if (p.dealId) notificarCambioDealAlErp(p.dealId).catch(() => {});
+    await marcarEntregado(p, AUTOR);
     return `✅ ${encabezado(p)} quedó como *Entregado* en el pipeline y el ERP; la posventa arranca sola.`;
   }
 
   if (pend.accion === "enviar_clave") {
     const c = cuentasDelPedido(p);
-    if (!p.claveRecojo || !c.saldoCubierto) return `🔒 ${encabezado(p)}: la clave ya no está habilitada (revisa el pago).`;
+    if (!p.claveRecojo) return `🔒 ${encabezado(p)}: el pedido ya no tiene clave de retiro registrada.`;
     if (!p.contactId) return "El pedido no tiene contacto asociado.";
     const [conv] = await db
       .select({ id: conversations.id })
@@ -673,7 +727,8 @@ async function ejecutarPendiente(cmd: Comando, conversationId: string): Promise<
       .set({ notas: `${p.notas ? `${p.notas}\n` : ""}[CLAVE_ENVIADA_WHATSAPP:${new Date().toISOString()}]`, updatedAt: new Date() })
       .where(eq(pedidosOrdenes.id, p.id));
     await nota(p, `[CLAVE ENVIADA] Clave de retiro enviada al cliente por orden de ${AUTOR}.`);
-    return `✅ Clave enviada a ${nombre} por WhatsApp.`;
+    const cierre = await registrarClaveEntregada(p.id, AUTOR);
+    return `✅ Clave enviada a ${nombre} por WhatsApp.\n${cierre.texto}`;
   }
 
   return "No reconozco lo pendiente; vuelve a escribir la orden.";

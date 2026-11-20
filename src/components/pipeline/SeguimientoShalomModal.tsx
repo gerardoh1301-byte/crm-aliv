@@ -344,8 +344,41 @@ Recuerda acudir con tu DNI físico original para el retiro. ¡Que disfrutes tus 
     const texto = generarTextoClave();
     const phone = getCleanPhone();
 
+    // Entregar la clave implica que el saldo ya se verificó: se registra como cobrado y
+    // la tarjeta pasa a «Entregado y cobrado». Se llama cuando la clave sale por API o
+    // queda lista en WhatsApp Web / portapapeles para enviarla a mano.
+    let pedidoIdGuardado: string | null = data.pedidoId ?? null;
+    const registrarEntrega = async () => {
+      if (!pedidoIdGuardado) {
+        toast.warning("Clave enviada, pero no encontré el pedido para registrar el saldo; hazlo a mano.");
+        return;
+      }
+      try {
+        const r = await fetch("/api/pedidos/clave-entregada", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ pedidoId: pedidoIdGuardado }),
+        });
+        const j = await r.json().catch(() => ({}));
+        if (r.ok && j.ok) {
+          toast.success(
+            j.saldoRegistrado != null
+              ? `💰 Saldo de S/ ${Number(j.saldoRegistrado).toFixed(2)} registrado y pedido en «Entregado y cobrado»`
+              : "📦 Pedido en «Entregado y cobrado»"
+          );
+        } else {
+          toast.error(j.texto || j.error || "No se pudo registrar el saldo ni mover la tarjeta; hazlo a mano.", {
+            duration: 7000,
+          });
+        }
+      } catch {
+        toast.error("No se pudo registrar el saldo ni mover la tarjeta; hazlo a mano.", { duration: 7000 });
+      }
+    };
+
     try {
-      await guardarEnBaseDeDatos();
+      const guardado = await guardarEnBaseDeDatos();
+      pedidoIdGuardado = guardado?.pedido?.id ?? pedidoIdGuardado;
       onUpdated?.(numeroGuia.trim(), codigoRastreo.trim(), claveRecojo.trim(), agenciaDestino.trim(), totalSoles);
 
       if (phone) {
@@ -363,6 +396,7 @@ Recuerda acudir con tu DNI físico original para el retiro. ¡Que disfrutes tus 
 
         if (res.ok && json.success) {
           toast.success("✅ ¡Clave de recojo enviada por WhatsApp al cliente!");
+          await registrarEntrega();
           onOpenChange(false);
           router.refresh();
           return;
@@ -380,6 +414,7 @@ Recuerda acudir con tu DNI físico original para el retiro. ¡Que disfrutes tus 
             "_blank",
             "noopener,noreferrer"
           );
+          await registrarEntrega();
           onOpenChange(false);
           router.refresh();
           return;
@@ -396,6 +431,7 @@ Recuerda acudir con tu DNI físico original para el retiro. ¡Que disfrutes tus 
           "_blank",
           "noopener,noreferrer"
         );
+        await registrarEntrega();
         onOpenChange(false);
         router.refresh();
         return;
@@ -403,6 +439,7 @@ Recuerda acudir con tu DNI físico original para el retiro. ¡Que disfrutes tus 
 
       navigator.clipboard.writeText(texto);
       toast.info("Clave guardada y mensaje copiado al portapapeles");
+      await registrarEntrega();
       onOpenChange(false);
       router.refresh();
     } catch (err: any) {
@@ -676,7 +713,7 @@ Recuerda acudir con tu DNI físico original para el retiro. ¡Que disfrutes tus 
                   disabled={sendingClaveAuto}
                   onClick={handleEnviarClaveAuto}
                   className="flex-1 text-xs h-8 bg-amber-600 hover:bg-amber-700 text-white border-amber-600 font-bold cursor-pointer"
-                  title="Enviar la clave automáticamente por WhatsApp (abre WhatsApp Web si la ventana 24h está cerrada)"
+                  title="Envía la clave por WhatsApp (o abre WhatsApp Web si la ventana de 24 h está cerrada). Al enviarla, el saldo queda registrado como cobrado y el pedido pasa a Entregado y cobrado."
                 >
                   {sendingClaveAuto ? (
                     <>
