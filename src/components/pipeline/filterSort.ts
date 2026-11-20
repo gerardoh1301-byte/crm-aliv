@@ -1,3 +1,4 @@
+import { fechaRecienteDeal } from "@/lib/pipeline/orden";
 import type { DealWithContact } from "@/types";
 import type { PipelineFilters, PipelineSort } from "./types";
 
@@ -39,6 +40,9 @@ export function applySort<T extends DealWithContact>(
     if (sort.field === "value") {
       av = a.value;
       bv = b.value;
+    } else if (sort.field === "reciente") {
+      av = fechaRecienteDeal(a);
+      bv = fechaRecienteDeal(b);
     } else if (sort.field === "probability") {
       av = a.probability;
       bv = b.probability;

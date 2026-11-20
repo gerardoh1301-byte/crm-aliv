@@ -98,7 +98,8 @@ export function KanbanBoard({ initialColumns, filters, sort }: KanbanBoardProps)
               ...col,
               deals: [
                 ...col.deals,
-                { ...activeDeal, stageId: col.id, stageName: col.name },
+                // Al moverla, la tarjeta queda como la más reciente de la etapa
+                { ...activeDeal, stageId: col.id, stageName: col.name, updatedAt: new Date() },
               ],
             };
           }

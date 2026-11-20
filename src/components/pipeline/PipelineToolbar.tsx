@@ -142,6 +142,7 @@ export function PipelineToolbar({
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
+                  <SelectItem value="reciente">Más reciente (movimiento o pago)</SelectItem>
                   <SelectItem value="createdAt">Fecha de creación</SelectItem>
                   <SelectItem value="value">Valor</SelectItem>
                   <SelectItem value="probability">Probabilidad</SelectItem>
