@@ -831,6 +831,23 @@ const tools: ToolModulo[] = [
         modalidadPago = "contraentrega";
       }
       const esProvinciaChat = esProvinciaPorDestino || modalidadPago === "adelanto_agencia";
+      // Provincia: el envío va a una agencia Shalom concreta. Una dirección de calle no sirve
+      // para emitir la guía; el bot debe confirmar la agencia antes de registrar.
+      if (esProvinciaChat && !/shalom|agencia/i.test(direccionEnvio)) {
+        const { buscarAgenciaShalomCercana } = await import("@/lib/agencias/shalom-directorio");
+        const r = buscarAgenciaShalomCercana({ ciudad, distrito, direccion: direccionEnvio });
+        const opciones = [r.mejorOpcion, ...r.otrasOpciones]
+          .filter((a): a is NonNullable<typeof a> => Boolean(a))
+          .slice(0, 4)
+          .map((a) => `${a.nombre} (${a.direccion})`);
+        return {
+          ok: false,
+          error:
+            "Pedido de provincia sin agencia Shalom confirmada. Antes de registrar, confirma con el cliente a qué agencia Shalom se envía" +
+            (opciones.length ? `. Opciones cercanas: ${opciones.join("; ")}` : " (pregúntale cuál le queda más cerca)") +
+            ". Luego vuelve a registrar con direccion_envio = \"Agencia Shalom <nombre>\".",
+        };
+      }
       const estadoInicial = esProvinciaChat ? "por_confirmar_cod" : "confirmado";
       const dealId = await sincronizarEtapaPipeline(
         ctx.contactId,

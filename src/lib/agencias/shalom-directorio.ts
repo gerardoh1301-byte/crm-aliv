@@ -18,6 +18,8 @@ export interface AgenciaShalom {
   principal?: boolean;
   curada?: boolean;
   coincidencias?: string[];
+  /** Localidad de la agencia según el padrón oficial (p. ej. "BAJO PICHANAQUI", "SICUANI"). */
+  zona?: string;
 }
 
 import { AGENCIAS_SHALOM_OFICIALES } from "./shalom-agencias-oficiales";
@@ -814,6 +816,17 @@ function capitalizarPalabra(str: string): string {
     .join(" ");
 }
 
+/** true si `palabra` aparece como palabra(s) completa(s) dentro de `texto` (ambos normalizados). */
+function contienePalabra(texto: string, palabra: string): boolean {
+  if (!texto || !palabra) return false;
+  return ` ${texto} `.includes(` ${palabra} `);
+}
+
+/** "Lima Provincias" y "Lima" son el mismo departamento para filtrar. */
+function normalizarDepartamento(d: string | null | undefined): string {
+  return normalizarTexto(d).replace(/ provincias?$/, "");
+}
+
 function normalizarDireccionClave(dir: string): string {
   return (dir || "")
     .toLowerCase()
@@ -834,12 +847,14 @@ function construirPadronCompleto(): AgenciaShalom[] {
     curada: true,
   }));
 
-  const direccionesExistentes = new Set(
-    AGENCIAS_CURADAS.map((a) => normalizarDireccionClave(a.direccion).slice(0, 15))
-  );
+  // Clave de duplicado: distrito + inicio de la dirección. Solo la dirección no basta:
+  // "CARRETERA CENTRAL..." se repite en varias ciudades y se perdían agencias (Carhuaz, Huari...).
+  const claveDup = (distrito: string, direccion: string) =>
+    `${normalizarDireccionClave(distrito)}|${normalizarDireccionClave(direccion).slice(0, 15)}`;
+  const direccionesExistentes = new Set(AGENCIAS_CURADAS.map((a) => claveDup(a.distrito, a.direccion)));
 
   for (const ofc of AGENCIAS_SHALOM_OFICIALES) {
-    const dirNorm = normalizarDireccionClave(ofc.direccion).slice(0, 15);
+    const dirNorm = claveDup(ofc.distrito, ofc.direccion);
     if (!direccionesExistentes.has(dirNorm)) {
       const zonaCap = capitalizarPalabra(ofc.zona || ofc.distrito || ofc.provincia);
       const dirCap = capitalizarPalabra(ofc.direccion.split(",")[0]);
@@ -856,6 +871,7 @@ function construirPadronCompleto(): AgenciaShalom[] {
         horario: ofc.horario || "LUNES A VIERNES - 8AM A 8PM",
         principal: false,
         coincidencias: ofc.coincidencias || [],
+        zona: ofc.zona,
       });
       direccionesExistentes.add(dirNorm);
     }
@@ -906,23 +922,35 @@ export function buscarAgenciaShalomCercana(params: {
     const agCoincidenciasNorm = (ag.coincidencias ?? []).map(normalizarTexto);
     const matchCiudad =
       (ciudadNorm && (
-        agCiudad.includes(ciudadNorm) ||
-        ciudadNorm.includes(agCiudad) ||
+        contienePalabra(agCiudad, ciudadNorm) ||
+        contienePalabra(ciudadNorm, agCiudad) ||
         agCoincidenciasNorm.includes(ciudadNorm)
       )) ||
       new RegExp(`\\b${agCiudad}\\b`, "i").test(todoJunto) ||
       agCoincidenciasNorm.some((c) => c.length >= 4 && new RegExp(`\\b${c}\\b`, "i").test(todoJunto));
 
     const matchDpto =
-      (ciudadNorm && (agDpto.includes(ciudadNorm) || ciudadNorm.includes(agDpto))) ||
+      (ciudadNorm && (contienePalabra(agDpto, ciudadNorm) || contienePalabra(ciudadNorm, agDpto))) ||
       new RegExp(`\\b${agDpto}\\b`, "i").test(todoJunto);
+
+    // La localidad oficial de la agencia (zona) identifica la ciudad mejor que la provincia:
+    // "Sicuani", "Pichanaqui", "Huamachuco" son zonas, no provincias.
+    const agZona = normalizarTexto(ag.zona);
+    const matchZona =
+      Boolean(ciudadNorm) &&
+      ((agZona.length >= 3 && agZona === ciudadNorm) ||
+        (agZona.length >= 3 && ciudadNorm.length >= 4 && contienePalabra(agZona, ciudadNorm)) ||
+        (agZona.length >= 4 && contienePalabra(ciudadNorm, agZona)) ||
+        normalizarTexto(ag.distrito) === ciudadNorm ||
+        normalizarTexto(ag.provincia) === ciudadNorm);
 
     if (matchCiudad) score += 40;
     if (matchDpto) score += 20;
+    if (matchZona) score += 70;
 
     // 2. Coincidencia con distrito específico (alta prioridad para no enviar al centro a quien vive en otro distrito)
     const matchDistrito =
-      (distritoNorm && (agDist.includes(distritoNorm) || distritoNorm.includes(agDist))) ||
+      (distritoNorm && (contienePalabra(agDist, distritoNorm) || contienePalabra(distritoNorm, agDist))) ||
       (agDist.length >= 4 && agDist !== agCiudad && todoJunto.includes(agDist));
     if (matchDistrito) {
       score += 60;
@@ -948,8 +976,11 @@ export function buscarAgenciaShalomCercana(params: {
       if (todoJunto.includes(p)) score += 25;
     }
 
-    // Puntos extra para agencias curadas con datos y aliases verificados
-    if (ag.curada) {
+    // Puntos extra para agencias curadas con datos y aliases verificados, SOLO si ya hay
+    // una coincidencia geográfica. Antes se sumaba siempre y, para una ciudad sin match,
+    // ganaba la primera curada (Sullana) aunque el cliente estuviera en Cusco o Amazonas.
+    const tieneMatchGeografico = matchCiudad || matchZona || matchDistrito;
+    if (ag.curada && tieneMatchGeografico) {
       score += 60;
     }
 
@@ -967,6 +998,24 @@ export function buscarAgenciaShalomCercana(params: {
       if (a.agencia.curada && !b.agencia.curada) return -1;
       return 0;
     });
+
+  // Si la ciudad que dio el cliente es una localidad exacta del padrón (zona, distrito o
+  // provincia), solo valen agencias de ese departamento: así "Cutervo" no cae en la Av.
+  // Cutervo de Ica ni "Huanta" en Anta (Cusco).
+  if (ciudadNorm) {
+    const dptosExactos = new Set(
+      AGENCIAS_SHALOM_PERU.filter(
+        (ag) =>
+          normalizarTexto(ag.zona) === ciudadNorm ||
+          normalizarTexto(ag.distrito) === ciudadNorm ||
+          normalizarTexto(ag.provincia) === ciudadNorm
+      ).map((ag) => normalizarDepartamento(ag.departamento))
+    );
+    if (dptosExactos.size > 0) {
+      const enDpto = puntuadas.filter((p) => dptosExactos.has(normalizarDepartamento(p.agencia.departamento)));
+      if (enDpto.length > 0) puntuadas.splice(0, puntuadas.length, ...enDpto);
+    }
+  }
 
   if (puntuadas.length === 0) {
     return { mejorOpcion: null, otrasOpciones: [], propuestaMensaje: null };

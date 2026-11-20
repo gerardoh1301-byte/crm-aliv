@@ -13,7 +13,7 @@ import {
 } from "@/db/schema";
 import { pedidosOrdenes } from "../../../modules/pedidos/tabla";
 import { and, desc, eq, gt, isNotNull, sql } from "drizzle-orm";
-import { consultarEstadoShalom } from "./shalom-rastreo";
+import { consultarEstadoShalom, debeAvisarEnvioConfirmado, MARCA_ENVIO_CONFIRMADO } from "./shalom-rastreo";
 import { deliverMessage } from "@/lib/channels/deliver";
 import { aplicarEtiquetaAContacto } from "../agent/etiquetado";
 import { setDealStage } from "@/lib/deals/stage";
@@ -247,6 +247,47 @@ export async function verificarYNotificarLlegadasShalom(
     const saldoSoles = Math.max(0, totalNum - 20);
     const nombreLimpio = (c.contactName || "Cliente").split(" ")[0].trim();
     const agenciaNombre = rastro.agenciaDestino || c.ciudad || "Provincia";
+
+    // CASO 0: el almacén dejó el paquete en la agencia de origen y Shalom lo confirmó.
+    // Desde ese momento el envío se puede pagar en Págalo: aviso SOLO a Gerardo, una vez.
+    if (debeAvisarEnvioConfirmado(rastro, c.notasPedido) && esHorarioAlertaSupervisores()) {
+      try {
+        const { notificarSupervisoresCritico, SUPERVISOR_PAGOS } = await import("@/lib/alerts/supervisor-alerts");
+        const detalle =
+          `${c.numeroOrden} confirmado por Shalom${rastro.agenciaOrigen ? ` en ${rastro.agenciaOrigen}` : ""}` +
+          `${rastro.fechaConfirmacion ? ` (${rastro.fechaConfirmacion})` : ""}. ` +
+          `Orden ${c.numeroGuia} · Código ${c.codigoRastreo} · destino ${rastro.agenciaDestino || c.ciudad || "-"}` +
+          `${rastro.montoFlete ? ` · flete S/ ${rastro.montoFlete}` : ""}${rastro.tipoPago ? ` (${rastro.tipoPago})` : ""}. ` +
+          `Ya puedes pagar el envío en Págalo.`;
+        const res = await notificarSupervisoresCritico({
+          tipo: "shalom_envio_confirmado",
+          titulo: `Envío confirmado ${c.numeroOrden}`,
+          detalle,
+          clienteNombre: c.contactName,
+          clienteTelefono: c.contactPhone,
+          contactId: c.contactId,
+          conversationId: c.convId,
+          soloA: [SUPERVISOR_PAGOS],
+        });
+        if (res.notificados > 0) {
+          const marca = `${MARCA_ENVIO_CONFIRMADO}:${new Date().toISOString().slice(0, 16)} guia=${c.numeroGuia}]`;
+          c.notasPedido = c.notasPedido ? `${c.notasPedido}
+${marca}` : marca;
+          await db
+            .update(pedidosOrdenes)
+            .set({ notas: c.notasPedido, updatedAt: new Date() })
+            .where(eq(pedidosOrdenes.id, c.pedidoId));
+          await db.insert(activities).values({
+            type: "note",
+            description: `[SHALOM ENVIO CONFIRMADO] Aviso a Gerardo para pagar el envío: ${detalle}`,
+            contactId: c.contactId,
+            dealId: c.dealId,
+          });
+        }
+      } catch (errConf) {
+        console.warn("[notificar-llegada] Error avisando envío confirmado:", errConf);
+      }
+    }
 
     // CASO 1: Paquete ya entregado en Shalom
     if (rastro.yaEntregado) {

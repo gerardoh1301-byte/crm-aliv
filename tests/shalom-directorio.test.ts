@@ -106,7 +106,8 @@ describe("Directorio y Búsqueda de Agencias Shalom Cercanas en Provincia", () =
       ciudad: "Pucallpa",
       distrito: "Yarinacocha",
     });
-    expect(resYarina.mejorOpcion?.id).toBe("pucallpa-yarinacocha");
+    // Vale la curada o la del padrón oficial de Shalom: ambas están en Yarinacocha.
+    expect(resYarina.mejorOpcion?.nombre.toLowerCase()).toContain("yarinacocha");
 
     const resManantay = buscarAgenciaShalomCercana({
       ciudad: "Pucallpa",

@@ -40,6 +40,17 @@ export interface ResultadoRastreoShalom {
   estadoGeneral: "en_destino" | "en_transito" | "entregado" | "no_encontrado" | "error";
   enDestinoListoParaRecojo: boolean;
   yaEntregado: boolean;
+  /**
+   * true cuando la agencia de origen ya recibió el paquete (el almacén lo dejó y Shalom lo
+   * confirmó). Mientras es solo preguía, Shalom devuelve `origen: null` y Págalo responde
+   * "Su envío aún no ha sido confirmado".
+   */
+  confirmadoEnOrigen?: boolean;
+  fechaConfirmacion?: string;
+  tipoPago?: string;
+  estadoPago?: string;
+  montoFlete?: string;
+  agenciaOrigen?: string;
   agenciaDestino?: string;
   ciudadDestino?: string;
   fechaLlegadaDestino?: string;
@@ -137,6 +148,12 @@ export async function consultarEstadoShalom(
       estadoGeneral,
       enDestinoListoParaRecojo: enDestinoListo,
       yaEntregado: entregado,
+      confirmadoEnOrigen: Boolean(rawEst.origen || rawEst.transito || rawEst.destino || entregado),
+      fechaConfirmacion: rawEst.origen?.fecha,
+      tipoPago: rawGuia.tipo_pago,
+      estadoPago: rawGuia.estado_pago,
+      montoFlete: rawGuia.monto,
+      agenciaOrigen: rawGuia.origen?.nombre,
       agenciaDestino,
       ciudadDestino,
       fechaLlegadaDestino: fechaLlegada,
@@ -184,4 +201,21 @@ export async function consultarEstadoShalom(
       yaEntregado: false,
     };
   }
+}
+
+
+export const MARCA_ENVIO_CONFIRMADO = "[ENVIO_CONFIRMADO_AVISADO";
+
+/**
+ * Aviso a Gerardo de que el almacén ya dejó el paquete en la agencia de origen y el envío
+ * se puede pagar en Págalo. Una sola vez por pedido y solo mientras el paquete no ha
+ * llegado a destino (después ya no sirve).
+ */
+export function debeAvisarEnvioConfirmado(
+  rastro: Pick<ResultadoRastreoShalom, "ok" | "confirmadoEnOrigen" | "enDestinoListoParaRecojo" | "yaEntregado">,
+  notasPedido: string | null | undefined
+): boolean {
+  if (!rastro.ok || !rastro.confirmadoEnOrigen) return false;
+  if (rastro.enDestinoListoParaRecojo || rastro.yaEntregado) return false;
+  return !(notasPedido || "").includes(MARCA_ENVIO_CONFIRMADO);
 }

@@ -18,6 +18,8 @@ export const SUPERVISORES_PHONES = [
 
 /** Últimos 9 dígitos de cada supervisor (para consultas SQL y comparaciones). */
 export const SUPERVISORES_DIGITOS = ["951365418", "945226853"] as const;
+/** Gerardo: recibe los avisos de pago (envío Shalom confirmado). */
+export const SUPERVISOR_PAGOS = "951365418";
 
 export function normalizarTelefono(phone: string | null | undefined): string {
   if (!phone) return "";
@@ -43,7 +45,8 @@ export type TipoSituacionCritica =
   | "pedido_chat"
   | "pedido_shopify"
   | "guardrail_bloqueo"
-  | "bot_sin_respuesta";
+  | "bot_sin_respuesta"
+  | "shalom_envio_confirmado";
 
 export interface AlertaSupervisorInput {
   tipo: TipoSituacionCritica;
@@ -53,6 +56,8 @@ export interface AlertaSupervisorInput {
   clienteTelefono?: string | null;
   contactId?: string | null;
   conversationId?: string | null;
+  /** Restringe el aviso a estos supervisores (9 dígitos). Por defecto, a todos. */
+  soloA?: readonly string[];
 }
 
 const TITULOS_ALERTA: Record<TipoSituacionCritica, string> = {
@@ -65,6 +70,7 @@ const TITULOS_ALERTA: Record<TipoSituacionCritica, string> = {
   pedido_shopify: "🛍️ Pedido nuevo de la web (Shopify)",
   guardrail_bloqueo: "🛑 Respuesta del bot bloqueada (clave o monto)",
   bot_sin_respuesta: "🔇 El bot no pudo responder",
+  shalom_envio_confirmado: "✅ Envío confirmado en Shalom · ya puedes pagarlo",
 };
 
 /** Tipos que pueden repetirse en ráfaga (p. ej. Gemini caído): un aviso por chat cada 30 min. */
@@ -110,7 +116,8 @@ export async function notificarSupervisoresCritico(input: AlertaSupervisorInput)
   const errores: string[] = [];
 
   // Buscar si existen conversaciones activas con los supervisores para enviarles el mensaje por WhatsApp
-  for (const supRaw of ["+51951365418", "+51945226853"]) {
+  const destinos = SUPERVISORES_DIGITOS.filter((d) => !input.soloA || input.soloA.includes(d)).map((d) => `+51${d}`);
+  for (const supRaw of destinos) {
     try {
       const [supContact] = await db
         .select({ id: contacts.id })
