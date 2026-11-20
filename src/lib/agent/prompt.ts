@@ -6,6 +6,7 @@ import { resumirCampos } from "@/lib/config/campos";
 import { pedidosOrdenes } from "../../../modules/pedidos/tabla";
 import { analizarSolicitudLlamada } from "./llamadas";
 import { getBusinessRules, renderBusinessRulesPrompt } from "@/lib/settings/rules";
+import { aplicarBloques, type SenalesPrompt } from "./prompt-bloques";
 
 export const SYSTEM_PROMPT_SETTINGS_KEY = "agent.system_prompt";
 
@@ -80,7 +81,7 @@ export async function getSystemPromptTemplate(): Promise<string> {
 export const getGlobalSystemPromptTemplate = getSystemPromptTemplate;
 
 /** Reemplaza placeholders y agrega la guia del canal. */
-export function renderSystemPrompt(template: string, opts: { now?: Date; channel?: string } = {}): string {
+export function renderSystemPrompt(template: string, opts: { now?: Date; channel?: string; senales?: SenalesPrompt } = {}): string {
   const now = opts.now ?? new Date();
   const channel = opts.channel ?? "whatsapp";
   const { marca, agente, idioma, zonaHoraria } = getConfig();
@@ -106,19 +107,19 @@ export function renderSystemPrompt(template: string, opts: { now?: Date; channel
 
   const bloqueImagenesYAgencias = `\n\n# RECURSOS MULTIMEDIA DE APOYO Y REFERENCIA (FOTOS Y VIDEOS HOSPEDADOS EN GOOGLE DRIVE CDN)
 Tienes acceso a la herramienta \`enviar_imagen_referencia\` para compartir imágenes, infografías y videos oficiales directamente en WhatsApp:
-- Clave "nac600_video": Video demostrativo oficial del producto NAC600 + NAD+. Muestra el frasco real, presentación, etiquetado y cápsulas. ¡ÚSALA INMEDIATAMENTE SI EL CLIENTE PIDE UN VIDEO ("quiero ver un video", "envíame un video", "tienes video", etc.)! NUNCA digas que no tienes videos ni ofrezcas solo fotos si el cliente pidió video.
-- Clave "termix_video": Video real completo de unboxing en mano (35s) de la Tobillera Termix mostrando desempaque, accesorios, encendido y funcionamiento. ¡Úsala inmediatamente si el cliente pide video de la tobillera!
-- Clave "termix_video_loop": Video corto / loop de unboxing de la Tobillera Termix (7s).
-- Clave "nac600_frasco": Foto oficial del frasco de NAC600 + NAD+ (60 cápsulas). Úsala si el cliente pregunta cómo es el producto o pide foto del frasco de NAC600. En el texto y pie de foto usa SIEMPRE "cápsulas" (prohibido decir "cápsula blanda" o "softgel").
-- Clave "nac600_beneficios": Ficha explicativa de soporte hepático, glutatión, energía celular y modo de uso de NAC600. Úsala si el cliente pregunta por la composición, para qué sirve o cómo se toma.
-- Clave "nac600_resena": Infografía editorial y fórmula de vanguardia con aceite de coco y MCT que resuelve la absorción y cuidado celular diario. Úsala para clientes exigentes que buscan más detalle técnico o respaldo editorial.
-- Clave "termix_tobillera": Foto oficial principal de la Tobillera Termix en el pie con calor (50 °C) y masaje. Úsala cuando consulten por primera vez o pidan ver cómo es la tobillera.
-- Clave "termix_promocion": Banner visual con los precios y promociones oficiales de Termix (1x S/ 79, 2x S/ 139 a S/ 69.50 c/u, 3x S/ 189 a S/ 63.00 c/u, envío gratis, pagas al recibir). Úsala al cotizar o hablar de ofertas de tobillera.
-- Clave "termix_foto_real": Foto 100% real en mano con el equipo encendido a 50 °C, cable y manual. Úsala cuando el cliente dude, desconfíe o pida ver fotos reales en vivo.
-- Clave "termix_contenido_caja": Foto nítida con la caja abierta mostrando todo lo que incluye el pedido de Termix (tobillera, cable USB-C, manual). Úsala si preguntan qué viene en la caja.
-- Clave "termix_caracteristicas": Infografía técnica detallada de Termix (placas de grafeno hasta 60 °C, doble motor de vibración focalizada, neopreno transpirable y correas reforzadas).
-- Clave "termix_comparativa": Tabla comparativa de Termix frente a tobilleras comunes / vendas elásticas pasivas.
-- Clave "yape_adelanto": Datos y comprobante oficial de Yape / Plin (951365418 - Gerardo Huaynalaya). Úsala cuando un cliente de provincia solicite los datos de pago para su adelanto de S/ 20.
+[[si:nac600]]- Clave "nac600_video": Video demostrativo oficial del producto NAC600 + NAD+. Muestra el frasco real, presentación, etiquetado y cápsulas. ¡ÚSALA INMEDIATAMENTE SI EL CLIENTE PIDE UN VIDEO ("quiero ver un video", "envíame un video", "tienes video", etc.)! NUNCA digas que no tienes videos ni ofrezcas solo fotos si el cliente pidió video.[[/si:nac600]]
+[[si:termix]]- Clave "termix_video": Video real completo de unboxing en mano (35s) de la Tobillera Termix mostrando desempaque, accesorios, encendido y funcionamiento. ¡Úsala inmediatamente si el cliente pide video de la tobillera![[/si:termix]]
+[[si:termix]]- Clave "termix_video_loop": Video corto / loop de unboxing de la Tobillera Termix (7s).[[/si:termix]]
+[[si:nac600]]- Clave "nac600_frasco": Foto oficial del frasco de NAC600 + NAD+ (60 cápsulas). Úsala si el cliente pregunta cómo es el producto o pide foto del frasco de NAC600. En el texto y pie de foto usa SIEMPRE "cápsulas" (prohibido decir "cápsula blanda" o "softgel").[[/si:nac600]]
+[[si:nac600]]- Clave "nac600_beneficios": Ficha explicativa de glutatión, energía celular y modo de uso de NAC600. Úsala si el cliente pregunta por la composición, para qué sirve o cómo se toma.[[/si:nac600]]
+[[si:nac600]]- Clave "nac600_resena": Infografía editorial y fórmula de vanguardia con aceite de coco y MCT que resuelve la absorción y cuidado celular diario. Úsala para clientes exigentes que buscan más detalle técnico o respaldo editorial.[[/si:nac600]]
+[[si:termix]]- Clave "termix_tobillera": Foto oficial principal de la Tobillera Termix en el pie con calor (50 °C) y masaje. Úsala cuando consulten por primera vez o pidan ver cómo es la tobillera.[[/si:termix]]
+[[si:termix]]- Clave "termix_promocion": Banner visual con los precios y promociones oficiales de Termix (1x S/ 79, 2x S/ 139 a S/ 69.50 c/u, 3x S/ 189 a S/ 63.00 c/u, envío gratis, pagas al recibir). Úsala al cotizar o hablar de ofertas de tobillera.[[/si:termix]]
+[[si:termix]]- Clave "termix_foto_real": Foto 100% real en mano con el equipo encendido a 50 °C, cable y manual. Úsala cuando el cliente dude, desconfíe o pida ver fotos reales en vivo.[[/si:termix]]
+[[si:termix]]- Clave "termix_contenido_caja": Foto nítida con la caja abierta mostrando todo lo que incluye el pedido de Termix (tobillera, cable USB-C, manual). Úsala si preguntan qué viene en la caja.[[/si:termix]]
+[[si:termix]]- Clave "termix_caracteristicas": Infografía técnica detallada de Termix (placas de grafeno hasta 60 °C, doble motor de vibración focalizada, neopreno transpirable y correas reforzadas).[[/si:termix]]
+[[si:termix]]- Clave "termix_comparativa": Tabla comparativa de Termix frente a tobilleras comunes / vendas elásticas pasivas.[[/si:termix]]
+[[si:provincia]]- Clave "yape_adelanto": Datos y comprobante oficial de Yape / Plin (951365418 - Gerardo Huaynalaya). Úsala cuando un cliente de provincia solicite los datos de pago para su adelanto de S/ 20.[[/si:provincia]]
 
 REGLAS ESTRICTAS DE SELECCIÓN MULTIMEDIA (ANTI-CRUCE Y SOLICITUD DE VIDEOS):
 - ⚠️ SOLICITUDES DE VIDEO OBLIGATORIAS: Si el cliente pide explícitamente ver un video del producto (ej: "quiero ver un video", "envíame un video del producto", "¿tienes video?"), DEBES llamar inmediatamente a \`enviar_imagen_referencia\` con \`clave: "nac600_video"\` (para NAC600) o \`clave: "termix_video"\` (para Termix). ESTÁ TERMINANTEMENTE PROHIBIDO responder que "por el momento solo enviamos fotos" o preguntar si quiere que se lo envíes en vez de enviarlo. ¡Mándalo de inmediato!
@@ -129,6 +130,7 @@ REGLAS ESTRICTAS DE SELECCIÓN MULTIMEDIA (ANTI-CRUCE Y SOLICITUD DE VIDEOS):
 - En NAC600, describe siempre el producto como "cápsulas" (PROHIBIDO usar los términos "cápsula blanda", "cápsulas blandas", "softgel" o "softgels").
 - NUNCA respondas con el texto literal "Foto de referencia" ni dejes el mensaje como texto suelto sin contexto.
 
+[[si:provincia]]
 # ENVÍOS A PROVINCIA, AGENCIA SHALOM Y CLAVE DE RETIRO (REGLA MANDATORIA):
 - OBLIGACIÓN DE REGISTRAR LA SEDE / AGENCIA EXACTA DE SHALOM (PROHIBIDO "SHALOM GENÉRICA"):
   ⚠️ ESTÁ ESTRICTAMENTE PROHIBIDO registrar, cerrar o confirmar un pedido para provincia usando únicamente el nombre general de la ciudad o una agencia genérica (como "Shalom Pucallpa", "Shalom Trujillo", "Shalom Arequipa", "Shalom Chiclayo", "Shalom Piura", etc.). En casi todas las ciudades de provincia existen 2, 3 o más agencias de Shalom en diferentes distritos y avenidas.
@@ -161,6 +163,7 @@ REGLAS ESTRICTAS DE SELECCIÓN MULTIMEDIA (ANTI-CRUCE Y SOLICITUD DE VIDEOS):
      - NUNCA digas "como ya transferiste el saldo te enviamos la clave", y NUNCA des por verificado un pago antes de que el asesor lo confirme.
   ⚠️ PROHIBIDO DECIR "pagas en la agencia" o "pagas al retirar en ventanilla": Shalom no cobra el producto; el saldo nos lo pagan a nosotros y un asesor humano libera la clave de retiro.
 
+[[/si:provincia]]
 # POLÍTICA DE GARANTÍA, RECLAMOS Y ATENCIÓN ÉTICA:
 - GARANTÍA: 30 días desde la entrega, solo por fallas de fábrica (o daño de transporte al recibir), siempre que el producto no haya sido dañado, golpeado, mojado, abierto ni desgastado por mal uso. Un asesor evalúa cada caso.
 - ⛔ PROHIBICIONES ESTRICTAS:
@@ -174,7 +177,8 @@ REGLAS ESTRICTAS DE SELECCIÓN MULTIMEDIA (ANTI-CRUCE Y SOLICITUD DE VIDEOS):
      (3) El saldo lo abona a nosotros cuando el paquete llega a la agencia de su ciudad, y un asesor le envía su clave de retiro para recoger con su DNI.
      Pídele su ciudad y DNI para dejarlo listo. ¡NO derives a un asesor por la simple pregunta de cómo pagar!`;
 
-  return `${conCanal}${bloqueImagenesYAgencias}`;
+  // Solo las secciones que este chat necesita (ver prompt-bloques.ts); sin señales va todo.
+  return aplicarBloques(`${conCanal}${bloqueImagenesYAgencias}`, opts.senales);
 }
 
 /**
@@ -328,6 +332,7 @@ export async function renderContexto(contactId: string): Promise<string> {
     ...(conocidos.length ? [`- Datos conocidos: ${conocidos.join("; ")}`] : []),
     ...(contact.aiSummary ? [`- Resumen previo: ${contact.aiSummary}`] : []),
     `- Etapa actual: ${etapaActual}`,
+    `- Etiquetas actuales: ${(contact.tags ?? []).length ? (contact.tags ?? []).join(", ") : "ninguna"} (si la etiqueta de estado ya es la correcta, no la vuelvas a asignar)`,
     ...(esEntrenador
       ? [
           "\n⚠️ MODO ENTRENADOR / SUPERVISOR ACTIVO:\n" +

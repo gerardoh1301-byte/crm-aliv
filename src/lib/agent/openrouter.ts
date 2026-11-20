@@ -1,6 +1,7 @@
 import OpenAI from "openai";
 import { getConfig, marca } from "@/lib/config";
 import { getAllGeminiKeys, getNextGeminiKey, markGeminiKeyRateLimited } from "@/lib/gemini-keys";
+import { anotarUsoIA, leerUsage } from "@/lib/ia-uso";
 
 const DEFAULT_MODEL = "gemini-3.5-flash-lite";
 const OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1";
@@ -111,9 +112,28 @@ export const MAX_TOTAL_RESPONSE_TIMEOUT_MS = 45_000;
 
 export async function createChatCompletionWithFallback(
   params: OpenAI.Chat.Completions.ChatCompletionCreateParamsNonStreaming,
-  options?: { timeout?: number; totalTimeoutMs?: number }
+  options?: { timeout?: number; totalTimeoutMs?: number; origen?: string }
 ): Promise<OpenAI.Chat.Completions.ChatCompletion> {
   const requestedModel = params.model || getAgentModel();
+  const origen = options?.origen ?? "otro";
+
+  // Toda llamada pasa por aquí para dejar registrados los tokens (o la falla) del día.
+  async function llamar(
+    proveedor: "gemini" | "groq" | "openrouter",
+    cliente: OpenAI,
+    body: OpenAI.Chat.Completions.ChatCompletionCreateParamsNonStreaming,
+    opts: OpenAI.RequestOptions
+  ): Promise<OpenAI.Chat.Completions.ChatCompletion> {
+    try {
+      const res = await cliente.chat.completions.create(body, opts);
+      const t = leerUsage(res.usage);
+      anotarUsoIA({ proveedor, modelo: body.model, origen, ok: true, tokensEntrada: t.entrada, tokensSalida: t.salida, tokensCache: t.cache });
+      return res;
+    } catch (err) {
+      anotarUsoIA({ proveedor, modelo: body.model, origen, ok: false });
+      throw err;
+    }
+  }
   const allKeys = getAllGeminiKeys();
 
   const totalBudgetMs = Math.min(
@@ -167,7 +187,7 @@ export async function createChatCompletionWithFallback(
     if (!client) continue;
 
     try {
-      return await client.chat.completions.create(
+      return await llamar("gemini", client, 
         {
           ...params,
           model: modeloIntento,
@@ -200,7 +220,7 @@ export async function createChatCompletionWithFallback(
           if (!fbOpts) break;
           try {
             console.info(`[agent-llm] Intentando modelo Gemini alternativo ${fallbackModel}...`);
-            return await client.chat.completions.create(
+            return await llamar("gemini", client, 
               {
                 ...params,
                 model: fallbackModel,
@@ -244,7 +264,7 @@ export async function createChatCompletionWithFallback(
           if (!fbOpts) break;
           try {
             console.info(`[agent-llm] Intentando modelo Gemini alternativo ${fallbackModel}...`);
-            return await client.chat.completions.create(
+            return await llamar("gemini", client, 
               {
                 ...params,
                 model: fallbackModel,
@@ -277,7 +297,7 @@ export async function createChatCompletionWithFallback(
       if (!reqOptions) break;
       try {
         console.info(`[agent-llm] Intentando failover Groq con ${gModel}...`);
-        return await groq.chat.completions.create(
+        return await llamar("groq", groq, 
           {
             ...params,
             model: gModel,
@@ -304,7 +324,7 @@ export async function createChatCompletionWithFallback(
       if (!reqOptions) break;
       try {
         console.info(`[agent-llm] Intentando failover OpenRouter con ${orModel}`);
-        return await openRouter.chat.completions.create(
+        return await llamar("openrouter", openRouter, 
           {
             ...params,
             model: orModel,

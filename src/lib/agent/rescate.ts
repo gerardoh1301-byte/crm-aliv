@@ -552,7 +552,7 @@ Responde ÚNICAMENTE un objeto JSON válido con la siguiente estructura:
       ],
       temperature: 0.2,
       response_format: { type: "json_object" },
-    });
+    }, { origen: "rescate" });
 
     const contenido = completion.choices[0]?.message?.content?.trim();
     if (!contenido) return evaluacionHeuristica;

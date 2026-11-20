@@ -291,6 +291,7 @@ export async function calcularMetricas({ desde, hasta }: RangoMetricas) {
   });
 
   const embudo = await calcularEmbudoChat(ini, fin);
+  const consumoIA = await calcularConsumoIA(desde, hasta);
 
   const d = demoraWebhook[0] ?? {};
   const a = respuestaAgente[0] ?? {};
@@ -328,6 +329,7 @@ export async function calcularMetricas({ desde, hasta }: RangoMetricas) {
       errores_envio: num(sg.errores),
     },
     embudo_chat: embudo,
+    consumo_ia: consumoIA,
     rescate_chats: {
       primer_toque: num(sg.rescate_toque1),
       segundo_toque: num(sg.rescate_toque2),
@@ -432,4 +434,58 @@ async function calcularEmbudoChat(ini: ReturnType<typeof sql>, fin: ReturnType<t
     },
     por_largo_primer_mensaje: Object.fromEntries(Object.entries(porLargo).map(([k, v]) => [k, tasa(v)])),
   };
+}
+
+/**
+ * Tokens y llamadas de IA por día y por origen (agente, rescate, audio, visión).
+ * Si la tabla aún no existe (antes de la migración) devuelve null en vez de romper el panel.
+ */
+async function calcularConsumoIA(desde: string, hasta: string) {
+  try {
+    const rows = await filas(sql`
+      select to_char(fecha, 'YYYY-MM-DD') as fecha, proveedor, modelo, origen,
+        llamadas, fallidas, tokens_entrada, tokens_salida, tokens_cache
+      from ia_uso_diario
+      where fecha >= ${desde}::date and fecha <= ${hasta}::date
+      order by fecha, origen, modelo`);
+    const porDia = new Map<string, { fecha: string; llamadas: number; fallidas: number; tokens_entrada: number; tokens_salida: number; tokens_cache: number }>();
+    const porOrigen: Record<string, { llamadas: number; tokens_entrada: number; tokens_salida: number }> = {};
+    for (const r of rows) {
+      const f = String(r.fecha);
+      const d = porDia.get(f) ?? { fecha: f, llamadas: 0, fallidas: 0, tokens_entrada: 0, tokens_salida: 0, tokens_cache: 0 };
+      d.llamadas += num(r.llamadas);
+      d.fallidas += num(r.fallidas);
+      d.tokens_entrada += num(r.tokens_entrada);
+      d.tokens_salida += num(r.tokens_salida);
+      d.tokens_cache += num(r.tokens_cache);
+      porDia.set(f, d);
+      const k = String(r.origen);
+      const o = (porOrigen[k] ??= { llamadas: 0, tokens_entrada: 0, tokens_salida: 0 });
+      o.llamadas += num(r.llamadas);
+      o.tokens_entrada += num(r.tokens_entrada);
+      o.tokens_salida += num(r.tokens_salida);
+    }
+    const dias = Array.from(porDia.values());
+    const llamadas = dias.reduce((a, d) => a + d.llamadas, 0);
+    const entrada = dias.reduce((a, d) => a + d.tokens_entrada, 0);
+    return {
+      nota: "Registro desde el 20/11/2026. 'fallidas' incluye cortes por cuota (429) y saturación (503).",
+      por_dia: dias,
+      por_origen: porOrigen,
+      promedio_tokens_entrada_por_llamada: llamadas ? Math.round(entrada / llamadas) : 0,
+      detalle: rows.map((r) => ({
+        fecha: String(r.fecha),
+        proveedor: String(r.proveedor),
+        modelo: String(r.modelo),
+        origen: String(r.origen),
+        llamadas: num(r.llamadas),
+        fallidas: num(r.fallidas),
+        tokens_entrada: num(r.tokens_entrada),
+        tokens_salida: num(r.tokens_salida),
+      })),
+    };
+  } catch (err) {
+    console.warn("[metricas] consumo_ia no disponible:", err instanceof Error ? err.message : err);
+    return null;
+  }
 }

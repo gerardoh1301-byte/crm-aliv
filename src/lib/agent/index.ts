@@ -13,6 +13,7 @@ import { getAgentConfig } from "./config";
 import { renderContexto, renderSystemPrompt } from "./prompt";
 import { esSaludoAutomatico, productoDelAnuncio, renderOrigenAnuncio } from "./origen-anuncio";
 import { renderGuionVenta } from "./guion-venta";
+import { detectarSenalesPrompt } from "./prompt-bloques";
 import { registrarPromesaSiAplica } from "./seguimiento";
 import { executeTool, getEnabledToolDefinitions, type ToolContext } from "./tools";
 import { getOpenRouterClient, getAgentModel, hasOpenRouterKey, createChatCompletionWithFallback } from "./openrouter";
@@ -21,6 +22,15 @@ import { pedidosOrdenes } from "../../../modules/pedidos/tabla";
 import { construirOrdenVerificada, validarRespuestaBotContraOrden } from "./guardrail-orden";
 
 const MAX_TOOL_ROUNDS = 6;
+/** Herramientas que solo registran en el CRM: su resultado no cambia lo que se le dice al cliente. */
+const HERRAMIENTAS_SOLO_REGISTRO = new Set([
+  "asignar_etiqueta",
+  "actualizar_contacto",
+  "mover_etapa",
+  "registrar_actividad",
+  "resumen_lead",
+  "avisar_asesor",
+]);
 const HISTORY_LIMIT = 14;
 const REINTENTO_MS = 20_000;
 const LIMITE_TOTAL_RESPUESTA_MS = 45_000; // A8: límite total de 45s por respuesta
@@ -167,11 +177,23 @@ async function executeAgentTurn(
     );
   }
 
+  // Ahorro de tokens: solo las secciones del prompt que este chat necesita (prompt-bloques.ts).
+  // PROMPT_COMPLETO=on en Render vuelve a enviar el prompt entero (marcha atrás sin desplegar).
+  const senalesPrompt = process.env.PROMPT_COMPLETO === "on" ? undefined : detectarSenalesPrompt({
+    historial: collapsed,
+    camposContacto: rawFields,
+    etiquetas: contact.tags,
+    productoAnuncio: productoDelAnuncio(conversation.metadata),
+    tienePedidoReciente,
+    textoPedido: pedidoReciente ? `${pedidoReciente.notas ?? ""} ${JSON.stringify(pedidoReciente.items ?? "")}` : null,
+    etapa: guion.etapa,
+  });
+
   const llmMessages: OpenAI.Chat.Completions.ChatCompletionMessageParam[] = [
     {
       role: "system",
       content:
-        renderSystemPrompt(config.systemPrompt, { channel: conversation.provider === "simulador" ? "simulador" : channel }) +
+        renderSystemPrompt(config.systemPrompt, { channel: conversation.provider === "simulador" ? "simulador" : channel, senales: senalesPrompt }) +
         contexto +
         renderOrigenAnuncio(conversation.metadata, yaRespondio, guion.variante === "B") +
         (yaRespondio
@@ -189,6 +211,7 @@ async function executeAgentTurn(
     channel,
   };
 
+  const origenUso = conversation.provider === "simulador" ? "agente_simulador" : "agente";
   let toolCalls = 0;
   const executedTools: string[] = [];
   let pedidoTextoExplicito = false;
@@ -207,15 +230,26 @@ async function executeAgentTurn(
           tool_choice: tools.length > 0 ? "auto" : undefined,
           max_completion_tokens: 1024,
         },
-        { totalTimeoutMs: remainingBudget }
+        { totalTimeoutMs: remainingBudget, origen: origenUso }
       );
 
       const choice = completion.choices[0];
       const assistantMsg = choice.message;
+      // Ahorro de tokens: si el modelo ya escribió la respuesta y solo pidió herramientas de
+      // registro (etiqueta, datos, etapa, nota, resumen, aviso), se ejecutan y se usa ese texto
+      // sin otra vuelta al modelo, que reenviaría el prompt entero solo para repetir lo mismo.
+      const textoJuntoAHerramientas = (assistantMsg.content ?? "").trim();
+      const soloRegistro =
+        Boolean(textoJuntoAHerramientas) &&
+        Boolean(assistantMsg.tool_calls?.length) &&
+        (assistantMsg.tool_calls ?? []).every(
+          (tc) => tc.type === "function" && HERRAMIENTAS_SOLO_REGISTRO.has(tc.function.name)
+        );
 
       if (choice.finish_reason === "tool_calls" && assistantMsg.tool_calls?.length) {
         llmMessages.push(assistantMsg);
         let detenido = false;
+        let algunaFallo = false;
         let mensajeFinal: string | undefined;
 
         for (const tc of assistantMsg.tool_calls) {
@@ -231,6 +265,7 @@ async function executeAgentTurn(
           }
 
           const result = await executeTool(tc.function.name, args, ctx);
+          if (!result.ok) algunaFallo = true;
           if (result.ok && result.stop) {
             detenido = true;
             mensajeFinal ??= result.mensajeFinal;
@@ -249,7 +284,8 @@ async function executeAgentTurn(
             toolCalls,
           };
         }
-        continue;
+        // Si alguna herramienta falló, el modelo debe verlo antes de responder.
+        if (!soloRegistro || algunaFallo) continue;
       }
 
       let reply = limpiarFormatoWhatsApp(assistantMsg.content?.trim() ?? "");
@@ -358,7 +394,7 @@ async function executeAgentTurn(
       model: config.model,
       messages: llmMessages,
       max_completion_tokens: 1024,
-    });
+    }, { origen: origenUso });
     let textoFinal = limpiarFormatoWhatsApp(final.choices[0]?.message?.content?.trim() ?? "");
     if (yaRespondio && textoFinal) {
       textoFinal = removerSaludoRepetido(textoFinal);

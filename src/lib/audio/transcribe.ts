@@ -4,6 +4,7 @@
  */
 
 import { getNextGeminiKey, markGeminiKeyRateLimited } from "@/lib/gemini-keys";
+import { anotarUsoIA } from "@/lib/ia-uso";
 
 export interface TranscribeOptions {
   apiKey?: string;
@@ -108,12 +109,21 @@ export async function transcribeAudioAttachment(
       if (gRes.status === 429) {
         markGeminiKeyRateLimited(geminiKey, 60);
       }
+      anotarUsoIA({ proveedor: "gemini", modelo: primaryModel, origen: "audio", ok: false });
       const errText = await gRes.text().catch(() => "");
       console.warn(`[transcribe] Gemini error ${gRes.status}: ${errText.slice(0, 200)}`);
       return null;
     }
 
     const data = await gRes.json();
+    anotarUsoIA({
+      proveedor: "gemini",
+      modelo: primaryModel,
+      origen: "audio",
+      ok: true,
+      tokensEntrada: Number(data?.usage?.total_input_tokens ?? data?.usageMetadata?.promptTokenCount) || 0,
+      tokensSalida: Number(data?.usage?.total_output_tokens ?? data?.usageMetadata?.candidatesTokenCount) || 0,
+    });
     const outputStep = data.steps?.find(
       (s: { type?: string }) => s.type === "model_output"
     );
@@ -213,11 +223,21 @@ export async function inspectImageAttachment(
       if (gRes.status === 429) {
         markGeminiKeyRateLimited(geminiKey, 60);
       }
+      anotarUsoIA({ proveedor: "gemini", modelo: visionModel, origen: "vision", ok: false });
       const detalle = await gRes.text().catch(() => "");
       console.warn(`[vision] Gemini ${visionModel} respondio ${gRes.status}: ${detalle.slice(0, 200)}`);
       return null;
     }
     const data = await gRes.json();
+    anotarUsoIA({
+      proveedor: "gemini",
+      modelo: visionModel,
+      origen: "vision",
+      ok: true,
+      tokensEntrada: Number(data?.usageMetadata?.promptTokenCount) || 0,
+      tokensSalida: Number(data?.usageMetadata?.candidatesTokenCount) || 0,
+      tokensCache: Number(data?.usageMetadata?.cachedContentTokenCount) || 0,
+    });
     const desc = data?.candidates?.[0]?.content?.parts?.[0]?.text?.trim();
     return desc || null;
   } catch (err) {

@@ -16,6 +16,9 @@
  *   npm run local -- --puerto 3007            (en otra terminal, con claves de IA en .env.local)
  *   node scripts/evaluar-bot.mjs --base http://localhost:3007 --pin <ADMIN_PIN> [--solo 1,4]
  *
+ * Si el CRM local arrancó con METRICAS_TOKEN (y se pasa con --metricas o la variable), el
+ * resumen incluye cuántas llamadas a la IA y cuántos tokens gastó la corrida.
+ *
  * Sale con código 1 si alguna respuesta rompe una regla dura (para usarlo antes de desplegar
  * un cambio de prompt). El simulador no reemplaza la prueba A/B real: los clientes simulados
  * no se cansan ni se van, así que sirve para atrapar errores, no para medir ventas.
@@ -31,6 +34,7 @@ if (!/^http:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/.test(BASE)) {
   process.exit(2);
 }
 const PIN = args.pin || process.env.ADMIN_PIN;
+const METRICAS = args.metricas || process.env.METRICAS_TOKEN || "";
 const SOLO = args.solo ? new Set(args.solo.split(",").map(Number)) : null;
 
 /** Clientes simulados: nombre, contexto y lo que escriben turno a turno. */
@@ -56,8 +60,9 @@ const PROHIBIDO = [
   [/\btarjeta\b(?! de)/i, "menciona tarjeta"],
   [/\b(cura|curar|elimina el h[ií]gado graso|garantizad[oa]s? (los )?resultados)\b/i, "promete curar o resultados"],
   [/clave (de (recojo|retiro) )?(es|:)\s*\d{3,}/i, "da una clave de retiro"],
+  [/detox|desintox|funci[oó]n hep[aá]tica|salud (de tu |del )?h[ií]gado|(limpi|proteg|cuid)\w* (el |tu )?h[ií]gado|est[aá]ndares/i, "promesa de salud o 'estándares' (regla 2 y 3)"],
 ];
-const CIERRE_DEBIL = /(alguna (otra )?duda|pudiste revisar|qu[eé] te parece|te gustar[ií]a saber|quieres m[aá]s informaci[oó]n)\??\s*$/i;
+const CIERRE_DEBIL = /(alguna (otra )?(duda|consulta)[^?]*|pudiste revisar|qu[eé] te parece|te gustar[ií]a saber|quieres m[aá]s informaci[oó]n)\??\s*$/i;
 
 function fnv(t) {
   let h = 0x811c9dc5;
@@ -107,6 +112,20 @@ function revisar(bot, i, previos, cliente) {
   return { fallas, avisos };
 }
 
+/** Consumo de IA del simulador hoy (hora de Lima), desde /api/metricas. */
+async function consumoSimulador() {
+  if (!METRICAS) return null;
+  const hoy = new Intl.DateTimeFormat("en-CA", { timeZone: "America/Lima" }).format(new Date());
+  const r = await fetch(`${BASE}/api/metricas?desde=${hoy}&hasta=${hoy}`, { headers: { authorization: `Bearer ${METRICAS}` } });
+  if (!r.ok) return null;
+  const j = await r.json();
+  const o = j?.consumo_ia?.por_origen?.agente_simulador ?? { llamadas: 0, tokens_entrada: 0, tokens_salida: 0 };
+  const fallidas = (j?.consumo_ia?.detalle ?? [])
+    .filter((d) => d.origen === "agente_simulador")
+    .reduce((a, d) => a + d.fallidas, 0);
+  return { ...o, fallidas };
+}
+
 async function main() {
   if (!PIN) {
     console.error("Falta --pin (ADMIN_PIN del CRM local).");
@@ -119,6 +138,7 @@ async function main() {
   }
   await req("PUT", "/api/pipeline", { syncPipeline: true });
 
+  const consumoAntes = await consumoSimulador();
   const informe = [];
   let fallasTotales = 0;
   for (const c of CLIENTES) {

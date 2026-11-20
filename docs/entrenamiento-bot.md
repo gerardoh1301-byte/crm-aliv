@@ -44,3 +44,12 @@ Plan aplicado el 19/11/2026 a partir de 164 chats reales de WhatsApp (12 al 19/1
 
 - Respaldo pagado de IA (OpenRouter con saldo) para cuando Gemini se cae: hoy, si Gemini falla del todo, el cliente se queda sin respuesta.
 - Revisar y mejorar los ejemplos marcados `origen: "modelo"` con la voz de tu mejor asesor.
+
+## Ahorro de tokens (20/11/2026)
+
+- **Prompt por bloques.** En `config/plantillas/ecommerce.ts` y `src/lib/agent/prompt.ts`, las secciones marcadas con `[[si:provincia]]`, `[[si:nac600]]`, `[[si:termix]]` o `[[si:venta]]` solo se envían cuando el chat las necesita (`src/lib/agent/prompt-bloques.ts`). Ante la duda se incluyen. Al agregar una regla nueva: si sirve solo para provincia, un producto o la venta (no la posventa), ponla dentro del bloque que corresponde; las reglas de seguridad van siempre fuera de los bloques.
+- **Una sola llamada cuando se puede.** Si el modelo ya escribió la respuesta y solo pidió herramientas de registro (etiqueta, datos, etapa, nota, resumen, aviso), no se hace otra vuelta. La etiqueta se pone solo cuando cambia el estado.
+- **Marcha atrás sin desplegar:** `PROMPT_COMPLETO=on` en Render vuelve a enviar el prompt entero.
+- **Consumo:** tabla `ia_uso_diario` y `consumo_ia` en `/api/metricas` (llamadas, fallidas por cuota, tokens por día y origen).
+- **Medición con el evaluador** (misma clave de pruebas, 12 clientes): antes 1,6 llamadas por respuesta y ~22 mil tokens por llamada; después 1,15 llamadas y ~16,8 mil tokens, unos 45 % menos tokens por respuesta, con la misma calidad.
+- Para probar en local sin gastar la cuota de producción, arranca el CRM con una clave de otra cuenta de Google en `GEMINI_API_KEY`.
