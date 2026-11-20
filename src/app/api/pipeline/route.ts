@@ -8,6 +8,7 @@ import { requireMember } from "@/lib/api-auth";
 import { ownerFilter, canAccessContactId } from "@/lib/team";
 import { countDocumentsByContact } from "@/lib/documents";
 import { extraerLiquidacionAliclik } from "@/app/api/pedidos/liquidar-aliclik/route";
+import { extraerFinanzasShalom } from "@/lib/finanzas/tags-shalom";
 
 export async function GET() {
   const auth = await requireMember();
@@ -101,6 +102,7 @@ export async function GET() {
               d.ordenModalidadPago === "adelanto_agencia"
             ),
             liquidacionAliclik: liq,
+            finanzasShalom: extraerFinanzasShalom(notasCombinadas),
             // A5: Poner valor 0 a las consultas (leads sin pedido) para no inflar el valor del pipeline
             // Asegurar que el valor del deal siempre esté en centavos para formatCurrency (S/ total * 100)
             value: esConsulta && !d.ordenId

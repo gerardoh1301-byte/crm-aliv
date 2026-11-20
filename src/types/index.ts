@@ -129,6 +129,7 @@ export interface DealWithContact extends Deal {
     metodoCobro: string;
     nroOperacion: string;
   } | null;
+  finanzasShalom?: import("@/lib/finanzas/tags-shalom").FinanzasShalom | null;
 }
 
 export interface ContactWithDeals extends Contact {

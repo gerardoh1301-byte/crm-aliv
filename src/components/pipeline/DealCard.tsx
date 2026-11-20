@@ -37,6 +37,8 @@ import {
 import { AsignarVendedorModal } from "./AsignarVendedorModal";
 import { DespacharAliclikModal, type DespacharAliclikModalData } from "./DespacharAliclikModal";
 import { LiquidarAliclikModal, type LiquidacionAliclikData } from "./LiquidarAliclikModal";
+import { FinanzasShalomModal } from "./FinanzasShalomModal";
+import type { FinanzasShalom } from "@/lib/finanzas/tags-shalom";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -78,6 +80,7 @@ export interface DealCardProps {
   ownerName?: string | null;
   tags?: string[];
   liquidacionAliclik?: LiquidacionAliclikData | null;
+  finanzasShalom?: FinanzasShalom | null;
 }
 
 export function DealCard({
@@ -111,6 +114,7 @@ export function DealCard({
   ownerName,
   tags = [],
   liquidacionAliclik,
+  finanzasShalom,
 }: DealCardProps) {
   const router = useRouter();
   const [rotuloOpen, setRotuloOpen] = useState(false);
@@ -130,9 +134,16 @@ export function DealCard({
   const [currentDireccion, setCurrentDireccion] = useState<string | null>(direccion ?? null);
   const [currentTags, setCurrentTags] = useState<string[]>(tags || []);
 
+  const [finanzasOpen, setFinanzasOpen] = useState(false);
+  const [currentFinanzas, setCurrentFinanzas] = useState<FinanzasShalom | null>(finanzasShalom ?? null);
+
   useEffect(() => {
     setCurrentLiquidacion(liquidacionAliclik ?? null);
   }, [liquidacionAliclik]);
+
+  useEffect(() => {
+    setCurrentFinanzas(finanzasShalom ?? null);
+  }, [finanzasShalom]);
 
   useEffect(() => {
     setCurrentOwnerId(ownerId ?? null);
@@ -552,7 +563,33 @@ export function DealCard({
         )}
 
         {/* Botón de Confirmación de Liquidación AliClik en BCP (para Contra Entrega) o resumen BCP Shalom */}
-        {(esEntregado || Boolean(currentLiquidacion)) && (
+        {esShalom && !currentLiquidacion && (esConfirmadoODespacho || esEntregado) ? (
+          <Button
+            type="button"
+            size="sm"
+            variant="outline"
+            {...pararArrastre}
+            onClick={(e) => {
+              e.stopPropagation();
+              setFinanzasOpen(true);
+            }}
+            className={cn(
+              "w-full h-7 text-[11px] font-semibold gap-1.5 shadow-none cursor-pointer",
+              currentFinanzas?.fleteShalom !== null && currentFinanzas?.fleteShalom !== undefined &&
+                (!esEntregado || (currentFinanzas?.saldoMonto !== null && currentFinanzas?.saldoMonto !== undefined))
+                ? "bg-emerald-600/15 hover:bg-emerald-600/25 text-emerald-800 dark:text-emerald-300 border-emerald-600/40"
+                : "bg-amber-500/15 hover:bg-amber-500/25 text-amber-800 dark:text-amber-300 border-amber-500/40"
+            )}
+            title="Registrar el flete Shalom pagado, el adelanto y el saldo cobrado"
+          >
+            <Landmark className="h-3.5 w-3.5 shrink-0" aria-hidden />
+            <span className="truncate">
+              {currentFinanzas
+                ? `Envío ${currentFinanzas.fleteShalom !== null ? `S/${currentFinanzas.fleteShalom.toFixed(2)}` : "?"} · Saldo ${currentFinanzas.saldoMonto !== null ? `S/${currentFinanzas.saldoMonto.toFixed(2)}` : "pendiente"}`
+                : "Registrar dinero Shalom"}
+            </span>
+          </Button>
+        ) : (esEntregado || Boolean(currentLiquidacion)) && (
           !esShalom || Boolean(currentLiquidacion) ? (
             <Button
               type="button"
@@ -667,6 +704,11 @@ export function DealCard({
                   <Printer className="h-4 w-4" /> Rótulo motorizado
                 </DropdownMenuItem>
               )}
+              {esShalom && (
+                <DropdownMenuItem onClick={() => setFinanzasOpen(true)} className="cursor-pointer">
+                  <Landmark className="h-4 w-4" /> Dinero Shalom (flete, adelanto, saldo)
+                </DropdownMenuItem>
+              )}
               <DropdownMenuItem onClick={() => setLiquidarOpen(true)} className="text-amber-700 dark:text-amber-400 font-semibold cursor-pointer">
                 <Landmark className="h-4 w-4 text-amber-600" /> {currentLiquidacion ? `Editar Liquidación BCP (S/ ${currentLiquidacion.montoNeto.toFixed(2)})` : "Confirmar Liquidación AliClik (BCP)"}
               </DropdownMenuItem>
@@ -765,6 +807,20 @@ export function DealCard({
           setCurrentLiquidacion(liq);
         }}
       />
+
+      {esShalom && (
+        <FinanzasShalomModal
+          open={finanzasOpen}
+          onOpenChange={setFinanzasOpen}
+          dealId={id}
+          pedidoId={pedidoId}
+          numeroOrden={numeroOrdenLimpio}
+          clienteNombre={contactName || "Cliente Aliv"}
+          total={ordenTotal ? Number(ordenTotal) : value > 500 ? value / 100 : value}
+          actual={currentFinanzas}
+          onSuccess={(f) => setCurrentFinanzas(f)}
+        />
+      )}
     </Card>
   );
 }
