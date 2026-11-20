@@ -156,6 +156,8 @@ export interface EntradaGuion {
   historial: MensajeChat[];
   tienePedido?: boolean;
   productoAnuncio?: "nac600" | "termix" | null;
+  /** Su ciudad de provincia tiene contra entrega de AliClik: se vende como en Lima. */
+  contraEntregaProvincia?: boolean;
 }
 
 export interface Guion {
@@ -167,7 +169,9 @@ export interface Guion {
 
 /** Bloque para el final del system prompt. */
 export function renderGuionVenta(e: EntradaGuion): Guion {
-  const etapa = detectarEtapa(e.historial, { tienePedido: e.tienePedido });
+  const etapaDetectada = detectarEtapa(e.historial, { tienePedido: e.tienePedido });
+  const etapa: EtapaVenta =
+    e.contraEntregaProvincia && etapaDetectada === "datos_provincia" ? "datos_lima" : etapaDetectada;
   const ultimoCliente = [...e.historial].reverse().find((m) => m.role === "user");
   const situacion = detectarSituacion(texto(ultimoCliente?.content));
   const producto = detectarProducto(e.historial, e.productoAnuncio);

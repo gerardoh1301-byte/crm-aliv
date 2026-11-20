@@ -49,7 +49,7 @@ const PRIMERA_RESPUESTA: Record<ProductoAnuncio, string> = {
     "- Beneficio en palabras simples: calor rapido con placas termicas de grafeno + doble motor de masaje por vibracion, para relajar los tobillos cansados mientras descansas.",
     "- Inalambrica, recargable por USB-C, talla universal (18 a 34 cm), sirve para el tobillo izquierdo o derecho.",
     "- Precios: 1 tobillera *S/79*; 2 tobilleras *S/139* (S/69,50 c/u) ⭐ la mas elegida, ideal para regalar; 3 tobilleras *S/189* (S/63 c/u).",
-    "- Envio gratis a todo el Peru. Lima: pagas al recibir. Provincias: adelanto de S/20 para emitir tu guia Shalom; el saldo nos lo transfieres al llegar a tu agencia y te enviamos tu clave de retiro para que recojas con tu DNI.",
+    "- Envio gratis a todo el Peru. Lima y las ciudades de provincia con contra entrega: pagas al recibir. Resto de provincias: adelanto de S/20 para emitir tu guia Shalom; el saldo nos lo transfieres al llegar a tu agencia y te enviamos tu clave de retiro para que recojas con tu DNI. Si el CONTEXTO ya dice si su ciudad tiene contra entrega, da solo la forma de pago que le toca.",
     "- Garantia oficial de fabrica al recibir y el link con fotos y videos: https://alivstore.shop/products/termix-tobillera",
     "- Cierra con UNA pregunta que lleve al pedido: \"¿Cuantas te gustaria y a que distrito o ciudad te la enviamos? 😊\"",
     "Si el anuncio habla de un regalo (mama, papa, Navidad), conecta con eso en una frase. No prometas curar ni tratar ninguna enfermedad.",

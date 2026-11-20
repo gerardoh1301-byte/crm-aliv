@@ -14,6 +14,7 @@ import { renderContexto, renderSystemPrompt } from "./prompt";
 import { esSaludoAutomatico, productoDelAnuncio, renderOrigenAnuncio } from "./origen-anuncio";
 import { renderGuionVenta } from "./guion-venta";
 import { detectarSenalesPrompt } from "./prompt-bloques";
+import { MARCA_COD_PROVINCIA } from "@/lib/aliclik/cobertura-cod";
 import { registrarPromesaSiAplica } from "./seguimiento";
 import { executeTool, getEnabledToolDefinitions, type ToolContext } from "./tools";
 import { getOpenRouterClient, getAgentModel, hasOpenRouterKey, createChatCompletionWithFallback } from "./openrouter";
@@ -165,6 +166,7 @@ async function executeAgentTurn(
     historial: collapsed,
     tienePedido: tienePedidoReciente,
     productoAnuncio: productoDelAnuncio(conversation.metadata),
+    contraEntregaProvincia: contexto.includes(MARCA_COD_PROVINCIA),
   });
 
   // Seguimiento con hora: si el cliente promete volver ("en 20 min te paso los datos"),

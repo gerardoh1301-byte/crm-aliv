@@ -250,6 +250,25 @@ export async function POST(
 
   const tieneTagAdelanto = tagsNuevos.some((t) => t.toLowerCase() === "adelanto pagado");
 
+  // Provincia con contra entrega de AliClik: sin adelanto, igual que Lima. Si eligió
+  // agencia Shalom, o AliClik no responde, se queda en adelanto_agencia.
+  const eligioShalom = /shalom/i.test(String(customActualizados.agencia_shalom || "")) ||
+    /shalom/i.test(String(customActualizados.modalidad_entrega || ""));
+  let modalidadPago: "contraentrega" | "adelanto_agencia" = esProvincia ? "adelanto_agencia" : "contraentrega";
+  if (esProvincia && !eligioShalom) {
+    try {
+      const { decidirEntrega } = await import("@/lib/aliclik/cobertura-cod");
+      const decision = await decidirEntrega({
+        ciudad,
+        distrito: (customActualizados.distrito as string) || null,
+        direccion: (customActualizados.direccion_envio as string) || null,
+      });
+      modalidadPago = decision.modalidadPago;
+    } catch (err) {
+      console.warn("[confirmar-venta] No se pudo consultar la cobertura AliClik:", err);
+    }
+  }
+
   if (pedidoExistente) {
     const [pAct] = await db
       .update(pedidosOrdenes)
@@ -276,7 +295,7 @@ export async function POST(
         contactId: id,
         dealId: deal?.id ?? null,
         estado: tieneTagAdelanto ? "adelanto_pagado" : "confirmado",
-        modalidadPago: esProvincia ? "adelanto_agencia" : "contraentrega",
+        modalidadPago,
         items,
         total: total.toFixed(2),
         moneda: "PEN",

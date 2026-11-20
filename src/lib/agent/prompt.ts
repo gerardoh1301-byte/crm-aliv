@@ -132,6 +132,7 @@ REGLAS ESTRICTAS DE SELECCIÓN MULTIMEDIA (ANTI-CRUCE Y SOLICITUD DE VIDEOS):
 
 [[si:provincia]]
 # ENVÍOS A PROVINCIA, AGENCIA SHALOM Y CLAVE DE RETIRO (REGLA MANDATORIA):
+- PRIMERO MIRA LA COBERTURA: varias ciudades de provincia tienen contra entrega a domicilio con AliClik. Si el CONTEXTO trae el bloque "ENTREGA: CONTRA ENTREGA EN …", a ese cliente se le vende IGUAL QUE EN LIMA (paga al recibir, sin adelanto, sin agencia Shalom, sin DNI para guía) y todo lo de esta sección NO aplica, salvo que él pida recoger en Shalom. Si no conoces aún su ciudad, pregúntala antes de explicar la forma de pago. Nunca digas de memoria qué ciudades tienen contra entrega: lo dice el CONTEXTO.
 - OBLIGACIÓN DE REGISTRAR LA SEDE / AGENCIA EXACTA DE SHALOM (PROHIBIDO "SHALOM GENÉRICA"):
   ⚠️ ESTÁ ESTRICTAMENTE PROHIBIDO registrar, cerrar o confirmar un pedido para provincia usando únicamente el nombre general de la ciudad o una agencia genérica (como "Shalom Pucallpa", "Shalom Trujillo", "Shalom Arequipa", "Shalom Chiclayo", "Shalom Piura", etc.). En casi todas las ciudades de provincia existen 2, 3 o más agencias de Shalom en diferentes distritos y avenidas.
   1. Si el cliente solo menciona su ciudad o departamento (ej: "Pucallpa") sin indicar la sede o calle exacta:
@@ -171,7 +172,7 @@ REGLAS ESTRICTAS DE SELECCIÓN MULTIMEDIA (ANTI-CRUCE Y SOLICITUD DE VIDEOS):
   2. ESTÁ TERMINANTEMENTE PROHIBIDO afirmar que el producto es "totalmente seguro" o que cura enfermedades médicas. NAC600 es un suplemento antioxidante importado; si el cliente menciona patologías delicadas o medicamentos (como anticoagulantes / warfarina), recomienda siempre consultar con su médico tratante.
   3. Ante un reclamo de producto dañado, frasco roto o inconformidad: discúlpate con empatía, ejecuta avisar_asesor con motivo "reclamo_producto" e indica que un asesor humano coordinará la atención del caso. NUNCA prometas montos de devolución ni plazos por cuenta propia.
   4. NO resuelvas tareas escolares, acertijos matemáticos ni consultas ajenas a Aliv Store. Redirige cordialmente a la tienda y productos de salud ("En Aliv Store nos especializamos en bienestar y salud natural con productos como NAC600 y Termix Tobillera. ¿Hay algo de nuestros productos en lo que te pueda ayudar hoy?").
-  5. PROVINCIA / CÓMO PAGO: Si el cliente en provincia pregunta cómo pagar o cuál es el procedimiento, explica con calidez los 3 pasos:
+  5. PROVINCIA / CÓMO PAGO: Si el CONTEXTO dice que su ciudad tiene contra entrega, explícale que paga al recibir, como en Lima. Si no, y el cliente en provincia pregunta cómo pagar o cuál es el procedimiento, explica con calidez los 3 pasos:
      (1) Adelanto de S/20 por Yape al 951365418 (Gerardo Huaynalaya) para emitir su guía de remisión oficial en Shalom con su DNI.
      (2) Envío de su N° de orden Shalom y su código alfanumérico (ej. 104493000 + 3KJP) para rastrear en tiempo real en la web de Shalom (siempre ambos; nunca la clave de recojo de 4 dígitos).
      (3) El saldo lo abona a nosotros cuando el paquete llega a la agencia de su ciudad, y un asesor le envía su clave de retiro para recoger con su DNI.
@@ -350,6 +351,12 @@ export async function renderContexto(contactId: string): Promise<string> {
   const distrito = fields.distrito ? String(fields.distrito) : null;
   const direccion = (fields.direccion_envio || fields.direccion) ? String(fields.direccion_envio || fields.direccion) : null;
   let textoDireccionOProvincia = [ciudad, distrito, direccion].filter(Boolean).join(" ");
+  let decisionEntrega: import("@/lib/aliclik/cobertura-cod").DecisionEntrega | null = null;
+  // En una ciudad con contra entrega el cliente igual puede pedir recoger en Shalom.
+  const eligioShalom = Boolean(
+    (fields.modalidad_entrega && String(fields.modalidad_entrega).toLowerCase().includes("shalom")) ||
+    (pedidosTxt && pedidosTxt.toLowerCase().includes("shalom"))
+  );
 
   try {
     // Si aún no están en customFields, escanear los mensajes del cliente en el chat
@@ -363,7 +370,24 @@ export async function renderContexto(contactId: string): Promise<string> {
       }
     }
 
-    if (textoDireccionOProvincia) {
+    // Cobertura contra entrega de AliClik en provincia (consulta a la API, caché de 24 h).
+    if (textoDireccionOProvincia && !eligioShalom) {
+      try {
+        const { decidirEntrega, renderBloqueCobertura } = await import("@/lib/aliclik/cobertura-cod");
+        decisionEntrega = await decidirEntrega({
+          ciudad,
+          distrito,
+          direccion: ciudad || distrito || direccion ? direccion : textoDireccionOProvincia,
+        });
+        const bloque = renderBloqueCobertura(decisionEntrega);
+        if (bloque) partes.push(bloque);
+      } catch (err) {
+        console.warn("[prompt] No se pudo consultar la cobertura contra entrega de AliClik:", err);
+      }
+    }
+
+    // Con contra entrega en su ciudad no se le propone agencia Shalom.
+    if (textoDireccionOProvincia && decisionEntrega?.zona !== "provincia_cod") {
       const { buscarAgenciaShalomCercana } = await import("@/lib/agencias/shalom-directorio");
       const shalomRes = buscarAgenciaShalomCercana({
         ciudad,
@@ -403,7 +427,7 @@ export async function renderContexto(contactId: string): Promise<string> {
   }
 
   // Verificación estricta de requisitos para despacho por Shalom (Provincia)
-  const esProvincia = Boolean(
+  const esProvincia = decisionEntrega?.zona !== "provincia_cod" && Boolean(
     ciudad ||
     (fields.modalidad_entrega && String(fields.modalidad_entrega).toLowerCase().includes("shalom")) ||
     (pedidosTxt && pedidosTxt.toLowerCase().includes("shalom")) ||
