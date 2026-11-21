@@ -26,6 +26,7 @@ export interface ResultadoSyncAliclik {
   activo: boolean;
   revisados: number;
   entregados: number;
+  diagnostico?: { listados: number; desde: string; hasta: string; respuestaLista: string };
   detalles: Array<{
     numeroOrden: string;
     ordenAliclik: string | null;
@@ -87,11 +88,15 @@ export async function sincronizarEntregasAliclik(opts: { limite?: number } = {})
   const ordenesAliclik: AliclikOrderItem[] = [];
   const desdeAliclik = fechaISO(new Date(desde.getTime() - 5 * 86_400_000));
   const hasta = fechaISO(new Date(Date.now() + 86_400_000));
+  let respuestaLista = "";
   for (let page = 1; page <= 5; page++) {
-    const r = await cliente.searchOrders({ from: desdeAliclik, to: hasta, page, pageSize: 100 });
+    const r = await cliente.searchOrders({ from: desdeAliclik, to: hasta, page, pageSize: 50 });
+    if (page === 1) respuestaLista = typeof r === "string" ? String(r).slice(0, 200) : `total=${r?.total ?? "?"} items=${r?.items?.length ?? "?"}`;
     ordenesAliclik.push(...(r.items ?? []));
     if (!r.items?.length || ordenesAliclik.length >= (r.total ?? 0)) break;
   }
+  res.diagnostico = { listados: ordenesAliclik.length, desde: desdeAliclik, hasta, respuestaLista };
+  const busquedaPorCelular = ordenesAliclik.length === 0;
   const porNumero = new Map(ordenesAliclik.map((o) => [o.orderNumber, o]));
   const celular9 = (t: string | null | undefined) => String(t ?? "").replace(/\D/g, "").slice(-9);
   const usados = new Set<string>();
@@ -106,6 +111,10 @@ export async function sincronizarEntregasAliclik(opts: { limite?: number } = {})
       } else {
         const cel = celular9(p.phone);
         if (cel.length !== 9) continue;
+        if (busquedaPorCelular) {
+          const r = await cliente.searchOrders({ from: fechaISO(new Date((p.createdAt ?? new Date()).getTime() - 3 * 86_400_000)), to: hasta, phone: cel, pageSize: 20 });
+          for (const o of r.items ?? []) if (!porNumero.has(o.orderNumber)) { porNumero.set(o.orderNumber, o); ordenesAliclik.push(o); }
+        }
         const delCliente = ordenesAliclik.filter(
           (o) =>
             !usados.has(o.orderNumber) &&
