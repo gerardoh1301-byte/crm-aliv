@@ -390,7 +390,7 @@ const AYUDA = [
   "• *estado 1140* → resumen del pedido",
   "• *guia 1066 104169999 AB12* → registra la guía nueva (por ejemplo tras un cambio de destino)",
   "Antes de cambiar algo te pido confirmar con *SI 1140*. Para mandar la clave al cliente: *ENVIAR 1140*. *NO* cancela.",
-  "Si no pones número, uso el pedido de la última alerta.",
+  "Si no pones número, uso el pedido de la última alerta. También puedes escribirme normal («ya me llegó el yape de Manuel», «cuánto le falta a Vertiz»): te digo qué entendí y siempre te pido el SI antes de cambiar algo.",
 ].join("\n");
 
 function textoClaveCliente(p: Pedido, c: CuentasPedido): string {
@@ -783,7 +783,8 @@ export async function manejarComandoSupervisor(conversationId: string, phone: st
     .limit(1);
   if (!ultimo || ultimo.direction !== "in") return false;
 
-  const cmd = interpretarComando(ultimo.body);
+  let cmd = interpretarComando(ultimo.body);
+  let entendido = "";
   if (!cmd) {
     const token = interpretarCorreccion(ultimo.body);
     if (token) {
@@ -799,9 +800,42 @@ export async function manejarComandoSupervisor(conversationId: string, phone: st
         return true;
       }
     }
+    const pend = await leerPendiente();
+
+    // Lenguaje libre: la IA traduce el mensaje a una orden estándar, que vuelve a pasar
+    // por el intérprete fijo y sigue pidiendo «SI <pedido>» antes de cambiar algo.
+    const traduccion = await traducirConIA(ultimo.body || "", conversationId);
+    if (traduccion?.tipo === "no_soportada") {
+      await responder(
+        conversationId,
+        `Entendí que quieres: ${traduccion.descripcion}. Eso todavía no lo puedo hacer por WhatsApp; hazlo desde el CRM. No cambié nada.`
+      );
+      return true;
+    }
+    if (traduccion?.tipo === "orden") {
+      const t = traduccion.comando.tipo;
+      if (t === "confirmar" || t === "enviar_clave") {
+        // Confirmar o mandar una clave exige escribir el número tal cual: la IA no lo decide.
+        const n = pend ? digitosPedido(pend.numeroOrden) : null;
+        await responder(
+          conversationId,
+          !pend
+            ? "No hay nada pendiente de confirmar (las confirmaciones vencen a los 15 minutos)."
+            : pend.accion === "enviar_clave"
+              ? `Para mandarle la clave al cliente escribe exactamente *ENVIAR ${n}*, o *NO* para cancelar.`
+              : `Para confirmar escribe exactamente *SI ${n}*, o *NO* para cancelar.`
+        );
+        return true;
+      }
+      cmd = traduccion.comando;
+      entendido = `🤖 Entendí: *${traduccion.orden}*\n\n`;
+    }
+  }
+
+  if (!cmd) {
+    const pend = await leerPendiente();
     // Un "sí" / "ok" suelto con algo pendiente no va al bot de ventas (que podría
     // inventar que registró algo): se le recuerda cómo confirmar.
-    const pend = await leerPendiente();
     if (pend && (ultimo.body || "").trim().length <= 40) {
       const n = digitosPedido(pend.numeroOrden);
       await responder(
@@ -838,8 +872,25 @@ export async function manejarComandoSupervisor(conversationId: string, phone: st
     console.error("[supervisor-comandos] error:", err);
     texto = "❌ Hubo un error al procesar la orden. No se cambió nada; inténtalo de nuevo o hazlo desde el CRM.";
   }
-  await responder(conversationId, texto);
+  await responder(conversationId, entendido + texto);
   return true;
+}
+
+/** Últimos mensajes del chat (sin el que se traduce) como contexto para la IA. */
+async function traducirConIA(texto: string, conversationId: string) {
+  if (!texto.trim() || texto.length > 600) return null;
+  const { traducirOrdenConIA } = await import("./interprete-ia");
+  const filas = await db
+    .select({ body: messages.body, direction: messages.direction })
+    .from(messages)
+    .where(eq(messages.conversationId, conversationId))
+    .orderBy(desc(messages.createdAt))
+    .limit(9);
+  const contexto = filas
+    .slice(1)
+    .reverse()
+    .map((m) => `${m.direction === "in" ? "Gerardo" : "CRM"}: ${(m.body || "").replace(/\s+/g, " ").slice(0, 350)}`);
+  return traducirOrdenConIA(texto, contexto);
 }
 
 // Exportado para pruebas.
