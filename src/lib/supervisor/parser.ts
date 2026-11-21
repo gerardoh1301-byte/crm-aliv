@@ -21,7 +21,22 @@ export type TipoComando =
   | "entregado"
   | "estado"
   | "guia"
-  | "adelanto";
+  | "adelanto"
+  // Consultas generales (varios pedidos) y cambios en el CRM (siempre con «SI <pedido>»).
+  | "consulta"
+  | "cancelar_pedido"
+  | "cambiar_estado"
+  | "dni"
+  | "direccion"
+  | "clave_nueva"
+  | "total"
+  | "nota";
+
+export type TipoConsulta = "resumen" | "deben" | "adelantos" | "por_enviar" | "en_camino" | "por_confirmar";
+export type Periodo = "hoy" | "ayer" | "semana" | "mes";
+
+/** Estados a los que se pasa un pedido con «pasa 1140 a …» (entregado y cancelado tienen su propia orden). */
+export type EstadoDestino = "por_confirmar_cod" | "confirmado" | "preparando" | "enviado";
 
 export interface TokenNumero {
   /** Texto tal cual, sin el #: "1140", "LEG-1049", "179.50". */
@@ -48,6 +63,11 @@ export interface Comando {
   codigo?: string | null;
   /** Celular del cliente (9 cifras que empiezan con 9): identifica el pedido. */
   celular?: string | null;
+  /** Dato nuevo de un cambio: DNI, dirección, clave, estado destino, texto de la nota o motivo. */
+  valor?: string | null;
+  /** Consulta general: qué lista o resumen pide y de qué periodo. */
+  consulta?: TipoConsulta;
+  periodo?: Periodo;
 }
 
 const PALABRAS_RELLENO = new Set([
@@ -102,8 +122,13 @@ export function extraerNumeros(normalizado: string): TokenNumero[] {
   return out;
 }
 
+/** Palabras de las órdenes de cambio que nunca son parte del nombre del cliente. */
+const RE_PALABRAS_CAMBIO =
+  /\b(confirmado|confirmada|preparando|preparacion|enviado|despachado|camino|cancelado|anulado|rechazado|como|nuevo|nueva|cambia|cambiar|pasa|pasar|marca|marcar|pon|poner|mueve|mover|anula|anular|cancela|cancelar|registra|registrar|corrige|corregir|actualiza|actualizar|porque|motivo|dni|direccion|nota|anota|agrega|guarda)\b/g;
+
 function extraerNombre(normalizado: string): string | null {
   const palabras = normalizado
+    .replace(RE_PALABRAS_CAMBIO, " ")
     .replace(/s\/\s*\d+(?:[.,]\d{1,2})?/g, " ")
     .replace(/#?\b(?:(?:leg|chat|aliv)-)?\d+(?:[.,]\d{1,2})?\b/g, " ")
     .replace(/[^a-zñ\s]/g, " ")
@@ -150,6 +175,149 @@ const RE_CONSULTA =
 const RE_DATO_PEDIDO =
   /\b(pedido|orden|guia|codigo|dni|direccion|telefono|celular|agencia|saldo|debe|falta|estado|datos|informacion|info|detalle|resumen|flete|seguimiento)\b/;
 
+// ---------------------------------------------------------------------------
+// Consultas generales (varios pedidos; solo lectura)
+
+const PERIODOS: [Periodo, RegExp][] = [
+  ["ayer", /\bayer\b/],
+  ["semana", /\bsemana\b/],
+  ["mes", /\bmes\b/],
+];
+
+const CONSULTAS: [TipoConsulta, RegExp][] = [
+  [
+    "deben",
+    /\b(quien(es)?( me)? deben?|quien(es)?( me)? falta(n)? pagar|saldos? pendientes?|por cobrar|deudas?|deudores|falta(n)? cobrar|cuanto me deben)\b/,
+  ],
+  [
+    "adelantos",
+    /\b(adelantos?( pendientes?| sin verificar| por verificar| por confirmar| que faltan?)|falta(n)? (el )?adelanto|sin adelanto)\b/,
+  ],
+  [
+    "por_enviar",
+    /\b(por enviar|por despachar|sin guia|falta(n)? (enviar|despachar)|pendientes? de (envio|despacho)|para (enviar|despachar))\b/,
+  ],
+  ["en_camino", /\b(en camino|en agencia|por recoger|sin recoger|en transito|no (han )?recogido)\b/],
+  ["por_confirmar", /\bpedidos (por|sin) confirmar\b|\bfalta(n)? confirmar\b/],
+  [
+    "resumen",
+    /^(resumen|reporte|balance|ventas)\b|\b(cuantos pedidos|cuanto (hemos |he )?vendido|cuanto vendimos|como (vamos|va el dia|van las ventas)|pedidos de (hoy|ayer|la semana|este mes)|ventas de (hoy|ayer|la semana|este mes))\b/,
+  ],
+];
+
+/**
+ * Consulta sobre varios pedidos («quién me debe», «resumen de hoy», «qué falta enviar»).
+ * Solo si el mensaje no nombra un pedido concreto (número, guía o celular).
+ */
+export function interpretarConsultaGeneral(n: string): { consulta: TipoConsulta; periodo: Periodo } | null {
+  if (/#|\b((leg|chat|aliv)-)?\d{3,}\b/.test(n)) return null;
+  const consulta = CONSULTAS.find(([, re]) => re.test(n))?.[0];
+  if (!consulta) return null;
+  return { consulta, periodo: PERIODOS.find(([, re]) => re.test(n))?.[0] ?? "hoy" };
+}
+
+// ---------------------------------------------------------------------------
+// Cambios en el CRM (todos piden «SI <pedido>» antes de aplicarse)
+
+const ESTADOS_DESTINO: [EstadoDestino | "entregado" | "cancelado", RegExp][] = [
+  ["por_confirmar_cod", /\bpor confirmar\b/],
+  ["preparando", /\b(preparando|en preparacion|preparacion)\b/],
+  ["enviado", /\b(enviado|enviada|en camino|despachado|despachada)\b/],
+  ["entregado", /\b(entregado|entregada)\b/],
+  ["cancelado", /\b(cancelado|cancelada|anulado|anulada|rechazado|rechazada)\b/],
+  ["confirmado", /\b(confirmado|confirmada)\b/],
+];
+
+/** Texto libre que sigue al número de pedido («direccion 1140 a Av. Lima 123» → «Av. Lima 123»). */
+export function textoTrasPedido(original: string, palabra: string): { token: string; resto: string } | null {
+  const re = new RegExp(
+    `${palabra}.*?#?((?:leg|chat|aliv)-)?(\\d{3,})\\b\\s*(?:a |por |: ?|-> ?|= ?|- )?\\s*(\\S.*)$`,
+    "is"
+  );
+  const m = original.trim().match(re);
+  if (!m || m[3].trim().length < 2) return null;
+  return { token: (m[1] ? m[1].toUpperCase() : "") + m[2], resto: m[3].trim() };
+}
+
+function conSoloPedido(tipo: TipoComando, token: string | null, valor: string | null): Comando {
+  return {
+    tipo,
+    numeros: token ? extraerNumeros(normalizarTexto(/^[A-Z]/.test(token) ? token : `#${token}`)) : [],
+    nombre: null,
+    completo: false,
+    valor,
+  };
+}
+
+/** Órdenes de cambio en el CRM. Devuelve null si el texto no es un cambio. */
+export function interpretarCambio(texto: string, n: string): Comando | null {
+  // Cancelar un pedido: «cancela el pedido 1140», «anula 1140 porque no contesta».
+  if (/^(cancela|cancelar|anula|anular)\b/.test(n) && (/\d{3,}/.test(n) || /\b(pedido|orden)\b/.test(n))) {
+    const motivo = texto.match(/\b(?:porque|motivo:?)\s+(.{2,})$/i)?.[1]?.trim() ?? null;
+    const sinMotivo = motivo ? n.replace(/\b(porque|motivo)\b.*$/, "") : n;
+    const c = comando("cancelar_pedido", sinMotivo);
+    c.valor = motivo;
+    return c;
+  }
+
+  // Cambiar estado: «pasa 1140 a confirmado», «marca el pedido de Carlos como enviado».
+  if (
+    /^(pasa|pasar|cambia|cambiar|marca|marcar|pon|poner|mueve|mover|actualiza|actualizar)\b/.test(n) &&
+    !/\b(dni|direccion|agencia|clave|total|nota|guia)\b/.test(n)
+  ) {
+    const destino = ESTADOS_DESTINO.find(([, re]) => re.test(n));
+    if (destino) {
+      const sinEstado = n.replace(destino[1], " ");
+      if (destino[0] === "entregado") return comando("entregado", sinEstado);
+      if (destino[0] === "cancelado") return comando("cancelar_pedido", sinEstado);
+      const c = comando("cambiar_estado", sinEstado);
+      c.valor = destino[0];
+      return c;
+    }
+  }
+
+  const VERBO = "(?:(?:cambia|cambiar|actualiza|actualizar|corrige|corregir|registra|registrar|pon|poner|agrega|agregar)\\s+(?:el\\s+|la\\s+|una\\s+)?)?";
+
+  // DNI: «dni 1140 45678912», «cambia el dni de Carlos Huaynalaya a 45678912».
+  if (new RegExp(`^${VERBO}dni\\b`).test(n)) {
+    const dni = n.match(/\b(\d{8})\b/)?.[1] ?? null;
+    const c = comando("dni", n.replace(/\b\d{8}\b/, " "));
+    c.valor = dni;
+    return c;
+  }
+
+  // Dirección o agencia: siempre con el número de pedido, porque el texto nuevo es libre.
+  if (new RegExp(`^${VERBO}(direccion|agencia)\\b`).test(n)) {
+    const r = textoTrasPedido(texto, "(?:direcci[oó]n|agencia)");
+    return conSoloPedido("direccion", r?.token ?? null, r?.resto ?? null);
+  }
+
+  // Nota: «nota 1140 el cliente pide que lo llamen después de las 6».
+  if (new RegExp(`^${VERBO}(nota|anota|anotar)\\b`).test(n)) {
+    const r = textoTrasPedido(texto, "(?:nota|anota|anotar)");
+    return conSoloPedido("nota", r?.token ?? null, r?.resto ?? null);
+  }
+
+  // Clave nueva: «registra clave 1140 1330», «clave nueva de Carlos 1330».
+  if (
+    /\bclave\b/.test(n) &&
+    (/^(registra|registrar|nueva|cambia|cambiar|pon|poner|guarda|guardar|actualiza|actualizar|corrige|corregir)\b/.test(n) ||
+      /\bclave nueva\b/.test(n))
+  ) {
+    const c = comando("clave_nueva", n);
+    const planos = c.numeros.filter((t) => !t.esPedido && !t.esMonto && /^\d{4,6}$/.test(t.texto));
+    const otroIdentificador = Boolean(c.nombre || c.guia || c.celular || c.numeros.some((t) => t.esPedido));
+    const clave = planos.length >= 2 || (planos.length === 1 && otroIdentificador) ? planos[planos.length - 1] : null;
+    c.numeros = c.numeros.filter((t) => t !== clave);
+    c.valor = clave?.texto ?? null;
+    return c;
+  }
+
+  // Total: «total 1140 199», «cambia el total del 1140 a 189».
+  if (new RegExp(`^${VERBO}total\\b`).test(n)) return comando("total", n);
+  return null;
+}
+
 export function interpretarComando(texto: string | null | undefined): Comando | null {
   if (!texto) return null;
   const n = normalizarTexto(texto);
@@ -161,6 +329,10 @@ export function interpretarComando(texto: string | null | undefined): Comando | 
   if (/^(si|confirmo|confirmar|confirmado)\s+#?((leg|chat|aliv)-)?\d{3,}$/.test(n)) return comando("confirmar", n);
   if (/^(no|cancelar|cancela|anular|anula)$/.test(n)) return comando("cancelar", n);
   if (/^(enviar|envia|enviala|mandale|mandar)\b/.test(n) && /\d{3,}/.test(n)) return comando("enviar_clave", n);
+  const cambio = interpretarCambio(texto, n);
+  if (cambio) return cambio;
+  const general = interpretarConsultaGeneral(n);
+  if (general) return { tipo: "consulta", numeros: [], nombre: null, completo: false, ...general };
   if (/^(estado|como va|donde esta|info|informacion|datos|detalle|resumen)\b/.test(n)) return comando("estado", n);
   if (/^(guia|nueva guia)\b/.test(n) && !/\bclave\b/.test(n)) {
     const c = comando("guia", n);

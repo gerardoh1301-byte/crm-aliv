@@ -27,14 +27,24 @@ export async function traducirOrdenConIA(
 - "entregado <pedido>"           → el cliente ya recogió / recibió el pedido
 - "estado <pedido>"              → pide información de un pedido (cuánto debe, dónde está, si pagó, su guía, DNI, dirección, productos, su clave para verla...)
 - "guia <pedido> <ordenShalom> <codigo>" → nueva guía Shalom (orden de 8-10 cifras y código de 4 caracteres)
+- "cancela <pedido> porque <motivo>" → anular o cancelar un pedido
+- "pasa <pedido> a <confirmado|preparando|enviado|por confirmar>" → cambiar el estado del pedido
+- "dni <pedido> <dni de 8 cifras>" → corregir o registrar el DNI
+- "direccion <número de pedido> <dirección nueva>" / "agencia <número de pedido> <agencia Shalom>" → cambiar dirección o agencia (exige el número de pedido)
+- "registra clave <pedido> <clave>" → guardar la clave de retiro de Shalom
+- "total <pedido> <monto>"       → corregir el total del pedido
+- "nota <número de pedido> <texto>" → dejar una nota en el pedido
 - "SI <pedido>" / "ENVIAR <pedido>" / "NO" → confirma, envía la clave o cancela lo que se le propuso
 - "ayuda"                        → pregunta qué órdenes existen
+
+CONSULTAS GENERALES (sin pedido): "resumen de hoy" (o "resumen de ayer", "resumen de la semana", "resumen del mes"), "quién me debe", "adelantos pendientes", "por enviar", "en camino", "pedidos por confirmar".
 
 REGLAS:
 - Si el mensaje no dice el pedido (ni guía, celular o nombre) pero se refiere al cliente del último aviso del chat (por ejemplo "confirma ese adelanto", "ya pagó"), usa el número de pedido del aviso más reciente.
 - Si da la guía Shalom, el celular o el nombre del cliente, ponlos en la orden tal cual (por ejemplo "clave 104493022" o "estado carlos huaynalaya"); NO uses el pedido del último aviso en ese caso.
 - Nunca inventes montos ni números de pedido que no estén en el mensaje o en el chat.
-- Si es una instrucción para el CRM que no está en la lista (cancelar o anular un pedido, cambiar dirección o producto, devolver dinero, etc.), responde tipo "no_soportada" y describe en pocas palabras qué pide.
+- Todo cambio se le volverá a confirmar a Gerardo con "SI <pedido>": tradúcelo a la orden aunque sea un cambio.
+- Si es una instrucción para el CRM que no está en la lista (cambiar productos, devolver dinero, borrar un cliente, etc.), responde tipo "no_soportada" y describe en pocas palabras qué pide.
 - Si NO es una instrucción para el CRM (Gerardo está probando el bot de ventas escribiendo como un cliente, saluda, pregunta precios del producto, etc.), responde tipo "no_es_orden".
 
 ÚLTIMOS MENSAJES DEL CHAT (del más antiguo al más reciente; "CRM" son avisos y respuestas del sistema):

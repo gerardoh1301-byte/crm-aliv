@@ -1,8 +1,9 @@
 import "server-only";
 import { db } from "@/db";
-import { activities, contacts, conversations, crmSettings, messages } from "@/db/schema";
+import { activities, contacts, conversations, crmSettings, deals, messages } from "@/db/schema";
 import { and, desc, eq, gt, ilike, ne, or, sql, type SQL } from "drizzle-orm";
 import { pedidosOrdenes } from "@modules/pedidos/tabla";
+import { ESTADOS_PEDIDO, type EstadoPedido } from "@modules/pedidos/tipos";
 import { deliverMessage } from "@/lib/channels/deliver";
 import { SUPERVISOR_PAGOS, normalizarTelefono } from "@/lib/alerts/supervisor-alerts";
 import { extraerFinanzasShalom } from "@/lib/finanzas/tags-shalom";
@@ -18,6 +19,7 @@ import {
   separarPedidoYMonto,
   type Comando,
   type TokenNumero,
+  type EstadoDestino,
 } from "./parser";
 
 /**
@@ -40,7 +42,20 @@ export function esSupervisorPagos(phone: string | null | undefined): boolean {
   return d === SUPERVISOR_PAGOS || d === `51${SUPERVISOR_PAGOS}`;
 }
 
-type Accion = "pago" | "flete" | "entregado" | "enviar_clave" | "guia" | "adelanto";
+type Accion =
+  | "pago"
+  | "flete"
+  | "entregado"
+  | "enviar_clave"
+  | "guia"
+  | "adelanto"
+  | "cancelar_pedido"
+  | "cambiar_estado"
+  | "dni"
+  | "direccion"
+  | "clave_nueva"
+  | "total"
+  | "nota";
 
 interface Pendiente {
   accion: Accion;
@@ -50,6 +65,8 @@ interface Pendiente {
   guia?: string;
   codigo?: string;
   destino?: string;
+  /** Dato nuevo de los cambios (DNI, dirección, clave, estado, nota o motivo). */
+  valor?: string | null;
   creado: number;
 }
 
@@ -122,10 +139,27 @@ async function guardarPendiente(p: Omit<Pendiente, "creado"> | null): Promise<vo
 // Última orden propuesta (aunque no dejara nada pendiente, p. ej. una clave bloqueada):
 // permite corregir el pedido con «pedido es 1084» sin repetir toda la orden.
 const CLAVE_ULTIMA = "supervisor_whatsapp_ultima_orden";
-type TipoCorregible = "pago" | "flete" | "clave" | "entregado" | "estado" | "guia" | "adelanto";
-const CORREGIBLES = new Set<string>(["pago", "flete", "clave", "entregado", "estado", "guia", "adelanto"]);
+type TipoCorregible =
+  | "pago"
+  | "flete"
+  | "clave"
+  | "entregado"
+  | "estado"
+  | "guia"
+  | "adelanto"
+  | "cancelar_pedido"
+  | "cambiar_estado"
+  | "dni"
+  | "direccion"
+  | "clave_nueva"
+  | "total"
+  | "nota";
+const CORREGIBLES = new Set<string>([
+  "pago", "flete", "clave", "entregado", "estado", "guia", "adelanto",
+  "cancelar_pedido", "cambiar_estado", "dni", "direccion", "clave_nueva", "total", "nota",
+]);
 
-async function guardarUltimaOrden(u: { tipo: string; numeroOrden: string }): Promise<void> {
+async function guardarUltimaOrden(u: { tipo: string; numeroOrden: string; valor?: string | null }): Promise<void> {
   if (!CORREGIBLES.has(u.tipo)) return;
   const value = JSON.stringify({ ...u, creado: Date.now() });
   await db
@@ -134,13 +168,13 @@ async function guardarUltimaOrden(u: { tipo: string; numeroOrden: string }): Pro
     .onConflictDoUpdate({ target: crmSettings.key, set: { value } });
 }
 
-async function leerUltimaOrden(): Promise<{ tipo: TipoCorregible; numeroOrden: string } | null> {
+async function leerUltimaOrden(): Promise<{ tipo: TipoCorregible; numeroOrden: string; valor: string | null } | null> {
   const [row] = await db.select().from(crmSettings).where(eq(crmSettings.key, CLAVE_ULTIMA)).limit(1);
   if (!row) return null;
   try {
-    const u = JSON.parse(row.value) as { tipo: string; numeroOrden: string; creado: number };
+    const u = JSON.parse(row.value) as { tipo: string; numeroOrden: string; valor?: string | null; creado: number };
     if (!CORREGIBLES.has(u.tipo) || Date.now() - u.creado > VIGENCIA_PENDIENTE_MS) return null;
-    return { tipo: u.tipo as TipoCorregible, numeroOrden: u.numeroOrden };
+    return { tipo: u.tipo as TipoCorregible, numeroOrden: u.numeroOrden, valor: u.valor ?? null };
   } catch {
     return null;
   }
@@ -153,6 +187,13 @@ const TIPO_POR_ACCION: Record<Accion, TipoCorregible> = {
   enviar_clave: "clave",
   guia: "guia",
   adelanto: "adelanto",
+  cancelar_pedido: "cancelar_pedido",
+  cambiar_estado: "cambiar_estado",
+  dni: "dni",
+  direccion: "direccion",
+  clave_nueva: "clave_nueva",
+  total: "total",
+  nota: "nota",
 };
 
 /**
@@ -178,6 +219,8 @@ async function corregirPedido(token: string, conversationId: string): Promise<st
     nombre: null,
     completo: false,
     ...(pend?.accion === "guia" ? { guia: pend.guia ?? null, codigo: pend.codigo ?? null } : {}),
+    // El dato nuevo (DNI, dirección, clave…) lo escribió Gerardo: se mantiene al cambiar de pedido.
+    valor: pend?.valor ?? ultima?.valor ?? null,
   };
   const texto = await proponer(cmd, conversationId);
   return `↩️ Corregido: dejo ${anterior || "el pedido anterior"} sin cambios y sigo con el ${token}.\n\n${texto}`;
@@ -446,6 +489,15 @@ const AYUDA = [
   "• *entregado 1140* → marca el pedido como entregado",
   "• *estado 1140* → ficha completa: cliente, DNI, dirección, productos, saldo, guía Shalom y clave",
   "• *guia 1066 104169999 AB12* → registra la guía nueva (por ejemplo tras un cambio de destino)",
+  "",
+  "*Consultas generales*: «resumen de hoy» (o ayer, semana, mes), «quién me debe», «adelantos pendientes», «por enviar», «en camino», «pedidos por confirmar».",
+  "",
+  "*Cambios en el CRM* (siempre te pido *SI* antes):",
+  "• *cancela 1140 porque no contesta* → pedido cancelado",
+  "• *pasa 1140 a confirmado* (o preparando, enviado, por confirmar)",
+  "• *dni 1140 45678912* · *direccion 1140 Av. Lima 123* · *agencia 1140 Shalom Huancayo Real*",
+  "• *registra clave 1140 1330* · *total 1140 189* · *nota 1140 llamar después de las 6*",
+  "",
   "Antes de cambiar algo te pido confirmar con *SI 1140*. Para mandar la clave al cliente: *ENVIAR 1140*. *NO* cancela.",
   "El pedido puede ir por número (1140), por guía Shalom (104493022), por celular (987654321) o por nombre («clave de Carlos Huaynalaya»).",
   "Si no pones número, uso el pedido de la última alerta. También puedes escribirme normal («ya me llegó el yape de Manuel», «cuánto le falta a Vertiz»): te digo qué entendí y siempre te pido el SI antes de cambiar algo.",
@@ -593,7 +645,7 @@ async function nota(p: Pedido, descripcion: string): Promise<void> {
 async function proponer(cmd: Comando, conversationId: string): Promise<string> {
   const r = await resolverPedido(cmd, conversationId);
   if (!r.ok) return r.texto;
-  await guardarUltimaOrden({ tipo: cmd.tipo, numeroOrden: r.pedido.numeroOrden });
+  await guardarUltimaOrden({ tipo: cmd.tipo, numeroOrden: r.pedido.numeroOrden, valor: cmd.valor ?? null });
   const texto = await proponerPara(cmd, r);
   // Sin número en el mensaje: decir de qué aviso se tomó el pedido, para que se note
   // al instante si no es el cliente que el supervisor tenía en mente.
@@ -720,7 +772,189 @@ async function proponerPara(cmd: Comando, r: Extract<Resolucion, { ok: true }>):
       .join("\n");
   }
 
+  const cambio = await proponerCambio(cmd, p, c, n);
+  if (cambio) return cambio;
+
   return AYUDA;
+}
+
+const confirmar = (n: string) => `Responde *SI ${n}* para confirmar o *NO*.`;
+
+/** Propone un cambio del CRM y lo deja pendiente de «SI <pedido>». Null si no es un cambio. */
+async function proponerCambio(cmd: Comando, p: Pedido, c: CuentasPedido, n: string): Promise<string | null> {
+  const base = { pedidoId: p.id, numeroOrden: p.numeroOrden, monto: null };
+
+  if (cmd.tipo === "cancelar_pedido") {
+    if (p.estado === "cancelado") return `${encabezado(p)} ya está cancelado.`;
+    await guardarPendiente({ ...base, accion: "cancelar_pedido", valor: cmd.valor ?? null });
+    return [
+      `🛑 *Cancelar ${encabezado(p)}* (estado actual: ${p.estado} · total ${soles(c.total)})`,
+      cmd.valor ? `Motivo: ${cmd.valor}` : null,
+      p.numeroGuia ? `⚠️ Tiene guía Shalom ${p.numeroGuia}: cancelarlo en el CRM no detiene el paquete.` : null,
+      p.estado === "entregado" ? "⚠️ Figura como entregado; si hubo devolución, coordina el dinero aparte." : null,
+      `Pasa a *Cancelado* en el pedido, el pipeline y el ERP. ${confirmar(n)}`,
+    ]
+      .filter(Boolean)
+      .join("\n");
+  }
+
+  if (cmd.tipo === "cambiar_estado") {
+    const destino = cmd.valor as EstadoDestino | null;
+    if (!destino) return `¿A qué estado? Por ejemplo: «pasa ${n} a confirmado».`;
+    if (p.estado === destino) return `${encabezado(p)} ya está en «${ETIQUETA_ESTADO[destino]}».`;
+    await guardarPendiente({ ...base, accion: "cambiar_estado", valor: destino });
+    return [
+      `🔄 *${encabezado(p)}*: ${ETIQUETA_ESTADO[p.estado] ?? p.estado} → *${ETIQUETA_ESTADO[destino]}*`,
+      destino === "enviado" && !p.numeroGuia ? "⚠️ No tiene guía registrada; luego usa «guia …»." : null,
+      `Se actualiza el pedido, el pipeline y el ERP. ${confirmar(n)}`,
+    ]
+      .filter(Boolean)
+      .join("\n");
+  }
+
+  if (cmd.tipo === "dni") {
+    if (!cmd.valor || !/^\d{8}$/.test(cmd.valor)) return `Escribe el DNI de 8 cifras, por ejemplo: «dni ${n} 45678912».`;
+    await guardarPendiente({ ...base, accion: "dni", valor: cmd.valor });
+    return `🪪 *${encabezado(p)}*: DNI ${p.dniCliente || "sin DNI"} → *${cmd.valor}*. ${confirmar(n)}`;
+  }
+
+  if (cmd.tipo === "direccion") {
+    if (!cmd.valor) return `Escribe la dirección o agencia después del pedido, por ejemplo: «agencia ${n} Shalom Huancayo Real».`;
+    let nueva = cmd.valor.slice(0, 250);
+    let aviso: string | null = null;
+    const esAgencia = /shalom|agencia/i.test(nueva) || p.modalidadPago === "adelanto_agencia";
+    if (esAgencia) {
+      const { resolverAgenciaOficial, textoAgenciaOficial } = await import("@/lib/agencias/shalom-directorio");
+      const r = resolverAgenciaOficial({ texto: nueva, ciudad: p.ciudad });
+      if (r.agencia) nueva = textoAgenciaOficial(r.agencia);
+      else aviso = "⚠️ No la encontré en el padrón oficial de Shalom: se guardará tal cual la escribiste.";
+    }
+    await guardarPendiente({ ...base, accion: "direccion", valor: nueva });
+    return [
+      `📍 *${encabezado(p)}*`,
+      `Antes: ${p.direccionEnvio || "sin dirección"}`,
+      `Nueva: *${nueva}*`,
+      aviso,
+      p.numeroGuia ? `⚠️ La guía ${p.numeroGuia} ya salió: el cambio en el CRM no mueve el paquete; coordínalo con Shalom.` : null,
+      confirmar(n),
+    ]
+      .filter(Boolean)
+      .join("\n");
+  }
+
+  if (cmd.tipo === "clave_nueva") {
+    if (!cmd.valor || !/^\d{4,6}$/.test(cmd.valor)) {
+      return `Escribe el pedido y la clave, por ejemplo: «registra clave ${n} 1330».`;
+    }
+    await guardarPendiente({ ...base, accion: "clave_nueva", valor: cmd.valor });
+    return `🔑 *${encabezado(p)}*: clave de retiro ${p.claveRecojo ? `*${p.claveRecojo}*` : "sin clave"} → *${cmd.valor}*. No se le envía al cliente (para eso: «clave ${n}»). ${confirmar(n)}`;
+  }
+
+  if (cmd.tipo === "total") {
+    const r = cmd.numeros.filter((t) => !t.esPedido && digitosPedido(t.texto) !== n);
+    const monto = r.length ? Math.round(r[r.length - 1].valor * 100) / 100 : null;
+    if (monto === null) return `¿Cuál es el total nuevo? Por ejemplo: «total ${n} 189».`;
+    if (monto <= 0 || monto > 3000) return `El total ${soles(monto)} no parece correcto. Revisa y vuelve a escribirlo.`;
+    await guardarPendiente({ ...base, accion: "total", monto });
+    return [
+      `🧾 *${encabezado(p)}*: total ${soles(c.total)} → *${soles(monto)}*`,
+      `Saldo pendiente quedaría en ${soles(Math.max(0, monto - c.adelanto))}. Se actualiza el pedido, el pipeline y el ERP. ${confirmar(n)}`,
+    ].join("\n");
+  }
+
+  if (cmd.tipo === "nota") {
+    if (!cmd.valor) return `Escribe la nota después del pedido, por ejemplo: «nota ${n} llamar después de las 6».`;
+    await guardarPendiente({ ...base, accion: "nota", valor: cmd.valor.slice(0, 500) });
+    return `📝 *${encabezado(p)}*: agregar la nota «${cmd.valor.slice(0, 500)}». ${confirmar(n)}`;
+  }
+
+  return null;
+}
+
+const ETIQUETA_ESTADO: Record<string, string> = {
+  por_confirmar_cod: "Por confirmar",
+  confirmado: "Confirmado",
+  preparando: "En preparación",
+  enviado: "En camino",
+  entregado: "Entregado",
+  cancelado: "Cancelado",
+};
+
+/** Aplica un cambio ya confirmado con «SI <pedido>». */
+async function aplicarCambio(pend: Pendiente, p: Pedido): Promise<string | null> {
+  const producto = p.items?.[0]?.titulo ?? "Pedido Aliv";
+  const actualizar = async (set: Partial<typeof pedidosOrdenes.$inferInsert>, descripcion: string) => {
+    await db
+      .update(pedidosOrdenes)
+      .set({ ...set, updatedAt: new Date() })
+      .where(eq(pedidosOrdenes.id, p.id));
+    await nota(p, descripcion);
+    if (p.dealId) notificarCambioDealAlErp(p.dealId).catch(() => {});
+  };
+  const etapa = async (estado: EstadoPedido, total = Number(p.total) || 0) => {
+    if (!p.contactId) return;
+    const { sincronizarEtapaPipeline } = await import("@modules/pedidos/servidor");
+    await sincronizarEtapaPipeline(p.contactId, estado, `${p.numeroOrden} · ${producto}`, total, p.id, p.dealId);
+  };
+
+  if (pend.accion === "cancelar_pedido") {
+    const marca = `[CANCELADO_POR_WHATSAPP ${new Date().toISOString().slice(0, 16)}${pend.valor ? ` motivo: ${pend.valor}` : ""}]`;
+    await actualizar(
+      { estado: "cancelado", notas: p.notas ? `${p.notas}\n${marca}` : marca },
+      `Pedido ${p.numeroOrden} cancelado por ${AUTOR}${pend.valor ? `. Motivo: ${pend.valor}` : ""}.`
+    );
+    await etapa("cancelado");
+    return `✅ ${encabezado(p)} quedó *Cancelado* (pedido, pipeline y ERP).`;
+  }
+
+  if (pend.accion === "cambiar_estado" && ESTADOS_PEDIDO.includes(pend.valor as EstadoPedido)) {
+    const destino = pend.valor as EstadoPedido;
+    await actualizar({ estado: destino }, `Pedido ${p.numeroOrden} pasado a «${ETIQUETA_ESTADO[destino] ?? destino}» por ${AUTOR}.`);
+    await etapa(destino);
+    return `✅ ${encabezado(p)} ahora está en *${ETIQUETA_ESTADO[destino] ?? destino}* (pedido, pipeline y ERP).`;
+  }
+
+  if (pend.accion === "dni" && pend.valor) {
+    await actualizar({ dniCliente: pend.valor }, `DNI del pedido ${p.numeroOrden} cambiado de ${p.dniCliente || "-"} a ${pend.valor} por ${AUTOR}.`);
+    return `✅ DNI ${pend.valor} guardado en ${encabezado(p)}.`;
+  }
+
+  if (pend.accion === "direccion" && pend.valor) {
+    await actualizar(
+      { direccionEnvio: pend.valor },
+      `Dirección del pedido ${p.numeroOrden} cambiada por ${AUTOR}: «${p.direccionEnvio || "-"}» → «${pend.valor}».`
+    );
+    return `✅ Dirección de ${encabezado(p)} actualizada: ${pend.valor}`;
+  }
+
+  if (pend.accion === "clave_nueva" && pend.valor) {
+    await actualizar(
+      { claveRecojo: pend.valor },
+      `Clave de retiro del pedido ${p.numeroOrden} registrada por ${AUTOR} (antes ${p.claveRecojo ? "tenía otra" : "no tenía"}).`
+    );
+    return `✅ Clave *${pend.valor}* guardada en ${encabezado(p)}. Para mandársela al cliente: «clave ${digitosPedido(p.numeroOrden)}».`;
+  }
+
+  if (pend.accion === "total" && pend.monto !== null) {
+    await actualizar(
+      { total: pend.monto.toFixed(2) },
+      `Total del pedido ${p.numeroOrden} cambiado de ${soles(Number(p.total) || 0)} a ${soles(pend.monto)} por ${AUTOR}.`
+    );
+    if (p.dealId) {
+      await db
+        .update(deals)
+        .set({ title: `${p.numeroOrden} · ${producto}`, value: Math.round(pend.monto * 100), updatedAt: new Date() })
+        .where(eq(deals.id, p.dealId));
+    }
+    return `✅ Total de ${encabezado(p)} actualizado a ${soles(pend.monto)} (pedido, pipeline y ERP).`;
+  }
+
+  if (pend.accion === "nota" && pend.valor) {
+    await nota(p, `Nota de ${AUTOR}: ${pend.valor}`);
+    return `✅ Nota agregada en ${encabezado(p)}.`;
+  }
+
+  return null;
 }
 
 async function ejecutarPendiente(cmd: Comando, conversationId: string): Promise<string> {
@@ -848,6 +1082,9 @@ async function ejecutarPendiente(cmd: Comando, conversationId: string): Promise<
     return `✅ Clave enviada a ${nombre} por WhatsApp.\n${cierre.texto}`;
   }
 
+  const cambio = await aplicarCambio(pend, p);
+  if (cambio) return cambio;
+
   return "No reconozco lo pendiente; vuelve a escribir la orden.";
 }
 
@@ -942,6 +1179,10 @@ export async function manejarComandoSupervisor(conversationId: string, phone: st
   let texto: string;
   try {
     if (cmd.tipo === "ayuda") texto = AYUDA;
+    else if (cmd.tipo === "consulta") {
+      const { responderConsultaGeneral } = await import("./consultas");
+      texto = await responderConsultaGeneral(cmd.consulta ?? "resumen", cmd.periodo ?? "hoy");
+    }
     else if (cmd.tipo === "cancelar") {
       const pend = await leerPendiente();
       if (!pend) return false; // un "no" suelto sin nada pendiente es conversación normal
