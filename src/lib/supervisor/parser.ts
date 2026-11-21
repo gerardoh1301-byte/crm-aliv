@@ -40,9 +40,14 @@ export interface Comando {
   nombre: string | null;
   /** "pago completo" / "pagó todo": cubre el saldo sin decir el monto. */
   completo: boolean;
-  /** Orden «guia»: número de orden Shalom (8-10 cifras) y código alfanumérico. */
+  /**
+   * Número de orden Shalom (8-10 cifras) y código alfanumérico. En la orden «guia» son
+   * la guía nueva; en las demás identifican el pedido («clave guía Shalom 104493022»).
+   */
   guia?: string | null;
   codigo?: string | null;
+  /** Celular del cliente (9 cifras que empiezan con 9): identifica el pedido. */
+  celular?: string | null;
 }
 
 const PALABRAS_RELLENO = new Set([
@@ -56,6 +61,16 @@ const PALABRAS_RELLENO = new Set([
   "cobre", "cobro", "n", "nro", "numero", "guia", "adelanto", "confirma", "confirmar", "confirmo",
   "confirmado", "confirmada", "valida", "validar", "validado", "verifica", "verificar", "verificado",
   "recibido", "recibi", "llego", "aprueba", "aprobado",
+  // Pedidos de información en lenguaje libre: «dame la clave de recojo del pedido a
+  // nombre de Carlos…». Si quedaran, la búsqueda por nombre exigiría «nombre» en el contacto.
+  "nombre", "nombres", "recoger", "recojer", "retirar", "necesito", "quiero", "saber", "dime",
+  "datos", "dato", "informacion", "info", "cual", "cuales", "cuanto", "cuanta", "debe", "falta",
+  "manda", "mandame", "brindame", "dar", "darme", "tiene", "tienes", "puedes", "podrias", "hola",
+  "buenas", "gracias", "para", "este", "esta", "ese", "esa", "telefono", "celular", "dni",
+  "direccion", "codigo", "seguimiento", "tracking", "senor", "senora", "sra", "cuenta", "muestrame",
+  "consulta", "consultar", "busca", "buscar", "revisa", "revisar", "ver", "tambien", "sobre",
+  "detalle", "detalles", "resumen", "situacion", "numeros", "uno", "una", "hay", "producto",
+  "productos", "pedidos", "ordenes",
 ]);
 
 export function normalizarTexto(texto: string): string {
@@ -97,9 +112,43 @@ function extraerNombre(normalizado: string): string | null {
   return palabras.length ? palabras.slice(0, 3).join(" ") : null;
 }
 
-function comando(tipo: TipoComando, n: string, completo = false): Comando {
-  return { tipo, numeros: extraerNumeros(n), nombre: extraerNombre(n), completo };
+function esCelular(t: TokenNumero): boolean {
+  return !t.esPedido && !t.esMonto && /^(?:51)?9\d{8}$/.test(t.texto);
 }
+
+/** Guía Shalom: 8-10 cifras que no son un celular. */
+export function esGuiaShalom(t: TokenNumero): boolean {
+  return !t.esPedido && !t.esMonto && /^\d{8,10}$/.test(t.texto) && !esCelular(t);
+}
+
+/** Código de rastreo Shalom: 4 caracteres con letras y cifras («3KJP»), o el que sigue a «código». */
+function extraerCodigo(n: string): string | null {
+  const tras = n.match(/\bcodigo\s+([a-z0-9]{4})\b/)?.[1];
+  if (tras) return tras.toUpperCase();
+  return n.split(" ").find((w) => /^[a-z0-9]{4}$/.test(w) && /[a-z]/.test(w) && /\d/.test(w))?.toUpperCase() ?? null;
+}
+
+function comando(tipo: TipoComando, n: string, completo = false): Comando {
+  const todos = extraerNumeros(n);
+  // La guía Shalom y el celular identifican el pedido: no son montos ni números de pedido.
+  const guia = todos.find(esGuiaShalom) ?? null;
+  const celular = todos.find(esCelular) ?? null;
+  return {
+    tipo,
+    numeros: todos.filter((t) => t !== guia && t !== celular),
+    nombre: extraerNombre(n),
+    completo,
+    guia: guia?.texto ?? null,
+    codigo: guia ? extraerCodigo(n) : null,
+    celular: celular ? celular.texto.slice(-9) : null,
+  };
+}
+
+/** Pregunta por información de un pedido («cuál es la guía de Carlos», «cuánto debe 1140»). */
+const RE_CONSULTA =
+  /^(?:hola |buenas |por favor |porfa )?(cual|cuales|cuanto|cuanta|que|donde|dame|dime|pasame|muestrame|necesito|quiero|consulta|busca|buscar|revisa|ver)\b/;
+const RE_DATO_PEDIDO =
+  /\b(pedido|orden|guia|codigo|dni|direccion|telefono|celular|agencia|saldo|debe|falta|estado|datos|informacion|info|detalle|resumen|flete|seguimiento)\b/;
 
 export function interpretarComando(texto: string | null | undefined): Comando | null {
   if (!texto) return null;
@@ -112,12 +161,12 @@ export function interpretarComando(texto: string | null | undefined): Comando | 
   if (/^(si|confirmo|confirmar|confirmado)\s+#?((leg|chat|aliv)-)?\d{3,}$/.test(n)) return comando("confirmar", n);
   if (/^(no|cancelar|cancela|anular|anula)$/.test(n)) return comando("cancelar", n);
   if (/^(enviar|envia|enviala|mandale|mandar)\b/.test(n) && /\d{3,}/.test(n)) return comando("enviar_clave", n);
-  if (/^(estado|como va|donde esta|info)\b/.test(n)) return comando("estado", n);
-  if (/^(guia|nueva guia)\b/.test(n)) {
+  if (/^(estado|como va|donde esta|info|informacion|datos|detalle|resumen)\b/.test(n)) return comando("estado", n);
+  if (/^(guia|nueva guia)\b/.test(n) && !/\bclave\b/.test(n)) {
     const c = comando("guia", n);
-    const guia = c.numeros.find((t) => /^\d{8,10}$/.test(t.texto)) ?? null;
-    c.numeros = c.numeros.filter((t) => t !== guia);
-    c.guia = guia?.texto ?? null;
+    // En la orden «guia» el número de 8-10 cifras es siempre la guía nueva.
+    if (!c.guia && c.celular) c.guia = extraerNumeros(n).find((t) => t.texto.endsWith(c.celular!))?.texto ?? null;
+    c.celular = null;
     c.codigo =
       n
         .split(" ")
@@ -140,6 +189,14 @@ export function interpretarComando(texto: string | null | undefined): Comando | 
   }
   if (/\b(pago|pagado|pagada|pagaron|pagó|yapeo|transfirio|deposito|cobrado|cobre)\b/.test(n)) {
     return comando("pago", n, /\b(completo|completa|todo|total)\b/.test(n));
+  }
+  // Consulta de información: solo si pregunta por un dato del pedido y dice cuál (número,
+  // guía, celular o «pedido de …»), para que las preguntas de prueba al bot de ventas
+  // («qué beneficios tiene?») no se tomen como orden.
+  if (RE_CONSULTA.test(n) && RE_DATO_PEDIDO.test(n)) {
+    const c = comando("estado", n);
+    const dicePedido = c.numeros.some((t) => t.esPedido || (!t.esMonto && t.texto.length >= 3));
+    if (c.guia || c.celular || dicePedido || (c.nombre && /\b(pedido|orden|guia)\b/.test(n))) return c;
   }
   return null;
 }
@@ -177,6 +234,24 @@ export function interpretarCorreccion(texto: string | null | undefined): string 
   const m = n.match(RE_CORRECCION);
   if (!m) return null;
   return (m[1] ? m[1].toUpperCase() : "") + m[2];
+}
+
+/**
+ * De los pedidos traídos por alguna palabra del nombre, deja los que más palabras tienen
+ * en el nombre del contacto. Con dos o más palabras escritas exige al menos dos (un
+ * «Carlos» suelto no basta para tomar el pedido de otro Carlos).
+ */
+export function mejoresPorNombre<T extends { contactName: string | null }>(palabras: string[], pedidos: T[]): T[] {
+  if (!palabras.length) return [];
+  const minimo = Math.min(2, palabras.length);
+  const puntaje = (p: T) => {
+    const nombre = normalizarTexto(p.contactName || "");
+    return palabras.filter((w) => nombre.includes(w)).length;
+  };
+  const conPuntaje = pedidos.map((p) => ({ p, s: puntaje(p) }));
+  const mejor = Math.max(0, ...conPuntaje.map((x) => x.s));
+  if (mejor < minimo) return [];
+  return conPuntaje.filter((x) => x.s === mejor).map((x) => x.p);
 }
 
 /** Dígitos del número de pedido: "#LEG-1049" -> "1049". */

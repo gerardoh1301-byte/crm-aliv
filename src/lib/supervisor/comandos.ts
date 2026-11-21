@@ -13,6 +13,7 @@ import {
   digitosPedido,
   interpretarComando,
   interpretarCorreccion,
+  mejoresPorNombre,
   pareceOrdenNoEntendida,
   separarPedidoYMonto,
   type Comando,
@@ -224,23 +225,53 @@ async function pedidoPorId(id: string): Promise<Pedido | null> {
   return row ? { ...row.pedido, contactName: row.contactName } : null;
 }
 
+/** Pedido por su guía Shalom (número de orden de 8-10 cifras), con el código si lo hay. */
+async function pedidoPorGuia(guia: string, codigo?: string | null): Promise<Pedido | null> {
+  const rows = await db
+    .select(columnasPedido)
+    .from(pedidosOrdenes)
+    .leftJoin(contacts, eq(contacts.id, pedidosOrdenes.contactId))
+    .where(
+      or(
+        eq(pedidosOrdenes.numeroGuia, guia),
+        // Guía reemplazada con la orden «guia»: la anterior queda en las notas.
+        ilike(pedidosOrdenes.notas, `%antes=${guia}/%`)
+      )
+    )
+    .orderBy(desc(pedidosOrdenes.createdAt))
+    .limit(3);
+  const pedidos = rows.map((r) => ({ ...r.pedido, contactName: r.contactName }));
+  const actual = pedidos.filter((p) => p.numeroGuia === guia);
+  const conCodigo = codigo ? actual.find((p) => (p.codigoRastreo || "").toUpperCase() === codigo) : null;
+  return conCodigo ?? actual[0] ?? pedidos[0] ?? null;
+}
+
+/**
+ * Pedidos cuyo contacto se llama como lo escrito. Se traen los que tienen alguna de las
+ * palabras y se quedan los que más coinciden (ver `mejoresPorNombre`): así un apellido
+ * de más o de menos no deja sin resultado.
+ */
 async function pedidosPorNombre(nombre: string): Promise<Pedido[]> {
-  const palabras = nombre.split(/\s+/).filter((p) => p.length >= 3).slice(0, 3);
+  const palabras = nombre.split(/\s+/).filter((p) => p.length >= 3).slice(0, 4);
   if (!palabras.length) return [];
+  const nombreSql = sql`translate(lower(${contacts.name}), 'áéíóúü', 'aeiouu')`;
   const rows = await db
     .select(columnasPedido)
     .from(pedidosOrdenes)
     .innerJoin(contacts, eq(contacts.id, pedidosOrdenes.contactId))
     .where(
       and(
-        ...palabras.map((p) => sql`translate(lower(${contacts.name}), 'áéíóúü', 'aeiouu') like ${"%" + p + "%"}`),
+        or(...palabras.map((p) => sql`${nombreSql} like ${"%" + p + "%"}`)),
         ne(pedidosOrdenes.estado, "cancelado"),
-        gt(pedidosOrdenes.createdAt, sql`now() - interval '60 days'`)
+        gt(pedidosOrdenes.createdAt, sql`now() - interval '90 days'`)
       )
     )
     .orderBy(desc(pedidosOrdenes.createdAt))
-    .limit(6);
-  const pedidos = rows.map((r) => ({ ...r.pedido, contactName: r.contactName }));
+    .limit(40);
+  const pedidos = mejoresPorNombre(
+    palabras,
+    rows.map((r) => ({ ...r.pedido, contactName: r.contactName }))
+  ).slice(0, 6);
   // Si alguno sigue en curso, los ya entregados no compiten.
   const enCurso = pedidos.filter((p) => p.estado !== "entregado");
   return enCurso.length ? enCurso : pedidos;
@@ -320,6 +351,22 @@ type Resolucion =
   | { ok: false; texto: string };
 
 async function resolverPedido(cmd: Comando, conversationId: string): Promise<Resolucion> {
+  // La guía Shalom o el celular identifican el pedido sin dudas: mandan sobre el nombre y
+  // nunca se cambian por el pedido del último aviso (así se tomó a Jaime #1140 cuando
+  // Gerardo pidió la clave de la guía 104493022 de Carlos Huaynalaya).
+  if (cmd.tipo !== "guia" && cmd.guia && !cmd.numeros.some((t) => t.esPedido)) {
+    const p = await pedidoPorGuia(cmd.guia, cmd.codigo);
+    if (!p) {
+      return { ok: false, texto: `No encuentro ningún pedido con la guía Shalom ${cmd.guia}. Revisa el número o escribe el número de pedido.` };
+    }
+    return { ok: true, pedido: p, monto: separarPedidoYMonto(cmd.numeros, () => false).monto, fleteAlerta: null };
+  }
+  if (cmd.celular && !cmd.numeros.some((t) => t.esPedido)) {
+    const p = await pedidoPorCelular(cmd.celular);
+    if (!p) return { ok: false, texto: `No encuentro pedidos del celular ${cmd.celular}.` };
+    return { ok: true, pedido: p, monto: separarPedidoYMonto(cmd.numeros, () => false).monto, fleteAlerta: null };
+  }
+
   // Tokens enteros de 3+ cifras que podrían ser pedidos: se consultan antes de decidir.
   const candidatos = cmd.numeros.filter((t) => !t.esMonto && (t.esPedido || t.texto.length >= 3));
   const existentes = new Map<TokenNumero, Pedido>();
@@ -347,6 +394,16 @@ async function resolverPedido(cmd: Comando, conversationId: string): Promise<Res
         .join("\n");
       return { ok: false, texto: `Hay varios pedidos para «${cmd.nombre}». Repite la orden con el número:\n${opciones}` };
     }
+    // Dio un nombre y no hay pedidos con ese nombre: no se cambia por el cliente del último
+    // aviso, que sería otra persona. Se le dice cuál es, por si era ese.
+    const alertaNombre = await ultimaAlerta(conversationId);
+    const sugerencia = alertaNombre
+      ? `\nSi es el del último aviso (${alertaNombre.cliente ?? alertaNombre.pedido.contactName ?? "cliente"}, ${alertaNombre.pedido.numeroOrden}), repite la orden con ese número.`
+      : "";
+    return {
+      ok: false,
+      texto: `No encuentro pedidos a nombre de «${cmd.nombre}». Escribe el número de pedido, la guía Shalom o el celular del cliente.${sugerencia}`,
+    };
   }
 
   const alerta = await ultimaAlerta(conversationId);
@@ -387,11 +444,43 @@ const AYUDA = [
   "• *flete 1140 10* → flete pagado en Págalo",
   "• *clave 1140* → te muestro la clave; al *ENVIAR* el saldo queda cobrado y el pedido entregado",
   "• *entregado 1140* → marca el pedido como entregado",
-  "• *estado 1140* → resumen del pedido",
+  "• *estado 1140* → ficha completa: cliente, DNI, dirección, productos, saldo, guía Shalom y clave",
   "• *guia 1066 104169999 AB12* → registra la guía nueva (por ejemplo tras un cambio de destino)",
   "Antes de cambiar algo te pido confirmar con *SI 1140*. Para mandar la clave al cliente: *ENVIAR 1140*. *NO* cancela.",
+  "El pedido puede ir por número (1140), por guía Shalom (104493022), por celular (987654321) o por nombre («clave de Carlos Huaynalaya»).",
   "Si no pones número, uso el pedido de la última alerta. También puedes escribirme normal («ya me llegó el yape de Manuel», «cuánto le falta a Vertiz»): te digo qué entendí y siempre te pido el SI antes de cambiar algo.",
 ].join("\n");
+
+/**
+ * Ficha completa del pedido para el Administrador: todo lo que el CRM sabe (cliente,
+ * productos, dinero, Shalom con la clave de retiro y lo verificado). Solo lectura.
+ */
+function fichaPedido(p: Pedido, c: CuentasPedido, celular: string | null): string {
+  const productos = (p.items ?? []).map((i) => `${i.cantidad ?? 1}x ${i.titulo ?? "producto"}`).join(", ");
+  const fecha = p.createdAt
+    ? new Date(p.createdAt).toLocaleDateString("es-PE", { timeZone: "America/Lima", day: "2-digit", month: "2-digit" })
+    : null;
+  const adelantoOk = adelantoRegistrado(p.notas);
+  const quien = adelantoOk ? quienVerificoAdelanto(p.notas) : null;
+  return [
+    `📋 *${encabezado(p)}*${fecha ? ` · ${fecha}` : ""}`,
+    `Estado: *${p.estado}* · pago: ${p.modalidadPago}`,
+    `👤 ${[celular, p.dniCliente ? `DNI ${p.dniCliente}` : "sin DNI"].filter(Boolean).join(" · ")}`,
+    `📍 ${[p.direccionEnvio, p.distrito, p.ciudad].filter(Boolean).join(", ") || "sin dirección"}`,
+    `🛒 ${productos || "sin productos"} · total ${soles(c.total)}`,
+    `💵 Adelanto ${soles(c.adelanto)}${c.adelanto > 0 ? (adelantoOk ? ` verificado${quien ? ` (${quien})` : ""}` : " sin verificar") : ""} · ` +
+      (c.saldoCobrado !== null
+        ? `saldo cobrado ${soles(c.saldoCobrado)}${c.saldoCubierto ? " ✅" : ` (faltan ${soles(c.saldoPendiente - c.saldoCobrado)})`}`
+        : `saldo pendiente ${soles(c.saldoPendiente)}`),
+    `📦 ${p.transportadora || "Shalom"}: ${datosRastreo(p)} · flete ${c.fleteRegistrado !== null ? soles(c.fleteRegistrado) : "no registrado"}`,
+    `🔑 Clave de retiro: ${p.claveRecojo ? `*${p.claveRecojo}*` : "no registrada"}`,
+    p.claveRecojo && p.estado !== "entregado"
+      ? `Para mandársela al cliente escribe «clave ${digitosPedido(p.numeroOrden)}».`
+      : null,
+  ]
+    .filter(Boolean)
+    .join("\n");
+}
 
 function textoClaveCliente(p: Pedido, c: CuentasPedido): string {
   const destino = [p.direccionEnvio, p.ciudad].filter(Boolean).join(", ") || "tu agencia Shalom";
@@ -519,15 +608,10 @@ async function proponerPara(cmd: Comando, r: Extract<Resolucion, { ok: true }>):
   const n = digitosPedido(p.numeroOrden);
 
   if (cmd.tipo === "estado") {
-    return [
-      `📋 *${encabezado(p)}*`,
-      `Estado: ${p.estado} · total ${soles(c.total)} · adelanto ${soles(c.adelanto)}`,
-      c.saldoCobrado !== null
-        ? `Saldo cobrado: ${soles(c.saldoCobrado)}${c.saldoCubierto ? " ✅" : ` (faltan ${soles(c.saldoPendiente - c.saldoCobrado)})`}`
-        : `Saldo pendiente: ${soles(c.saldoPendiente)}`,
-      `Shalom: ${datosRastreo(p)}`,
-      `Flete registrado: ${c.fleteRegistrado !== null ? soles(c.fleteRegistrado) : "no"} · clave en CRM: ${p.claveRecojo ? "sí" : "no"}`,
-    ].join("\n");
+    const [contacto] = p.contactId
+      ? await db.select({ phone: contacts.phone }).from(contacts).where(eq(contacts.id, p.contactId)).limit(1)
+      : [];
+    return fichaPedido(p, c, contacto?.phone ?? null);
   }
 
   if (cmd.tipo === "clave") {
@@ -894,4 +978,4 @@ async function traducirConIA(texto: string, conversationId: string) {
 }
 
 // Exportado para pruebas.
-export const _internas = { AYUDA, textoClaveCliente };
+export const _internas = { AYUDA, textoClaveCliente, fichaPedido };

@@ -19,19 +19,20 @@ export async function traducirOrdenConIA(
 
   const prompt = `Eres el asistente interno del CRM de Aliv Perú. Gerardo (dueño y supervisor de pagos) te escribe por WhatsApp. Traduce su ÚLTIMO mensaje a UNA orden estándar del CRM.
 
-ÓRDENES ESTÁNDAR (el pedido puede ser número como 1153 / LEG-1049 o el nombre del cliente):
+ÓRDENES ESTÁNDAR (el <pedido> puede ser el número como 1153 / LEG-1049, la guía Shalom de 8-10 cifras como 104493022, el celular del cliente o su nombre):
 - "adelanto <pedido>"            → verificó el Yape/Plin del adelanto de S/20 de un pedido de provincia
 - "pagó <pedido> <monto>"        → el cliente pagó el saldo (monto en soles). "pago completo <pedido>" si dice que pagó todo sin monto
 - "flete <pedido> <monto>"       → flete Shalom pagado
 - "clave <pedido>"               → quiere ver o mandar la clave de retiro de Shalom
 - "entregado <pedido>"           → el cliente ya recogió / recibió el pedido
-- "estado <pedido>"              → pregunta por un pedido (cuánto debe, dónde está, si pagó, su guía...)
+- "estado <pedido>"              → pide información de un pedido (cuánto debe, dónde está, si pagó, su guía, DNI, dirección, productos, su clave para verla...)
 - "guia <pedido> <ordenShalom> <codigo>" → nueva guía Shalom (orden de 8-10 cifras y código de 4 caracteres)
 - "SI <pedido>" / "ENVIAR <pedido>" / "NO" → confirma, envía la clave o cancela lo que se le propuso
 - "ayuda"                        → pregunta qué órdenes existen
 
 REGLAS:
-- Si el mensaje no dice el pedido pero se refiere al cliente del último aviso del chat (por ejemplo "confirma ese adelanto", "ya pagó"), usa el número de pedido del aviso más reciente.
+- Si el mensaje no dice el pedido (ni guía, celular o nombre) pero se refiere al cliente del último aviso del chat (por ejemplo "confirma ese adelanto", "ya pagó"), usa el número de pedido del aviso más reciente.
+- Si da la guía Shalom, el celular o el nombre del cliente, ponlos en la orden tal cual (por ejemplo "clave 104493022" o "estado carlos huaynalaya"); NO uses el pedido del último aviso en ese caso.
 - Nunca inventes montos ni números de pedido que no estén en el mensaje o en el chat.
 - Si es una instrucción para el CRM que no está en la lista (cancelar o anular un pedido, cambiar dirección o producto, devolver dinero, etc.), responde tipo "no_soportada" y describe en pocas palabras qué pide.
 - Si NO es una instrucción para el CRM (Gerardo está probando el bot de ventas escribiendo como un cliente, saluda, pregunta precios del producto, etc.), responde tipo "no_es_orden".
