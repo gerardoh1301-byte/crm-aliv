@@ -1,9 +1,9 @@
 import "server-only";
 import { db } from "@/db";
 import { activities, contacts } from "@/db/schema";
-import { desc, eq, inArray } from "drizzle-orm";
+import { and, desc, eq, gte, inArray } from "drizzle-orm";
 import { pedidosOrdenes } from "../../../modules/pedidos/tabla";
-import { AliclikMcpClient } from "./mcp-client";
+import { AliclikMcpClient, type AliclikOrderItem } from "./mcp-client";
 import { decidirEntregaAliclik, elegirOrdenAliclik, type DecisionAliclik, type OrdenMin } from "./sync-reglas";
 
 /**
@@ -50,6 +50,11 @@ export async function sincronizarEntregasAliclik(opts: { limite?: number } = {})
   const res: ResultadoSyncAliclik = { activo, revisados: 0, entregados: 0, detalles: [] };
   const cliente = new AliclikMcpClient();
 
+  // AliClik reparte contra entrega en Lima (ALIDRIVER) y en provincia, y lleva paquetes a
+  // Shalom. En el CRM muchos de esos pedidos no dicen "AliClik" (figuran como motorizado o
+  // sin transportadora), así que se cruzan TODOS los pedidos abiertos de los últimos 30
+  // días con los de AliClik por número guardado o por celular + total.
+  const desde = new Date(Date.now() - 30 * 86_400_000);
   const pedidos = await db
     .select({
       id: pedidosOrdenes.id,
@@ -66,55 +71,77 @@ export async function sincronizarEntregasAliclik(opts: { limite?: number } = {})
     })
     .from(pedidosOrdenes)
     .leftJoin(contacts, eq(contacts.id, pedidosOrdenes.contactId))
-    .where(inArray(pedidosOrdenes.estado, ["confirmado", "enviado"]))
+    .where(
+      and(
+        inArray(pedidosOrdenes.estado, ["por_confirmar_cod", "confirmado", "enviado"]),
+        gte(pedidosOrdenes.createdAt, desde)
+      )
+    )
     .orderBy(desc(pedidosOrdenes.createdAt))
-    .limit(200);
+    .limit(300);
 
-  const candidatos = pedidos
-    .filter((p) => /aliclik/i.test(p.transportadora ?? "") || MARCA_ORDEN.test(p.notas ?? ""))
-    .filter((p) => !(p.notas ?? "").includes(MARCA_ENTREGA))
-    .slice(0, opts.limite ?? 30);
+  const candidatos = pedidos.filter((p) => !(p.notas ?? "").includes(MARCA_ENTREGA)).slice(0, opts.limite ?? 150);
+  if (!candidatos.length) return res;
+
+  // Una sola consulta (paginada) de los pedidos de AliClik del periodo.
+  const ordenesAliclik: AliclikOrderItem[] = [];
+  const desdeAliclik = fechaISO(new Date(desde.getTime() - 5 * 86_400_000));
+  const hasta = fechaISO(new Date(Date.now() + 86_400_000));
+  for (let page = 1; page <= 5; page++) {
+    const r = await cliente.searchOrders({ from: desdeAliclik, to: hasta, page, pageSize: 100 });
+    ordenesAliclik.push(...(r.items ?? []));
+    if (!r.items?.length || ordenesAliclik.length >= (r.total ?? 0)) break;
+  }
+  const porNumero = new Map(ordenesAliclik.map((o) => [o.orderNumber, o]));
+  const celular9 = (t: string | null | undefined) => String(t ?? "").replace(/\D/g, "").slice(-9);
+  const usados = new Set<string>();
 
   for (const p of candidatos) {
-    res.revisados++;
     try {
       let numeroAliclik = MARCA_ORDEN.exec(p.notas ?? "")?.[1]?.trim() ?? null;
       let orden: OrdenMin | null = null;
 
       if (numeroAliclik) {
-        orden = await cliente.getOrder(numeroAliclik);
+        orden = porNumero.get(numeroAliclik) ?? (await cliente.getOrder(numeroAliclik));
       } else {
-        // Sin número guardado: se busca por celular desde 3 días antes del pedido.
-        const celular = String(p.phone ?? "").replace(/\D/g, "").slice(-9);
-        if (celular.length === 9) {
-          const desde = new Date((p.createdAt ?? new Date()).getTime() - 3 * 86_400_000);
-          const r = await cliente.searchOrders({ from: fechaISO(desde), to: fechaISO(new Date(Date.now() + 86_400_000)), phone: celular, pageSize: 20 });
-          orden = elegirOrdenAliclik(r.items ?? [], Number(p.total) || 0);
-          numeroAliclik = orden?.orderNumber ?? null;
-        }
+        const cel = celular9(p.phone);
+        if (cel.length !== 9) continue;
+        const delCliente = ordenesAliclik.filter(
+          (o) =>
+            !usados.has(o.orderNumber) &&
+            celular9(o.customerPhone) === cel &&
+            // El pedido de AliClik se crea después del pedido del CRM (margen de 3 días).
+            (!o.createdAt || !p.createdAt || new Date(o.createdAt).getTime() >= p.createdAt.getTime() - 3 * 86_400_000)
+        );
+        orden = elegirOrdenAliclik(delCliente, Number(p.total) || 0);
+        numeroAliclik = orden?.orderNumber ?? null;
       }
+      // Pedido que no pasó por AliClik (Shalom directo, motorizado propio): no se informa.
+      if (!orden || !numeroAliclik) continue;
+      usados.add(numeroAliclik);
+      res.revisados++;
 
       const decision = decidirEntregaAliclik(orden);
       res.detalles.push({
         numeroOrden: p.numeroOrden,
         ordenAliclik: numeroAliclik,
-        tipo: orden?.deliveryType ?? null,
-        estadoEntrega: orden ? `${orden.deliveryStatus}${orden.deliveryStatusLabel ? ` (${orden.deliveryStatusLabel})` : ""}` : null,
-        estadoSeguimiento: orden?.trackingStatusLabel || orden?.trackingStatus || null,
+        tipo: orden.deliveryType ?? null,
+        estadoEntrega: `${orden.deliveryStatus}${orden.deliveryStatusLabel ? ` (${orden.deliveryStatusLabel})` : ""}`,
+        estadoSeguimiento: orden.trackingStatusLabel || orden.trackingStatus || null,
         accion: decision.accion,
         motivo: decision.motivo,
       });
 
       if (!activo) continue;
 
-      // Guardar el número de AliClik si se encontró por celular (para no volver a buscar).
-      if (numeroAliclik && !MARCA_ORDEN.test(p.notas ?? "")) {
+      // Guardar el número de AliClik encontrado por celular (para no volver a cruzarlo).
+      if (!MARCA_ORDEN.test(p.notas ?? "")) {
         p.notas = `${p.notas ? `${p.notas}\n` : ""}[ALICLIK_ORDEN:${numeroAliclik}]`;
         await db.update(pedidosOrdenes).set({ notas: p.notas, updatedAt: new Date() }).where(eq(pedidosOrdenes.id, p.id));
       }
 
       if (decision.accion === "marcar_entregado") {
-        await marcarEntregadoPorAliclik(p, numeroAliclik!, decision.motivo);
+        await marcarEntregadoPorAliclik(p, numeroAliclik, decision.motivo);
         res.entregados++;
       }
     } catch (err) {
