@@ -22,6 +22,7 @@ import {
   Loader2,
   Sparkles,
   Lock,
+  Package,
   FileImage,
   MessageCircle,
 } from "lucide-react";
@@ -46,6 +47,8 @@ export interface SeguimientoShalomData {
   claveRecojo?: string | null;
   transportadora?: string | null;
   estadoPedido?: string | null;
+  /** Productos de la orden, para ver qué se empaca y envía sin salir del modal. */
+  productos?: Array<{ titulo?: string | null; cantidad?: number | null }> | null;
 }
 
 interface SeguimientoShalomModalProps {
@@ -503,6 +506,21 @@ Recuerda acudir con tu DNI físico original para el retiro. ¡Que disfrutes tus 
               <ExternalLink className="h-3 w-3" />
             </a>
           </div>
+
+          {(data.productos?.length ?? 0) > 0 && (
+            <div className="pt-1.5 border-t border-red-200/50 dark:border-red-900/30">
+              <p className="text-[10px] text-muted-foreground">Producto</p>
+              <ul className="space-y-0.5">
+                {data.productos!.map((it, i) => (
+                  <li key={i} className="font-semibold text-sm text-foreground flex items-center gap-1.5">
+                    <Package className="h-3.5 w-3.5 text-red-500 shrink-0" />
+                    <span className="font-extrabold">{Number(it.cantidad) || 1}x</span>
+                    <span className="truncate">{it.titulo || "Producto"}</span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
 
           <div className="grid grid-cols-2 gap-2 pt-1.5 border-t border-red-200/50 dark:border-red-900/30">
             <div>

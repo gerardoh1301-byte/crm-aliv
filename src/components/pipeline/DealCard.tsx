@@ -767,7 +767,7 @@ export function DealCard({
         <SeguimientoShalomModal
           open={shalomOpen}
           onOpenChange={setShalomOpen}
-          data={shalomData}
+          data={{ ...shalomData, productos: itemsList }}
           onUpdated={(guia, codigo, clave, nuevaAgencia) => {
             setCurrentNumeroGuia(guia || null);
             setCurrentCodigoRastreo(codigo || null);

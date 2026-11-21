@@ -192,6 +192,7 @@ export function AdelantoConfirmadoPanel({ contactId }: { contactId: string }) {
         claveRecojo: pedido.claveRecojo,
         transportadora: "Shalom",
         estadoPedido: "enviado",
+        productos: pedido.items,
       }
     : null;
 
