@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { decidirEntregaAliclik, elegirOrdenAliclik, type OrdenMin } from "@/lib/aliclik/sync-reglas";
+import { decidirEntregaAliclik, elegirOrdenAliclik, mismoCelular, type OrdenMin } from "@/lib/aliclik/sync-reglas";
 
 const cod = (deliveryStatus: string, deliveryStatusLabel = "", total = 199): OrdenMin => ({
   orderNumber: "ERG1",
@@ -35,6 +35,14 @@ describe("sincronización de entregas AliClik", () => {
 
   it("sin pedido en AliClik -> no encontrado", () => {
     expect(decidirEntregaAliclik(null).accion).toBe("no_encontrado");
+  });
+
+  it("cruza el celular enmascarado de la lista de AliClik", () => {
+    expect(mismoCelular("51993***569", "993521569")).toBe(true);
+    expect(mismoCelular("51993***569", "993521568")).toBe(false);
+    expect(mismoCelular("51994***569", "993521569")).toBe(false);
+    expect(mismoCelular("+51 993 521 569", "993521569")).toBe(true);
+    expect(mismoCelular("", "993521569")).toBe(false);
   });
 
   it("elige el pedido del celular con total parecido y descarta si no cuadra", () => {

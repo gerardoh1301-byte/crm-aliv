@@ -4,7 +4,7 @@ import { activities, contacts } from "@/db/schema";
 import { and, desc, eq, gte, inArray } from "drizzle-orm";
 import { pedidosOrdenes } from "../../../modules/pedidos/tabla";
 import { AliclikMcpClient, type AliclikOrderItem } from "./mcp-client";
-import { decidirEntregaAliclik, elegirOrdenAliclik, type DecisionAliclik, type OrdenMin } from "./sync-reglas";
+import { decidirEntregaAliclik, elegirOrdenAliclik, mismoCelular, type DecisionAliclik, type OrdenMin } from "./sync-reglas";
 
 /**
  * Sincroniza los pedidos que lleva AliClik con su API de pedidos (MCP).
@@ -144,7 +144,7 @@ export async function sincronizarEntregasAliclik(opts: { limite?: number } = {})
         const delCliente = ordenesAliclik.filter(
           (o) =>
             !usados.has(o.orderNumber) &&
-            celular9(o.customerPhone) === cel &&
+            mismoCelular(o.customerPhone, cel) &&
             // El pedido de AliClik se crea después del pedido del CRM (margen de 3 días).
             fechaCompatible(o.createdAt, p.createdAt)
         );

@@ -47,3 +47,18 @@ export function elegirOrdenAliclik<T extends OrdenMin>(items: T[], totalCrm: num
   if (totalCrm > 0 && Math.abs((Number(mejor.total) || 0) - totalCrm) > 30) return null;
   return mejor;
 }
+
+/**
+ * La lista de AliClik oculta el centro del celular ("51993***569"). Se comparan los dígitos
+ * visibles (inicio y final) con el celular del CRM; si viene completo, se compara entero.
+ */
+export function mismoCelular(deAliclik: string | null | undefined, cel9: string): boolean {
+  const v = String(deAliclik ?? "").replace(/\s|\+|-/g, "");
+  if (!v || cel9.length !== 9) return false;
+  if (!v.includes("*")) return v.replace(/\D/g, "").slice(-9) === cel9;
+  const [ini, fin] = [v.slice(0, v.indexOf("*")), v.slice(v.lastIndexOf("*") + 1)];
+  const iniSin51 = ini.length > 9 ? ini : ini.replace(/^51/, "");
+  if (iniSin51.length < 2 || fin.length < 2) return false;
+  return cel9.startsWith(iniSin51) && cel9.endsWith(fin);
+}
+
