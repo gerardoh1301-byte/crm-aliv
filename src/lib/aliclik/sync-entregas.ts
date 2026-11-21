@@ -26,7 +26,7 @@ export interface ResultadoSyncAliclik {
   activo: boolean;
   revisados: number;
   entregados: number;
-  diagnostico?: { listados: number; desde: string; hasta: string; respuestaLista: string };
+  diagnostico?: { listados: number; desde: string; hasta: string; respuestaLista: string; formatoFecha: string; formatoCelular: string };
   detalles: Array<{
     numeroOrden: string;
     ordenAliclik: string | null;
@@ -40,6 +40,23 @@ export interface ResultadoSyncAliclik {
 
 export function syncEntregasActivo(): boolean {
   return (process.env.ALICLIK_SYNC_ENTREGAS ?? "").toLowerCase() === "on";
+}
+
+/** Fecha de AliClik en ISO o dd/mm/aaaa; si no se entiende, no descarta el pedido. */
+function fechaAliclik(t: string | null | undefined): number | null {
+  const v = String(t ?? "").trim();
+  if (!v) return null;
+  const dmy = /^(\d{1,2})\/(\d{1,2})\/(\d{4})/.exec(v);
+  if (dmy) return Date.UTC(Number(dmy[3]), Number(dmy[2]) - 1, Number(dmy[1]));
+  const ms = Date.parse(v);
+  return Number.isNaN(ms) ? null : ms;
+}
+
+/** El pedido de AliClik se crea después del pedido del CRM (margen de 3 días). */
+function fechaCompatible(fechaOrden: string | null | undefined, creadoCrm: Date | null): boolean {
+  const ms = fechaAliclik(fechaOrden);
+  if (ms === null || !creadoCrm) return true;
+  return ms >= creadoCrm.getTime() - 3 * 86_400_000;
 }
 
 function fechaISO(d: Date): string {
@@ -95,7 +112,16 @@ export async function sincronizarEntregasAliclik(opts: { limite?: number } = {})
     ordenesAliclik.push(...(r.items ?? []));
     if (!r.items?.length || ordenesAliclik.length >= (r.total ?? 0)) break;
   }
-  res.diagnostico = { listados: ordenesAliclik.length, desde: desdeAliclik, hasta, respuestaLista };
+  const muestra = ordenesAliclik[0];
+  res.diagnostico = {
+    listados: ordenesAliclik.length,
+    desde: desdeAliclik,
+    hasta,
+    respuestaLista,
+    // Formato (dígitos enmascarados) para revisar el cruce sin exponer datos del cliente.
+    formatoFecha: String(muestra?.createdAt ?? "").replace(/\d/g, "9"),
+    formatoCelular: String(muestra?.customerPhone ?? "").replace(/\d/g, "9"),
+  };
   const busquedaPorCelular = ordenesAliclik.length === 0;
   const porNumero = new Map(ordenesAliclik.map((o) => [o.orderNumber, o]));
   const celular9 = (t: string | null | undefined) => String(t ?? "").replace(/\D/g, "").slice(-9);
@@ -120,7 +146,7 @@ export async function sincronizarEntregasAliclik(opts: { limite?: number } = {})
             !usados.has(o.orderNumber) &&
             celular9(o.customerPhone) === cel &&
             // El pedido de AliClik se crea después del pedido del CRM (margen de 3 días).
-            (!o.createdAt || !p.createdAt || new Date(o.createdAt).getTime() >= p.createdAt.getTime() - 3 * 86_400_000)
+            fechaCompatible(o.createdAt, p.createdAt)
         );
         orden = elegirOrdenAliclik(delCliente, Number(p.total) || 0);
         numeroAliclik = orden?.orderNumber ?? null;
