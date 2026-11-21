@@ -20,6 +20,8 @@ const ENDPOINTS = [
   "/api/agent/rescate",
   // Rastreo automático de envíos Shalom y avisos de llegada/recordatorio
   "/api/shalom/verificar-envios",
+  // Pedidos contra entrega de AliClik: entregados pasan a Entregado (liquidación la valida una persona).
+  "/api/aliclik/sincronizar-entregas",
   // Formularios EasySell abandonados: mensaje a los 30 min y a las 24 h
   "/api/agent/abandonos",
   // Seguimiento con hora: le escribe una vez a quien prometió volver y no volvió

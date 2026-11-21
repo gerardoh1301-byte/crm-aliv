@@ -96,7 +96,20 @@ export class AliclikMcpClient {
       throw new Error(`Aliclik MCP Error ${res.status}: ${err}`);
     }
 
-    const data = await res.json();
+    // El servidor MCP puede responder JSON o un flujo SSE ("event: message / data: {...}").
+    const crudo = await res.text();
+    let data: { result?: { content?: Array<{ text?: string }> }; error?: { message?: string } };
+    try {
+      data = JSON.parse(crudo);
+    } catch {
+      const lineas = crudo
+        .split(/\r?\n/)
+        .filter((l) => l.startsWith("data:"))
+        .map((l) => l.slice(5).trim())
+        .filter(Boolean);
+      if (!lineas.length) throw new Error(`Aliclik MCP: respuesta no reconocida (${crudo.slice(0, 120)})`);
+      data = JSON.parse(lineas[lineas.length - 1]);
+    }
     if (data.error) {
       throw new Error(`Aliclik MCP Tool Error: ${data.error.message || JSON.stringify(data.error)}`);
     }

@@ -48,7 +48,8 @@ export type TipoSituacionCritica =
   | "bot_sin_respuesta"
   | "shalom_envio_confirmado"
   | "cambio_agencia_con_guia"
-  | "shalom_cambio_destino";
+  | "shalom_cambio_destino"
+  | "aliclik_entregado";
 
 export interface AlertaSupervisorInput {
   tipo: TipoSituacionCritica;
@@ -75,6 +76,7 @@ const TITULOS_ALERTA: Record<TipoSituacionCritica, string> = {
   shalom_envio_confirmado: "✅ Envío confirmado en Shalom · ya puedes pagarlo",
   cambio_agencia_con_guia: "🔀 Cliente pide otra agencia y la guía ya salió",
   shalom_cambio_destino: "🔀 Shalom registró un cambio de destino · registra la guía nueva",
+  aliclik_entregado: "🚚 AliClik entregó un pedido contra entrega · valida la liquidación",
 };
 
 /** Tipos que pueden repetirse en ráfaga (p. ej. Gemini caído): un aviso por chat cada 30 min. */
