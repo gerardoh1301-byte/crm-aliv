@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { interpretarComando, separarPedidoYMonto } from "@/lib/supervisor/parser";
+import { interpretarComando, pareceOrdenNoEntendida, separarPedidoYMonto } from "@/lib/supervisor/parser";
 
 const tipo = (t: string) => interpretarComando(t)?.tipo ?? null;
 
@@ -78,5 +78,37 @@ describe("corrección del pedido a mitad de una orden", () => {
 
   it("«no no pedido es 1084» no es una orden nueva ni un cancelar", () => {
     expect(tipo("no no pedido es 1084")).toBeNull();
+  });
+});
+
+describe("adelanto confirmado por el supervisor (20/11, #1153 Manuel Vertiz)", () => {
+  it("«Confirma el adelanto de Manuel Vertiz orden 1153» es la orden de adelanto del pedido 1153", () => {
+    const c = interpretarComando("Confirma el adelanto de Manuel Vertiz orden 1153")!;
+    expect(c.tipo).toBe("adelanto");
+    expect(c.numeros.map((t) => t.texto)).toEqual(["1153"]);
+    expect(c.nombre).toBe("manuel vertiz");
+  });
+
+  it("acepta las formas cortas y no toma el S/20 como pedido", () => {
+    expect(tipo("adelanto 1153")).toBe("adelanto");
+    expect(tipo("valida adelanto #1153")).toBe("adelanto");
+    expect(tipo("llegó el adelanto de 1153")).toBe("adelanto");
+    const c = interpretarComando("adelanto 1153 s/20")!;
+    expect(c.numeros.map((t) => t.texto)).toEqual(["1153"]);
+    const d = interpretarComando("pagó el adelanto 1153 20")!;
+    expect(d.tipo).toBe("adelanto");
+    expect(d.numeros.map((t) => t.texto)).toEqual(["1153"]);
+  });
+
+  it("«confirma 1153» sin SI no ejecuta nada; si no se entiende, no va al bot de ventas", () => {
+    expect(tipo("Confirma 1153")).toBeNull();
+    expect(pareceOrdenNoEntendida("Confirma 1153")).toBe(true);
+    expect(pareceOrdenNoEntendida("Marca el pedido de Manuel")).toBe(true);
+    expect(pareceOrdenNoEntendida("hola, cuánto cuesta el NAC600?")).toBe(false);
+    expect(pareceOrdenNoEntendida("quiero 3 frascos para Trujillo")).toBe(false);
+  });
+
+  it("la clave sigue siendo la orden de clave aunque mencione el adelanto", () => {
+    expect(tipo("clave 1153 ya pagó adelanto")).toBe("clave");
   });
 });

@@ -20,7 +20,8 @@ export type TipoComando =
   | "pago"
   | "entregado"
   | "estado"
-  | "guia";
+  | "guia"
+  | "adelanto";
 
 export interface TokenNumero {
   /** Texto tal cual, sin el #: "1140", "LEG-1049", "179.50". */
@@ -52,7 +53,9 @@ const PALABRAS_RELLENO = new Set([
   "su", "mi", "al", "es", "fue", "entregado", "entregada", "entrego", "recogio", "recibio",
   "enviar", "envia", "mandale", "dame", "pasame", "como", "va", "donde", "esta", "monto", "por",
   "favor", "porfa", "pls", "ok", "hoy", "agencia", "pagalo", "deposito", "transfirio", "cobrado",
-  "cobre", "cobro", "n", "nro", "numero", "guia",
+  "cobre", "cobro", "n", "nro", "numero", "guia", "adelanto", "confirma", "confirmar", "confirmo",
+  "confirmado", "confirmada", "valida", "validar", "validado", "verifica", "verificar", "verificado",
+  "recibido", "recibi", "llego", "aprueba", "aprobado",
 ]);
 
 export function normalizarTexto(texto: string): string {
@@ -123,6 +126,13 @@ export function interpretarComando(texto: string | null | undefined): Comando | 
     c.nombre = null;
     return c;
   }
+  // «Confirma el adelanto de Manuel orden 1153», «adelanto 1153», «valida adelanto 1153»
+  if (/\badelanto\b/.test(n) && !/\bclave\b/.test(n)) {
+    const c = comando("adelanto", n);
+    // El adelanto es fijo (S/ 20): solo cuentan los números que pueden ser pedidos.
+    c.numeros = c.numeros.filter((t) => !t.esMonto && (t.esPedido || t.texto.length >= 3));
+    return c;
+  }
   if (/\bclave\b/.test(n)) return comando("clave", n);
   if (/\bflete\b/.test(n)) return comando("flete", n);
   if (/\b(entregado|entregada|recogio|ya recogio|lo recogio)\b/.test(n) && !/\bpag/.test(n)) {
@@ -132,6 +142,20 @@ export function interpretarComando(texto: string | null | undefined): Comando | 
     return comando("pago", n, /\b(completo|completa|todo|total)\b/.test(n));
   }
   return null;
+}
+
+const VERBOS_ORDEN =
+  /^(?:por favor |porfa )?(confirma|confirmar|valida|validar|verifica|verificar|registra|registrar|marca|marcar|actualiza|actualizar|cambia|cambiar|pasa|pasar|aprueba|aprobar|anota|anotar)\b/;
+
+/**
+ * El texto parece una orden para el CRM aunque no se entendió («confirma lo de Manuel
+ * 1153»): no debe ir al bot de ventas, que contestaría como si Gerardo fuera un cliente.
+ */
+export function pareceOrdenNoEntendida(texto: string | null | undefined): boolean {
+  if (!texto) return false;
+  const n = normalizarTexto(texto);
+  if (!n || n.length > 200) return false;
+  return VERBOS_ORDEN.test(n) && /(\d{3,}|\b(pedido|orden|cliente)\b)/.test(n);
 }
 
 const PALABRAS_CORRECCION =

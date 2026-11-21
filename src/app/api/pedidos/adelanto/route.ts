@@ -1,13 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/db";
-import { activities, contacts, conversations } from "@/db/schema";
+import { contacts } from "@/db/schema";
 import { and, desc, eq, inArray } from "drizzle-orm";
 import { requireMember } from "@/lib/api-auth";
 import { canAccessContactId, displayName } from "@/lib/team";
 import { pedidosOrdenes } from "../../../../../modules/pedidos/tabla";
-import { sincronizarEtapaPipeline } from "../../../../../modules/pedidos/servidor";
 import { adelantoRegistrado, esPedidoDeProvincia } from "@/lib/pedidos/adelanto";
-import { notificarCambioDealAlErp } from "@/lib/finanzas/notificar-erp";
+import { confirmarAdelantoPedido } from "@/lib/pedidos/confirmar-adelanto";
 
 /**
  * "Adelanto confirmado" (semiautomatico) para pedidos de provincia por Shalom.
@@ -100,56 +99,6 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ ok: true, pedido: act });
   }
 
-  const ahora = new Date();
-  const hora = ahora.toLocaleString("es-PE", { timeZone: "America/Lima", dateStyle: "short", timeStyle: "short" });
-  const quien = displayName(member);
-  const marca = `[ADELANTO VERIFICADO] S/20 verificado por ${quien} el ${hora}.`;
-
-  const nuevoEstado = pedido.estado === "por_confirmar_cod" ? "confirmado" : pedido.estado;
-  const [actualizado] = await db
-    .update(pedidosOrdenes)
-    .set({
-      estado: nuevoEstado,
-      modalidadPago: "adelanto_agencia",
-      notas: pedido.notas?.includes("[ADELANTO VERIFICADO]") ? pedido.notas : [pedido.notas, marca].filter(Boolean).join("\n"),
-      updatedAt: ahora,
-    })
-    .where(eq(pedidosOrdenes.id, pedido.id))
-    .returning();
-
-  if (nuevoEstado !== pedido.estado) {
-    const primerProducto = (actualizado.items as Array<{ titulo?: string }>)?.[0]?.titulo || "Pedido Aliv";
-    await sincronizarEtapaPipeline(
-      actualizado.contactId,
-      "confirmado",
-      `${actualizado.numeroOrden} · ${primerProducto}`,
-      Number(actualizado.total) || 0,
-      actualizado.id,
-      actualizado.dealId
-    );
-  }
-
-  await db.insert(activities).values({
-    type: "note",
-    description: `${marca} Pedido ${actualizado.numeroOrden}. Siguiente paso: registrar el envío en Shalom Pro y enviar el seguimiento al cliente.`,
-    contactId: actualizado.contactId,
-    dealId: actualizado.dealId,
-  });
-
-  // La alerta "requiere humano" ya fue atendida. El bot sigue como este (no se toca aiEnabled).
-  await db
-    .update(conversations)
-    .set({ needsHuman: false, needsHumanReason: null, needsHumanAt: null, updatedAt: ahora })
-    .where(eq(conversations.contactId, actualizado.contactId));
-  await db
-    .update(contacts)
-    .set({ needsHuman: false, needsHumanReason: null, needsHumanAt: null, updatedAt: ahora })
-    .where(eq(contacts.id, actualizado.contactId));
-
-  // Notificar al ERP en tiempo real para que registre de inmediato el ingreso de S/ 20.00 en BCP
-  if (actualizado.dealId) {
-    notificarCambioDealAlErp(actualizado.dealId).catch(() => {});
-  }
-
+  const { pedido: actualizado } = await confirmarAdelantoPedido(pedido, displayName(member));
   return NextResponse.json({ ok: true, pedido: actualizado });
 }

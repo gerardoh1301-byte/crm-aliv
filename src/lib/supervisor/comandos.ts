@@ -8,10 +8,12 @@ import { SUPERVISOR_PAGOS, normalizarTelefono } from "@/lib/alerts/supervisor-al
 import { extraerFinanzasShalom } from "@/lib/finanzas/tags-shalom";
 import { registrarFinanzasShalom } from "@/lib/finanzas/registrar-shalom";
 import { notificarCambioDealAlErp } from "@/lib/finanzas/notificar-erp";
+import { adelantoRegistrado, quienVerificoAdelanto } from "@/lib/pedidos/adelanto";
 import {
   digitosPedido,
   interpretarComando,
   interpretarCorreccion,
+  pareceOrdenNoEntendida,
   separarPedidoYMonto,
   type Comando,
   type TokenNumero,
@@ -37,7 +39,7 @@ export function esSupervisorPagos(phone: string | null | undefined): boolean {
   return d === SUPERVISOR_PAGOS || d === `51${SUPERVISOR_PAGOS}`;
 }
 
-type Accion = "pago" | "flete" | "entregado" | "enviar_clave" | "guia";
+type Accion = "pago" | "flete" | "entregado" | "enviar_clave" | "guia" | "adelanto";
 
 interface Pendiente {
   accion: Accion;
@@ -119,8 +121,8 @@ async function guardarPendiente(p: Omit<Pendiente, "creado"> | null): Promise<vo
 // Última orden propuesta (aunque no dejara nada pendiente, p. ej. una clave bloqueada):
 // permite corregir el pedido con «pedido es 1084» sin repetir toda la orden.
 const CLAVE_ULTIMA = "supervisor_whatsapp_ultima_orden";
-type TipoCorregible = "pago" | "flete" | "clave" | "entregado" | "estado" | "guia";
-const CORREGIBLES = new Set<string>(["pago", "flete", "clave", "entregado", "estado", "guia"]);
+type TipoCorregible = "pago" | "flete" | "clave" | "entregado" | "estado" | "guia" | "adelanto";
+const CORREGIBLES = new Set<string>(["pago", "flete", "clave", "entregado", "estado", "guia", "adelanto"]);
 
 async function guardarUltimaOrden(u: { tipo: string; numeroOrden: string }): Promise<void> {
   if (!CORREGIBLES.has(u.tipo)) return;
@@ -149,6 +151,7 @@ const TIPO_POR_ACCION: Record<Accion, TipoCorregible> = {
   entregado: "entregado",
   enviar_clave: "clave",
   guia: "guia",
+  adelanto: "adelanto",
 };
 
 /**
@@ -379,6 +382,7 @@ function datosRastreo(p: Pedido): string {
 
 const AYUDA = [
   "🤖 *Órdenes por WhatsApp (solo este número)*",
+  "• *adelanto 1140* → confirmas que verificaste el Yape de S/20 (pedido a Confirmado y S/20 al ERP)",
   "• *pagó 1140 179* → registra el pago del saldo (también «Jaime pagó 179» o «pago completo 1140»)",
   "• *flete 1140 10* → flete pagado en Págalo",
   "• *clave 1140* → te muestro la clave; al *ENVIAR* el saldo queda cobrado y el pedido entregado",
@@ -599,6 +603,25 @@ async function proponerPara(cmd: Comando, r: Extract<Resolucion, { ok: true }>):
       .join("\n");
   }
 
+  if (cmd.tipo === "adelanto") {
+    if (adelantoRegistrado(p.notas)) {
+      const quien = quienVerificoAdelanto(p.notas);
+      return `✔️ El adelanto de ${encabezado(p)} ya estaba verificado${quien ? ` (por ${quien})` : ""}. No cambié nada.`;
+    }
+    if (["enviado", "entregado", "cancelado", "rechazado"].includes(String(p.estado))) {
+      return `${encabezado(p)} está en estado «${p.estado}»: el adelanto se confirma antes del envío. Si hay que corregirlo, hazlo desde el CRM.`;
+    }
+    await guardarPendiente({ accion: "adelanto", pedidoId: p.id, numeroOrden: p.numeroOrden, monto: 20 });
+    const total = Number(p.total) || 0;
+    const productos = (p.items ?? []).map((i) => `${i.cantidad ?? 1}x ${i.titulo ?? "producto"}`).join(", ");
+    return [
+      `💵 *${encabezado(p)}* · ${[p.ciudad, p.distrito].filter(Boolean).join(" / ") || "sin ciudad"}`,
+      `${productos || "productos"} · total ${soles(total)} · estado: ${p.estado}`,
+      `Adelanto a confirmar: *S/ 20.00* (Yape al BCP) · saldo a cobrar al recoger: ${soles(Math.max(0, total - 20))}`,
+      `Queda verificado a tu nombre, el pedido pasa a *Confirmado* en el pipeline y el ERP registra los S/ 20. Responde *SI ${n}* para confirmar o *NO*.`,
+    ].join("\n");
+  }
+
   if (cmd.tipo === "entregado") {
     if (p.estado === "entregado") return `${encabezado(p)} ya figura como entregado.`;
     await guardarPendiente({ accion: "entregado", pedidoId: p.id, numeroOrden: p.numeroOrden, monto: null });
@@ -700,6 +723,16 @@ async function ejecutarPendiente(cmd: Comando, conversationId: string): Promise<
       .join("\n");
   }
 
+  if (pend.accion === "adelanto") {
+    const { confirmarAdelantoPedido } = await import("@/lib/pedidos/confirmar-adelanto");
+    const { yaEstaba } = await confirmarAdelantoPedido(p, AUTOR);
+    if (yaEstaba) return `✔️ El adelanto de ${encabezado(p)} ya estaba verificado; no cambié nada.`;
+    return [
+      `✅ Adelanto de S/ 20.00 verificado en ${encabezado(p)}: pedido *Confirmado* en el pipeline y S/ 20 enviados al ERP (BCP).`,
+      "Siguiente paso: registrar el envío en Shalom Pro y mandarle el seguimiento al cliente desde el CRM.",
+    ].join("\n");
+  }
+
   if (pend.accion === "entregado") {
     await marcarEntregado(p, AUTOR);
     return `✅ ${encabezado(p)} quedó como *Entregado* en el pipeline y el ERP; la posventa arranca sola.`;
@@ -777,6 +810,12 @@ export async function manejarComandoSupervisor(conversationId: string, phone: st
           ? `Para mandarle la clave al cliente responde *ENVIAR ${n}*, o *NO* para cancelar.`
           : `Para confirmar responde *SI ${n}* (con el número), o *NO* para cancelar.`
       );
+      return true;
+    }
+    // Parece una orden pero no se entendió: se le avisa a Gerardo en vez de pasarla al bot de
+    // ventas, que le contestaría como a un cliente («un asesor revisará tu pedido»).
+    if (pareceOrdenNoEntendida(ultimo.body)) {
+      await responder(conversationId, `No entendí la orden; no cambié nada.\n\n${AYUDA}`);
       return true;
     }
     return false;
