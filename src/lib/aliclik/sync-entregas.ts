@@ -240,7 +240,7 @@ async function marcarEntregadoPorAliclik(
     notificarCambioDealAlErp(p.dealId).catch(() => {});
   }
 
-  const { notificarSupervisoresCritico, SUPERVISOR_PAGOS } = await import("@/lib/alerts/supervisor-alerts");
+  const { notificarSupervisoresCritico } = await import("@/lib/alerts/supervisor-alerts");
   const [c] = p.contactId
     ? await db.select({ name: contacts.name }).from(contacts).where(eq(contacts.id, p.contactId)).limit(1)
     : [];
@@ -251,7 +251,6 @@ async function marcarEntregadoPorAliclik(
     clienteNombre: c?.name ?? null,
     clienteTelefono: p.phone,
     contactId: p.contactId,
-    soloA: [SUPERVISOR_PAGOS],
   }).catch((err) => console.warn("[aliclik-sync] aviso:", err));
 }
 

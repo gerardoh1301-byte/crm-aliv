@@ -256,7 +256,7 @@ export async function verificarYNotificarLlegadasShalom(
       const marcaCambio = `[CAMBIO_DESTINO_AVISADO guia=${c.numeroGuia}]`;
       if (!(c.notasPedido || "").includes(marcaCambio) && esHorarioAlertaSupervisores()) {
         try {
-          const { notificarSupervisoresCritico, SUPERVISOR_PAGOS } = await import("@/lib/alerts/supervisor-alerts");
+          const { notificarSupervisoresCritico } = await import("@/lib/alerts/supervisor-alerts");
           const res = await notificarSupervisoresCritico({
             tipo: "shalom_cambio_destino",
             titulo: `Cambio de destino ${c.numeroOrden}`,
@@ -267,7 +267,6 @@ export async function verificarYNotificarLlegadasShalom(
             clienteTelefono: c.contactPhone,
             contactId: c.contactId,
             conversationId: c.convId,
-            soloA: [SUPERVISOR_PAGOS],
           });
           if (res.notificados > 0) {
             c.notasPedido = c.notasPedido ? `${c.notasPedido}\n${marcaCambio}` : marcaCambio;
@@ -298,7 +297,7 @@ export async function verificarYNotificarLlegadasShalom(
     // Desde ese momento el envío se puede pagar en Págalo: aviso SOLO a Gerardo, una vez.
     if (debeAvisarEnvioConfirmado(rastro, c.notasPedido) && esHorarioAlertaSupervisores()) {
       try {
-        const { notificarSupervisoresCritico, SUPERVISOR_PAGOS } = await import("@/lib/alerts/supervisor-alerts");
+        const { notificarSupervisoresCritico } = await import("@/lib/alerts/supervisor-alerts");
         const detalle =
           `${c.numeroOrden} confirmado por Shalom${rastro.agenciaOrigen ? ` en ${rastro.agenciaOrigen}` : ""}` +
           `${rastro.fechaConfirmacion ? ` (${rastro.fechaConfirmacion})` : ""}. ` +
@@ -313,7 +312,6 @@ export async function verificarYNotificarLlegadasShalom(
           clienteTelefono: c.contactPhone,
           contactId: c.contactId,
           conversationId: c.convId,
-          soloA: [SUPERVISOR_PAGOS],
         });
         if (res.notificados > 0) {
           const marca = `${MARCA_ENVIO_CONFIRMADO}:${new Date().toISOString().slice(0, 16)} guia=${c.numeroGuia}]`;

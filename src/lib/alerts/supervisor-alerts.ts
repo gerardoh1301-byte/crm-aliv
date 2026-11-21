@@ -4,22 +4,28 @@ import { contacts, conversations } from "@/db/schema";
 import { eq } from "drizzle-orm";
 import { deliverMessage } from "@/lib/channels/deliver";
 
-/**
- * Números autorizados como Supervisores y Entrenadores del sistema:
- * - Gerardo Huaynalaya / Aliv Perú (+51951365418)
- * - Supervisor Aliado / Lourdes (+51945226853)
- */
-export const SUPERVISORES_PHONES = [
-  "+51951365418",
-  "+51945226853",
-  "951365418",
-  "945226853",
-];
+import {
+  SUPERVISORES,
+  SUPERVISORES_DIGITOS,
+  SUPERVISOR_ADMINISTRADOR,
+  destinatariosAviso,
+  type TipoSituacionCritica,
+} from "@/lib/alerts/perfiles-supervisor";
 
-/** Últimos 9 dígitos de cada supervisor (para consultas SQL y comparaciones). */
-export const SUPERVISORES_DIGITOS = ["951365418", "945226853"] as const;
-/** Gerardo: recibe los avisos de pago (envío Shalom confirmado). */
-export const SUPERVISOR_PAGOS = "951365418";
+export {
+  SUPERVISORES,
+  SUPERVISORES_DIGITOS,
+  SUPERVISOR_ADMINISTRADOR,
+  CATEGORIA_AVISO,
+  destinatariosAviso,
+} from "@/lib/alerts/perfiles-supervisor";
+export type { TipoSituacionCritica, PerfilSupervisor, CategoriaAviso } from "@/lib/alerts/perfiles-supervisor";
+
+/** Números de los supervisores en los formatos de uso común (lista blanca). */
+export const SUPERVISORES_PHONES = SUPERVISORES.flatMap((s) => [`+51${s.digitos}`, s.digitos]);
+
+/** Gerardo (Administrador): recibe los avisos de pago y da las órdenes por WhatsApp. */
+export const SUPERVISOR_PAGOS = SUPERVISOR_ADMINISTRADOR;
 
 export function normalizarTelefono(phone: string | null | undefined): string {
   if (!phone) return "";
@@ -36,21 +42,6 @@ export function esNumeroEntrenador(phone: string | null | undefined): boolean {
   return SUPERVISORES_DIGITOS.some((d) => digits.endsWith(d));
 }
 
-export type TipoSituacionCritica =
-  | "comprobante_pago"
-  | "reclamo_medico"
-  | "pide_humano_llamada"
-  | "shalom_24h_retraso"
-  | "shalom_preguia_pago_almacen"
-  | "pedido_chat"
-  | "pedido_shopify"
-  | "guardrail_bloqueo"
-  | "bot_sin_respuesta"
-  | "shalom_envio_confirmado"
-  | "cambio_agencia_con_guia"
-  | "shalom_cambio_destino"
-  | "aliclik_entregado";
-
 export interface AlertaSupervisorInput {
   tipo: TipoSituacionCritica;
   titulo: string;
@@ -59,8 +50,6 @@ export interface AlertaSupervisorInput {
   clienteTelefono?: string | null;
   contactId?: string | null;
   conversationId?: string | null;
-  /** Restringe el aviso a estos supervisores (9 dígitos). Por defecto, a todos. */
-  soloA?: readonly string[];
 }
 
 const TITULOS_ALERTA: Record<TipoSituacionCritica, string> = {
@@ -99,8 +88,8 @@ export function avisoEnPausa(
 }
 
 /**
- * Envía una alerta inmediata a los 2 números de supervisión (951365418 y 945226853)
- * ante situaciones críticas operativas del CRM.
+ * Envía una alerta inmediata por WhatsApp a los supervisores cuyo perfil recibe
+ * la categoría de este aviso (ver `perfiles-supervisor.ts`).
  */
 export async function notificarSupervisoresCritico(input: AlertaSupervisorInput): Promise<{
   notificados: number;
@@ -122,7 +111,7 @@ export async function notificarSupervisoresCritico(input: AlertaSupervisorInput)
   const errores: string[] = [];
 
   // Buscar si existen conversaciones activas con los supervisores para enviarles el mensaje por WhatsApp
-  const destinos = SUPERVISORES_DIGITOS.filter((d) => !input.soloA || input.soloA.includes(d)).map((d) => `+51${d}`);
+  const destinos = destinatariosAviso(input.tipo).map((d) => `+51${d}`);
   for (const supRaw of destinos) {
     try {
       const [supContact] = await db

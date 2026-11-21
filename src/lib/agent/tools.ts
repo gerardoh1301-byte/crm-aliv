@@ -480,7 +480,7 @@ async function derivarAsesor(args: { motivo?: string; apagarAgente?: boolean }, 
     cuerpo: `${motivo}${esBaja ? " (pidió no ser contactado: bot pausado y etiqueta no-reactivar)" : apagar ? " (bot pausado)" : " (el bot sigue activo)"}`,
   });
 
-  // Notificación inmediata a números de supervisores (+51951365418 y +51945226853) ante situaciones críticas
+  // Aviso inmediato a los supervisores según su perfil (pagos solo al Administrador; reclamos y humano a ambos)
   try {
     const { esNumeroEntrenador, notificarSupervisoresCritico } = await import("@/lib/alerts/supervisor-alerts");
     if (!esNumeroEntrenador(c?.phone)) {

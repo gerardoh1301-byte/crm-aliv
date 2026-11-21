@@ -146,7 +146,7 @@ export async function aplicarAgenciaDelChat(params: {
       instruccion += ` El pedido ${pedido.numeroOrden} ya quedó con esta agencia.`;
     } else if (!mismaAgencia) {
       // La guía ya salió: cambiar el pedido no mueve el paquete. Lo coordina una persona.
-      const { notificarSupervisoresCritico, SUPERVISOR_PAGOS } = await import("@/lib/alerts/supervisor-alerts");
+      const { notificarSupervisoresCritico } = await import("@/lib/alerts/supervisor-alerts");
       await notificarSupervisoresCritico({
         tipo: "cambio_agencia_con_guia",
         titulo: `Cambio de agencia ${pedido.numeroOrden}`,
@@ -154,7 +154,6 @@ export async function aplicarAgenciaDelChat(params: {
           `El cliente pide recoger en ${oficial}, pero la guía ${pedido.numeroGuia}${pedido.codigoRastreo ? ` · código ${pedido.codigoRastreo}` : ""} ` +
           `ya salió hacia: ${pedido.direccionEnvio || "otra agencia"}. Coordina el cambio de destino con Shalom.`,
         contactId: params.contactId,
-        soloA: [SUPERVISOR_PAGOS],
       }).catch((err) => console.warn("[agencia-pedido] aviso a supervisor:", err));
       await db.insert(activities).values({
         type: "note",
