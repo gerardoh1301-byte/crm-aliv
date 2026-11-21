@@ -4,6 +4,7 @@ import { activities } from "@/db/schema";
 import { and, desc, eq, notInArray } from "drizzle-orm";
 import { pedidosOrdenes } from "../../../modules/pedidos/tabla";
 import { resolverAgenciaOficial, textoAgenciaOficial, type AgenciaShalom } from "@/lib/agencias/shalom-directorio";
+import { esPedidoDeProvincia } from "@/lib/pedidos/adelanto";
 
 /**
  * Cambio de agencia Shalom pedido por el cliente en el chat.
@@ -57,6 +58,18 @@ function esDeShalom(p: { modalidadPago: string | null; transportadora: string | 
 }
 
 /**
+ * Pedido web de provincia (EasySell) con dirección de casa y sin courier: va por Shalom, así
+ * que la agencia oficial que elige el cliente reemplaza esa dirección (caso #1153, Trujillo).
+ * Con AliClik (contra entrega a domicilio) no se toca.
+ */
+function esProvinciaSinCourier(
+  p: { transportadora: string | null; ciudad: string | null; distrito: string | null; direccionEnvio: string | null } | null
+) {
+  if (!p || /aliclik/i.test(p.transportadora || "")) return false;
+  return esPedidoDeProvincia({ ciudad: p.ciudad, distrito: p.distrito, direccionEnvio: p.direccionEnvio });
+}
+
+/**
  * Revisa si `campos` trae una agencia Shalom. Devuelve "rechazada" (con las opciones
  * oficiales para preguntarle al cliente), "aceptada" (ya aplicada al pedido en curso si
  * correspondía) o "no_aplica".
@@ -71,7 +84,21 @@ export async function aplicarAgenciaDelChat(params: {
   const valor = String(params.campos[campo]).trim();
 
   const pedido = await pedidoEnCurso(params.contactId);
-  if (!pareceAgencia(valor) && !esDeShalom(pedido)) return { tipo: "no_aplica" };
+  if (!pareceAgencia(valor) && !esDeShalom(pedido)) {
+    if (!esProvinciaSinCourier(pedido)) return { tipo: "no_aplica" };
+    // Si nombra una sede oficial ("la de Av Larco 865") se toma como agencia. Si no, y su zona
+    // tiene contra entrega de AliClik, es una dirección de casa válida: no es Shalom.
+    const sede = resolverAgenciaOficial({ texto: valor, ciudad: pedido!.ciudad });
+    if (!sede.agencia) {
+      try {
+        const { decidirEntrega } = await import("@/lib/aliclik/cobertura-cod");
+        const d = await decidirEntrega({ ciudad: pedido!.ciudad, distrito: pedido!.distrito, direccion: valor });
+        if (d.zona === "provincia_cod") return { tipo: "no_aplica" };
+      } catch {
+        return { tipo: "no_aplica" };
+      }
+    }
+  }
 
   const ciudad =
     (typeof params.campos.departamento_ciudad === "string" && params.campos.departamento_ciudad) ||
@@ -101,7 +128,7 @@ export async function aplicarAgenciaDelChat(params: {
   const oficial = textoAgenciaOficial(r.agencia);
   let instruccion = `Agencia oficial confirmada: ${oficial}. Repítele al cliente el nombre y la dirección exactos para que confirme.`;
 
-  if (pedido && esDeShalom(pedido)) {
+  if (pedido && (esDeShalom(pedido) || esProvinciaSinCourier(pedido))) {
     const mismaAgencia = (pedido.direccionEnvio || "").trim() === oficial;
     if (!pedido.numeroGuia) {
       if (!mismaAgencia) {

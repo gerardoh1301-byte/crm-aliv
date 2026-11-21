@@ -256,8 +256,48 @@ async function actualizarContacto(
   }
 
   if (cambios.length === 0) return { ok: false, error: "nada para actualizar" };
+
+  // DNI: debe ser de 8 dígitos y pasa también al pedido sin despachar (lo usa la guía de Shalom).
+  let instruccionDni: string | null = null;
+  const dniCrudo = args.campos?.dni_ruc ?? args.campos?.dni;
+  if (dniCrudo !== undefined && dniCrudo !== null && String(dniCrudo).trim()) {
+    const { dniValido } = await import("./datos-envio");
+    const dni = dniValido(dniCrudo);
+    if (!dni && String(dniCrudo).replace(/\D/g, "").length !== 11) {
+      return {
+        ok: false,
+        error: `El DNI "${String(dniCrudo).slice(0, 20)}" no tiene 8 dígitos. Pídele al cliente que lo revise y vuelve a guardarlo; no digas que ya quedó registrado.`,
+      };
+    }
+    if (dni) {
+      const { pedidosOrdenes } = await import("../../../modules/pedidos/tabla");
+      const { and: y, inArray, isNull } = await import("drizzle-orm");
+      const actualizados = await db
+        .update(pedidosOrdenes)
+        .set({ dniCliente: dni, updatedAt: new Date() })
+        .where(
+          y(
+            eq(pedidosOrdenes.contactId, ctx.contactId),
+            inArray(pedidosOrdenes.estado, ["por_confirmar_cod", "confirmado"]),
+            isNull(pedidosOrdenes.numeroGuia)
+          )
+        )
+        .returning({ numeroOrden: pedidosOrdenes.numeroOrden });
+      if (actualizados.length) {
+        instruccionDni = `DNI guardado también en el pedido ${actualizados.map((p) => p.numeroOrden).join(", ")}.`;
+      }
+    }
+  }
+
   await db.update(contacts).set(set).where(eq(contacts.id, ctx.contactId));
-  return { ok: true, data: { actualizado: cambios, ...(instruccionAgencia ? { agencia: instruccionAgencia } : {}) } };
+  return {
+    ok: true,
+    data: {
+      actualizado: cambios,
+      ...(instruccionAgencia ? { agencia: instruccionAgencia } : {}),
+      ...(instruccionDni ? { dni: instruccionDni } : {}),
+    },
+  };
 }
 
 const TIPOS_ACTIVIDAD: Record<string, string> = {

@@ -7,6 +7,7 @@ import { pedidosOrdenes } from "../../../modules/pedidos/tabla";
 import { analizarSolicitudLlamada } from "./llamadas";
 import { getBusinessRules, renderBusinessRulesPrompt } from "@/lib/settings/rules";
 import { aplicarBloques, type SenalesPrompt } from "./prompt-bloques";
+import { evaluarRequisitosShalom, SIN_REQUISITOS, type PedidoParaEnvio, type RequisitosShalom } from "./datos-envio";
 
 export const SYSTEM_PROMPT_SETTINGS_KEY = "agent.system_prompt";
 
@@ -156,6 +157,7 @@ REGLAS ESTRICTAS DE SELECCIÓN MULTIMEDIA (ANTI-CRUCE Y SOLICITUD DE VIDEOS):
   4. ⛔ REGLA DE ORO DE SEGURIDAD ABSOLUTA - LA CLAVE SECRETA DE RETIRO ES 100% EXCLUSIVA DE GESTIÓN HUMANA:
      - ESTÁ TERMINANTEMENTE PROHIBIDO QUE EL BOT O LA IA ENVÍE, MENCIONE, REVELE O INVENTE CUALQUIER NÚMERO O CÓDIGO DE CLAVE DE RETIRO.
      - BAJO NINGUNA CIRCUNSTANCIA EL BOT TIENE O ENTREGA LA CLAVE, NI CALCULA SALDOS SOBRE PRODUCTOS QUE NO ESTÉN EXPLÍCITAMENTE EN LA SECCIÓN "Pedido EN CURSO de este cliente".
+     - ADELANTO vs SALDO: si el pedido AÚN NO tiene guía de Shalom, un Yape de S/20 es el ADELANTO (regla 2 de arriba): agradece, di que un asesor lo verifica y pide el DNI y la agencia si faltan. NO menciones la clave de retiro. Lo siguiente es solo para el SALDO, cuando el paquete ya está en camino o en la agencia.
      - CUANDO EL CLIENTE RECIÉN ENVÍA EL VOUCHER DEL SALDO (y la clave AÚN NO ha sido enviada en el chat ni en el contexto):
        El bot ÚNICAMENTE debe responder: "Muchas gracias por tu constancia. Nuestro equipo de administración verificará tu abono en cuenta y un asesor humano te enviará de inmediato tu clave de retiro para que puedas recoger tu paquete en la agencia."
        Y de inmediato ejecutar avisar_asesor con motivo "abono_saldo_verificar_clave".
@@ -188,8 +190,16 @@ REGLAS ESTRICTAS DE SELECCIÓN MULTIMEDIA (ANTI-CRUCE Y SOLICITUD DE VIDEOS):
  * actualizar_contacto sin cablear nada del negocio en el codigo.
  */
 export async function renderContexto(contactId: string): Promise<string> {
+  return (await renderContextoDetallado(contactId)).texto;
+}
+
+/** Contexto del prompt y, aparte, los datos de envío que faltan (para exigirlos sin el modelo). */
+export async function renderContextoDetallado(
+  contactId: string
+): Promise<{ texto: string; requisitosShalom: RequisitosShalom }> {
   const [contact] = await db.select().from(contacts).where(eq(contacts.id, contactId)).limit(1);
-  if (!contact) return "";
+  if (!contact) return { texto: "", requisitosShalom: SIN_REQUISITOS };
+  let requisitosShalom: RequisitosShalom = SIN_REQUISITOS;
 
   // BLINDAJE DE SEGURIDAD: Purgar cualquier clave de recojo para que la IA JAMÁS tenga acceso a ella
   const campos = camposContacto();
@@ -238,6 +248,7 @@ export async function renderContexto(contactId: string): Promise<string> {
   // R5: Cargar historial de pedidos anteriores para que el bot reconozca a clientes que vuelven
   let pedidosTxt = "";
   let tieneClaveEnOrden = false;
+  let pedidoReciente: PedidoParaEnvio | null = null;
   try {
     const prevOrders = await db
       .select({
@@ -250,12 +261,18 @@ export async function renderContexto(contactId: string): Promise<string> {
         ciudad: pedidosOrdenes.ciudad,
         claveRecojo: pedidosOrdenes.claveRecojo,
         createdAt: pedidosOrdenes.createdAt,
+        dniCliente: pedidosOrdenes.dniCliente,
+        transportadora: pedidosOrdenes.transportadora,
+        numeroGuia: pedidosOrdenes.numeroGuia,
+        modalidadPago: pedidosOrdenes.modalidadPago,
+        notas: pedidosOrdenes.notas,
       })
       .from(pedidosOrdenes)
       .where(eq(pedidosOrdenes.contactId, contactId))
       .orderBy(desc(pedidosOrdenes.createdAt))
       .limit(3);
 
+    pedidoReciente = prevOrders[0] ?? null;
     tieneClaveEnOrden = prevOrders.some((o) => Boolean(o.claveRecojo));
     pedidosTxt = renderPedidosCliente(prevOrders);
   } catch (err) {
@@ -434,30 +451,61 @@ export async function renderContexto(contactId: string): Promise<string> {
     (textoDireccionOProvincia && !/lima|callao/i.test(textoDireccionOProvincia))
   );
 
-  if (esProvincia) {
-    const tieneDni = Boolean(fields.dni_ruc || fields.dni || fields.documento || (contact.notes && /dni[:\s]*\d{8}/i.test(contact.notes)));
-    const tieneAgenciaExacta = Boolean(
-      (fields.agencia_shalom && !/shalom\s+(?:provincia|iquitos|pisco|arequipa|trujillo|chiclayo|piura)$/i.test(String(fields.agencia_shalom))) ||
-      (fields.direccion_envio && /av\.|jr\.|calle|nro|#|mz\.|lt\./i.test(String(fields.direccion_envio)) && !/shalom\s+(?:provincia|iquitos|pisco|arequipa|trujillo|chiclayo|piura)$/i.test(String(fields.direccion_envio)))
+  // DNI y agencia OFICIAL obligatorios en ventas a provincia por Shalom (pedido sin guía o
+  // intención de compra). Lo mismo se exige luego sin depender del modelo (datos-envio.ts).
+  const tagsContactoReq = (contact.tags ?? []).map((t) => t.toLowerCase());
+  const chatVaPorShalom =
+    eligioShalom ||
+    ultimosMensajesChat.some(
+      (m) =>
+        (m.direction === "out" && /agencia\s+shalom|adelanto\s+de\s+s\/\s?20/i.test(m.body ?? "")) ||
+        (m.direction === "in" && /COMPROBANTE DE PAGO/.test(m.body ?? ""))
     );
+  requisitosShalom = evaluarRequisitosShalom({
+    pedido: pedidoReciente,
+    campos: fields,
+    notasContacto: contact.notes,
+    zonaContraEntrega: decisionEntrega?.zona === "provincia_cod",
+    chatVaPorShalom,
+    intencionProvincia:
+      esProvincia &&
+      tagsContactoReq.some((t) => /intenci[oó]n de compra|pendiente de adelanto|adelanto/.test(t)),
+  });
+  if (!requisitosShalom.aplica && esProvincia) {
+    // Consulta de provincia sin pedido ni intención clara: solo se recuerda qué pedir al cerrar.
+    requisitosShalom = { ...evaluarRequisitosShalom({
+      pedido: null,
+      campos: fields,
+      notasContacto: contact.notes,
+      zonaContraEntrega: false,
+      chatVaPorShalom: true,
+      intencionProvincia: true,
+    }), aplica: false };
+  }
 
+  if (requisitosShalom.faltaDni || requisitosShalom.faltaAgencia) {
     const faltantesProvincia: string[] = [];
-    if (!tieneDni) {
-      faltantesProvincia.push("- DNI (8 dígitos): ❌ NO REGISTRADO (Obligatorio para emitir la guía oficial de Shalom). DEBES pedirlo amablemente en tu respuesta.");
+    if (requisitosShalom.faltaDni) {
+      faltantesProvincia.push("- DNI (8 dígitos): ❌ NO REGISTRADO (obligatorio para emitir la guía oficial de Shalom). Cuando te lo dé, guárdalo con `actualizar_contacto` en el campo dni_ruc.");
     }
-    if (!tieneAgenciaExacta) {
-      faltantesProvincia.push("- AGENCIA SHALOM EXACTA: ❌ NO IDENTIFICADA (Falta definir la sede con dirección). DEBES proponer o consultar las sedes oficiales disponibles.");
-    }
-
-    if (faltantesProvincia.length > 0) {
-      partes.push(
-        "## ⚠️ REQUISITOS OBLIGATORIOS FALTANTES PARA DESPACHO SHALOM:\n" +
-          faltantesProvincia.join("\n") +
-          "\nINSTRUCCIÓN CRÍTICA DE ATENCIÓN:\n" +
-          "Si el cliente realiza o indica que ya hizo el adelanto, agradécele y de forma OBLIGATORIA solicita los datos marcados con ❌ en este mismo mensaje.\n" +
-          "ESTÁ TOTALMENTE PROHIBIDO decir simplemente 'ya avisé para despachar' si no tienes el DNI o la agencia exacta."
+    if (requisitosShalom.faltaAgencia) {
+      faltantesProvincia.push(
+        "- AGENCIA SHALOM OFICIAL: ❌ NO CONFIRMADA. Una dirección de casa NO sirve para la guía. Propón las sedes oficiales cercanas y pregunta a cuál irá; cuando elija, guárdala con `actualizar_contacto` (direccion_envio)." +
+          (requisitosShalom.opciones.length ? `\n  Sedes oficiales cercanas: ${requisitosShalom.opciones.join(" | ")}` : "")
       );
     }
+    partes.push(
+      "## ⚠️ REQUISITOS OBLIGATORIOS FALTANTES PARA DESPACHO SHALOM" +
+        (requisitosShalom.numeroOrden ? ` (pedido ${requisitosShalom.numeroOrden})` : "") +
+        ":\n" +
+        faltantesProvincia.join("\n") +
+        "\nINSTRUCCIÓN CRÍTICA:\n" +
+        (requisitosShalom.aplica
+          ? "- En CADA respuesta pide los datos marcados con ❌ hasta tenerlos, aunque el cliente solo diga 'ok', 'gracias' o mande su comprobante. Insiste con amabilidad; no te despidas mientras falten.\n"
+          : "- Al cerrar la venta pide estos datos antes de registrar el pedido.\n") +
+        "- El Yape de S/20 de un pedido SIN guía es el ADELANTO, no el saldo: agradece, di que un asesor lo verifica y pide los datos que faltan. NO hables de clave de retiro (eso es cuando el paquete ya llegó a la agencia).\n" +
+        "- PROHIBIDO decir 'ya avisé para despachar' o 'te enviaremos la clave' si falta el DNI o la agencia."
+    );
   }
 
   // Detección de clave ya entregada o saldo ya pagado
@@ -514,7 +562,7 @@ export async function renderContexto(contactId: string): Promise<string> {
     console.warn("[prompt] error al cargar business rules en contexto:", err);
   }
 
-  return partes.join("\n");
+  return { texto: partes.join("\n"), requisitosShalom };
 }
 
 /** Prompt final con el template global (sin contexto de contacto). Para previews. */

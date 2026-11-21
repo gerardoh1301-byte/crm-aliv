@@ -10,7 +10,8 @@ import { esNumeroEntrenador, notificarSupervisoresCritico } from "@/lib/alerts/s
 import { limpiarFormatoWhatsApp, removerMencionClaveSiYaEntregada, removerSaludoRepetido } from "./formato";
 import { getConfig } from "@/lib/config";
 import { getAgentConfig } from "./config";
-import { renderContexto, renderSystemPrompt } from "./prompt";
+import { renderContextoDetallado, renderSystemPrompt } from "./prompt";
+import { exigirDatosEnvio, type RequisitosShalom } from "./datos-envio";
 import { esSaludoAutomatico, productoDelAnuncio, renderOrigenAnuncio } from "./origen-anuncio";
 import { renderGuionVenta } from "./guion-venta";
 import { detectarSenalesPrompt } from "./prompt-bloques";
@@ -115,8 +116,8 @@ async function executeAgentTurn(
   const tools = await getEnabledToolDefinitions(config.enabledTools);
   const puedeAsignar = tools.some((t) => t.type === "function" && t.function.name === "asignar_asesor");
 
-  const [contexto, equipo, pedidoRecienteRows] = await Promise.all([
-    renderContexto(contact.id),
+  const [contextoDetallado, equipo, pedidoRecienteRows] = await Promise.all([
+    renderContextoDetallado(contact.id),
     puedeAsignar ? renderTeamBlock(contact.ownerId) : Promise.resolve(""),
     db
       .select({
@@ -132,6 +133,23 @@ async function executeAgentTurn(
       .orderBy(desc(pedidosOrdenes.createdAt))
       .limit(1),
   ]);
+  const contexto = contextoDetallado.texto;
+  const requisitosShalom = contextoDetallado.requisitosShalom;
+  // Si en este turno el bot guardó datos o registró el pedido, se vuelve a evaluar qué falta
+  // (si no, le pediría el DNI que el cliente acaba de dar).
+  const executedToolsRef: string[] = [];
+  const requisitosVigentes = async (): Promise<RequisitosShalom> => {
+    if (!requisitosShalom.aplica) {
+      if (!executedToolsRef.includes("crear_pedido_chat")) return requisitosShalom;
+    } else if (!executedToolsRef.some((t) => t === "actualizar_contacto" || t === "crear_pedido_chat")) {
+      return requisitosShalom;
+    }
+    try {
+      return (await renderContextoDetallado(contact.id)).requisitosShalom;
+    } catch {
+      return requisitosShalom;
+    }
+  };
   const ordenActiva = construirOrdenVerificada(pedidoRecienteRows[0]);
   const deadlineMs = Date.now() + LIMITE_TOTAL_RESPUESTA_MS;
 
@@ -259,6 +277,7 @@ async function executeAgentTurn(
           if (tc.type !== "function") continue;
           toolCalls++;
           executedTools.push(tc.function.name);
+          executedToolsRef.push(tc.function.name);
 
           let args: unknown = {};
           try {
@@ -299,6 +318,7 @@ async function executeAgentTurn(
         reply = removerMencionClaveSiYaEntregada(reply);
       }
       if (reply) reply = await aplicarFiltroSalud(reply, contact.id);
+      if (reply) reply = await aplicarDatosEnvio(reply, await requisitosVigentes(), contact.id);
       if (!reply) {
         // A1: a veces el modelo cierra el turno sin texto. Se le pide una vez que responda
         // (las herramientas ya ejecutadas quedan en el historial, no se repiten).
@@ -407,6 +427,7 @@ async function executeAgentTurn(
       textoFinal = removerMencionClaveSiYaEntregada(textoFinal);
     }
     if (textoFinal) textoFinal = await aplicarFiltroSalud(textoFinal, contact.id);
+    if (textoFinal) textoFinal = await aplicarDatosEnvio(textoFinal, await requisitosVigentes(), contact.id);
     if (textoFinal) {
       const checkFinal = validarRespuestaBotContraOrden(textoFinal, ordenActiva);
       if (checkFinal.bloqueado) {
@@ -644,6 +665,27 @@ export const agentConfig = {
   maxToolRounds: MAX_TOOL_ROUNDS,
   historyLimit: HISTORY_LIMIT,
 };
+
+/**
+ * Venta a provincia por Shalom sin DNI o sin agencia oficial: la respuesta tiene que
+ * pedirlos (caso #1153: el bot se despidió tras el adelanto sin pedir ninguno).
+ */
+async function aplicarDatosEnvio(texto: string, req: RequisitosShalom, contactId: string): Promise<string> {
+  const r = exigirDatosEnvio(texto, req);
+  if (!r.agregado && !r.promesaQuitada) return texto;
+  const que = [req.faltaDni ? "DNI" : null, req.faltaAgencia ? "agencia Shalom oficial" : null].filter(Boolean).join(" y ");
+  await db
+    .insert(activities)
+    .values({
+      type: "note",
+      description:
+        `[DATOS ENVIO] ${r.agregado ? `El bot pidió ${que} (faltan para emitir la guía${req.numeroOrden ? ` de ${req.numeroOrden}` : ""}).` : ""}` +
+        `${r.promesaQuitada ? " Se quitó una promesa de clave/despacho: aún no hay guía." : ""}`.trim(),
+      contactId,
+    })
+    .catch((err) => console.warn("[datos-envio] no se pudo guardar la nota:", err instanceof Error ? err.message : err));
+  return r.texto;
+}
 
 /**
  * Reglas 2 y 3 sin depender del modelo: quita promesas de salud y "estándares/certificaciones"
