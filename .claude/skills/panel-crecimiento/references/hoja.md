@@ -12,8 +12,12 @@ La crea `scripts/hoja_inicial.py`. Regla de diseño: **datos crudos a la izquier
 | **Decisiones_pago** | panel (D, H, I) + tú (G en filas 6–8) | D valor de 7 días | E/F umbrales (de Config) · G estado |
 | **Aprobaciones** | director y optimizador proponen; tú decides | A:I; G = pendiente / aprobado / rechazado / aplicado | — |
 | **Competencia** | radar | A:L | — |
+| **Embudo** | panel (7 días que terminan en la fecha) | A:N fecha, fuente (anuncio, mensaje_web, directo, confirmacion_web, total), chats … entregados; en la fila total, pedidos_bot / equipo / web y pct_bot_chats_nuevos | O conversion |
+| **Rescate** | panel (7 días) | A:D fecha, valor ofrecido, enviados, respondieron | E respuesta |
 | **Registro** | todas las tareas | fecha_hora, tarea, resultado, detalle | — |
 | **Config** | tú | B2:B9 umbrales y tope semanal · A12:C13 CPA por producto | — |
+
+Resumen B24:B26 (auditoría del bot 21/11): pedidos del bot sobre chats nuevos (meta 10 %), pedidos de 7 días por quién cerró (bot / equipo / web) y conversión de chats nuevos. Leen la última fila `total` de Embudo.
 
 ## Config (filas fijas, las fórmulas apuntan a ellas)
 

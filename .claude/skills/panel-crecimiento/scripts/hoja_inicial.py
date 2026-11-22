@@ -2,7 +2,8 @@
 """Genera los pasos para dejar lista la hoja "Sistema integrado Aliv Peru" desde una hoja vacia.
 
 Uso:
-    python hoja_inicial.py > pasos.json
+    python hoja_inicial.py > pasos.json                    # hoja vacia, todo
+    python hoja_inicial.py --agregar-embudo > pasos.json   # hoja ya armada: solo Embudo y Rescate
 
 Salida: {"update_spreadsheet": [requests...], "update_values": [{range, values}...]}
   1. Enviar "update_spreadsheet" en UNA llamada (crea pestanas, congela encabezados, formatos).
@@ -18,7 +19,8 @@ import sys
 
 TITULO = "Sistema integrado Aliv Perú"
 IDS = {"Resumen": 0, "Diario": 101, "Anuncios": 102, "Pedidos": 103, "Salud_CRM": 104,
-       "Decisiones_pago": 105, "Aprobaciones": 106, "Competencia": 107, "Registro": 108, "Config": 109}
+       "Decisiones_pago": 105, "Aprobaciones": 106, "Competencia": 107, "Registro": 108, "Config": 109,
+       "Embudo": 110, "Rescate": 111}
 FILAS = 1000  # filas de cada pestana; los rangos no pueden pasarse del tamano
 AZUL = {"red": 0.0, "green": 0.0, "blue": 1.0}
 GRIS = {"red": 0.93, "green": 0.93, "blue": 0.93}
@@ -42,6 +44,11 @@ ENCABEZADOS = {
     "Competencia": ["fecha", "pagina", "id_biblioteca", "dias_activo", "formato", "gancho", "oferta", "cta",
                     "destino", "angulo", "link", "nota"],
     "Registro": ["fecha_hora", "tarea", "resultado", "detalle"],
+    # Auditoria del bot 21/11 (V6): ventana de 7 dias que termina en la fecha; fila "total" al final.
+    "Embudo": ["fecha", "fuente", "chats", "bot_respondio", "siguio", "cotizado", "pidio_datos", "pedidos",
+               "confirmados", "entregados", "pedidos_bot", "pedidos_equipo", "pedidos_web", "pct_bot_chats_nuevos",
+               "conversion"],
+    "Rescate": ["fecha", "valor", "enviados", "respondieron", "respuesta"],
 }
 
 # Formulas de fila 2 (ARRAYFORMULA): crecen solas con cada fila de datos nueva.
@@ -63,6 +70,9 @@ FORMULAS_ANUNCIOS = [  # M2:R2
     'IF(N2:N=0,IF(F2:F>Q2:Q,"Rojo (sin pedidos)","Amarillo"),'
     'IF(O2:O<=P2:P,"Verde",IF(O2:O<=Q2:Q,"Amarillo","Rojo"))))),))',
 ]
+
+FORMULA_EMBUDO = "=ARRAYFORMULA(IF(LEN(A2:A),IF(C2:C=0,,H2:H/C2:C),))"  # O2
+FORMULA_RESCATE = "=ARRAYFORMULA(IF(LEN(A2:A),IF(C2:C=0,,D2:D/C2:C),))"  # E2
 
 CONFIG = [
     ["Parámetro", "Valor", "Fuente"],
@@ -111,6 +121,15 @@ def suma(columna, ultimos_7):
 INDICADORES = [("Gasto en Meta (S/)", "B"), ("Pedidos web", "F"), ("Pedidos por chat", "H"),
                ("Ingresos web (S/)", "G"), ("Ingresos por chat (S/)", "I")]
 
+# Filas 24-26 del Resumen (auditoria del bot 21/11): ultima fila "total" de Embudo.
+ULTIMO_TOTAL = 'IFERROR(INDEX(FILTER(Embudo!{c}2:{c},Embudo!B2:B="total"),COUNTIF(Embudo!B2:B,"total")),"")'
+RESUMEN_EMBUDO = [
+    ["Pedidos del bot / chats nuevos, 7 días (meta 10 %)", "=" + ULTIMO_TOTAL.format(c="N"), ""],
+    ["Pedidos de 7 días: bot / equipo / web",
+     "=" + ULTIMO_TOTAL.format(c="K") + '&" / "&' + ULTIMO_TOTAL.format(c="L") + '&" / "&' + ULTIMO_TOTAL.format(c="M"), ""],
+    ["Chats nuevos de 7 días que terminaron en pedido", "=" + ULTIMO_TOTAL.format(c="O"), ""],
+]
+
 RESUMEN = [
     ["Panel de crecimiento — Aliv Perú", "", ""],
     ["Lo llenan las tareas de Claude cada mañana. Los umbrales están en la pestaña Config.", "", ""],
@@ -131,7 +150,7 @@ RESUMEN = [
     ["Propuestas pendientes de aprobación", '=COUNTIF(Aprobaciones!G:G,"pendiente")', ""],
     ["Servicios marcados PAGAR", '=COUNTIF(Decisiones_pago!G:G,"PAGAR")', ""],
     ["Anuncios en rojo el último día", '=COUNTIFS(Anuncios!A:A,$B$4,Anuncios!R:R,"Rojo*")', ""],
-]
+] + RESUMEN_EMBUDO
 
 
 def rango(hoja, fila0, fila1, col0, col1):
@@ -207,6 +226,7 @@ def pasos():
                                        "properties": {"pixelSize": 420}, "fields": "pixelSize"}},
     ]
 
+    req += formatos_embudo()
     valores = [{"range": f"{hoja}!A1", "values": [cols]} for hoja, cols in ENCABEZADOS.items()]
     valores += [
         {"range": "Config!A1", "values": CONFIG},
@@ -214,10 +234,45 @@ def pasos():
         {"range": "Anuncios!M2", "values": [FORMULAS_ANUNCIOS]},
         {"range": "Decisiones_pago!A2", "values": DECISIONES},
         {"range": "Resumen!A1", "values": RESUMEN},
+        {"range": "Embudo!O2", "values": [[FORMULA_EMBUDO]]},
+        {"range": "Rescate!E2", "values": [[FORMULA_RESCATE]]},
+    ]
+    return {"update_spreadsheet": req, "update_values": valores}
+
+
+def formatos_embudo():
+    req = []
+    for hoja in ("Embudo", "Rescate"):
+        req.append({"repeatCell": {"range": rango(hoja, 0, 1, 0, len(ENCABEZADOS[hoja])),
+                                   "cell": {"userEnteredFormat": {"textFormat": {"bold": True},
+                                                                  "backgroundColorStyle": {"rgbColor": GRIS}}},
+                                   "fields": "userEnteredFormat.textFormat.bold,userEnteredFormat.backgroundColorStyle"}})
+        req.append(formato_numero(hoja, 0, 1, "yyyy-mm-dd", "DATE"))
+    req += [formato_numero("Embudo", 13, 15, "0.0%", "PERCENT"), formato_numero("Rescate", 4, 5, "0.0%", "PERCENT")]
+    for fila in (23, 25):  # Resumen B24 y B26 en porcentaje
+        req.append({"repeatCell": {"range": {"sheetId": 0, "startRowIndex": fila, "endRowIndex": fila + 1, "startColumnIndex": 1, "endColumnIndex": 2},
+                                   "cell": {"userEnteredFormat": {"numberFormat": {"type": "PERCENT", "pattern": "0.0%"}}},
+                                   "fields": "userEnteredFormat.numberFormat"}})
+    return req
+
+
+def pasos_embudo():
+    """Para la hoja ya armada: agrega Embudo y Rescate y las filas 24-26 del Resumen."""
+    req = [{"addSheet": {"properties": {"sheetId": IDS[h], "title": h,
+                                        "gridProperties": {"rowCount": FILAS, "columnCount": len(ENCABEZADOS[h]),
+                                                           "frozenRowCount": 1}}}}
+           for h in ("Embudo", "Rescate")]
+    req += formatos_embudo()
+    valores = [
+        {"range": "Embudo!A1", "values": [ENCABEZADOS["Embudo"]]},
+        {"range": "Rescate!A1", "values": [ENCABEZADOS["Rescate"]]},
+        {"range": "Embudo!O2", "values": [[FORMULA_EMBUDO]]},
+        {"range": "Rescate!E2", "values": [[FORMULA_RESCATE]]},
+        {"range": "Resumen!A24", "values": RESUMEN_EMBUDO},
     ]
     return {"update_spreadsheet": req, "update_values": valores}
 
 
 if __name__ == "__main__":
     sys.stdout.reconfigure(encoding="utf-8")  # en Windows la consola no es UTF-8
-    print(json.dumps(pasos(), ensure_ascii=False, indent=1))
+    print(json.dumps(pasos_embudo() if "--agregar-embudo" in sys.argv else pasos(), ensure_ascii=False, indent=1))

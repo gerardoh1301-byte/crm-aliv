@@ -43,10 +43,13 @@ Produce `filas.json` con filas **crudas** por pestaña. CTR, CPM, CPA real, ROAS
 **5. Escribir en la hoja** (conector de Google Sheets). Antes lee la guía del conector (`anthropic-skills:google-workspace`, `references/sheets.md`) si no la leíste en esta sesión.
 - **Diario** (A:O): lee `Diario!A:A`; si FECHA ya existe, sobrescribe esa fila; si no, `append_values` en `Diario!A:O`.
 - **Anuncios** (A:L), **Pedidos** (A:I), **Salud_CRM** (A:O): si FECHA ya aparece en la columna A, **no** vuelvas a agregar (avisa "ya cargado"); si no, `append_values` con el rango exacto de columnas. Nunca escribas en las columnas de fórmulas (a la derecha).
+- **Embudo** (A:N) y **Rescate** (A:D): ventana de 7 días que termina en FECHA (salen de `crm_7d.json`). Si FECHA ya aparece en la columna A, no vuelvas a agregar; si no, `append_values` en `Embudo!A:N` y `Rescate!A:D`. Nunca escribas en `Embudo!O` ni `Rescate!E` (fórmulas). Si la hoja todavía no tiene esas pestañas, créalas una vez con `python scripts/hoja_inicial.py --agregar-embudo` (mismo procedimiento que "Primera vez").
 - **Decisiones_pago**: `filas.json["Decisiones_pago"]` trae 4 filas `[valor, evaluado, nota]` → escribe `D2:D5` (valor) y `H2:I5` (evaluado, nota). No toques E, F ni G.
 - **Registro**: agrega `[fecha_hora, "panel", "ok"|"parcial"|"error", avisos]`.
 
-**6. Verificar.** Lee `Resumen!A4:C18` y comprueba que el último día sea FECHA y que los números tengan sentido (gasto de Diario = suma de Anuncios del día). Reporta en 3 líneas: gasto, pedidos reales (web + chat), CPA real y avisos.
+**6. Verificar.** Lee `Resumen!A4:C18` y comprueba que el último día sea FECHA y que los números tengan sentido (gasto de Diario = suma de Anuncios del día). Reporta en 3 líneas: gasto, pedidos reales (web + chat), CPA real y avisos. Agrega una línea con `Resumen!B24:B25`: pedidos del bot sobre chats nuevos (meta 10 %) y quién cerró los pedidos de la semana.
+
+**Lunes.** `filas.json["perdidos_para_revisar"]` trae 10 chats cotizados que no compraron (id de conversación, fuente y nuestro último mensaje, sin nombres). Pásaselos a `director-crecimiento` para que proponga en *Aprobaciones* qué cambiar en el guion del bot.
 
 ## Primera vez (hoja vacía)
 

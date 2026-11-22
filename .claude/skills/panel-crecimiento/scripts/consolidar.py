@@ -42,7 +42,13 @@ COLUMNAS = {
                   "mensajes_demora_60s", "respuesta_bot_p50_s", "respuesta_bot_p95_s", "trabajos_fallidos",
                   "errores_429", "trabajos_atascados", "mensajes_fallidos", "comentarios", "comentarios_compra",
                   "comentarios_queja", "chats_sin_respuesta"],
+    # Ventana de 7 dias que termina en FECHA (crm_7d.json). Una fila por fuente + "total".
+    "Embudo": ["fecha", "fuente", "chats", "bot_respondio", "siguio", "cotizado", "pidio_datos", "pedidos",
+               "confirmados", "entregados", "pedidos_bot", "pedidos_equipo", "pedidos_web", "pct_bot_chats_nuevos"],
+    "Rescate": ["fecha", "valor", "enviados", "respondieron"],
 }
+
+FUENTES = ["anuncio", "mensaje_web", "directo", "confirmacion_web"]
 
 # Filas fijas de Decisiones_pago (fila 2 a 5): el script llena valor (D), evaluado (H) y nota (I).
 DECISIONES = ["Render Starter", "Gemini con facturación y tope", "Plantillas WhatsApp (confirmación)",
@@ -119,6 +125,29 @@ def decisiones(crm7: dict, fecha: str, avisos: list[str]) -> list[list]:
     ]
 
 
+def embudo(crm7: dict, fecha: str, avisos: list[str]) -> tuple[list[list], list[list]]:
+    """Filas de Embudo y Rescate (7 dias). El CRM las da desde 046a711 (auditoria 21/11, V6)."""
+    e = crm7.get("embudo_chat", {})
+    por_fuente = e.get("por_fuente")
+    if not por_fuente:
+        if crm7:
+            avisos.append("el CRM no devuelve embudo_chat.por_fuente: Embudo queda vacio")
+        return [], []
+    filas = []
+    tot = {k: 0 for k in ["chats", "bot_respondio", "siguio", "cotizado", "pidio_datos", "pedido", "confirmado", "entregado"]}
+    for fuente in FUENTES:
+        c = por_fuente.get(fuente, {})
+        for k in tot:
+            tot[k] += int(num(c.get(k)))
+        filas.append([fecha, fuente, *(int(num(c.get(k))) for k in tot), "", "", "", ""])
+    quien = e.get("pedidos_por_quien_cerro", {})
+    filas.append([fecha, "total", *tot.values(), int(num(quien.get("bot"))), int(num(quien.get("equipo"))),
+                  int(num(quien.get("web"))), round(num(e.get("pedidos_bot_sobre_chats_nuevos_pct")) / 100, 4)])
+    rescate = [[fecha, valor, int(num(c.get("enviados"))), int(num(c.get("respondieron")))]
+               for valor, c in sorted(crm7.get("rescate_chats", {}).get("por_valor", {}).items())]
+    return filas, rescate
+
+
 def consolidar(fecha: str, carpeta: Path) -> dict:
     avisos: list[str] = []
     meta = leer(carpeta, "meta.json", avisos)
@@ -187,6 +216,8 @@ def consolidar(fecha: str, carpeta: Path) -> dict:
         int(num(c.get("queja"))), len(crm.get("sin_respuesta", [])),
     ]
 
+    filas_embudo, filas_rescate = embudo(crm7, fecha, avisos)
+
     return {
         "fecha": fecha,
         "columnas": COLUMNAS,
@@ -195,6 +226,10 @@ def consolidar(fecha: str, carpeta: Path) -> dict:
         "Pedidos": filas_pedidos,
         "Salud_CRM": [fila_salud] if crm else [],
         "Decisiones_pago": decisiones(crm7, fecha, avisos),
+        "Embudo": filas_embudo,
+        "Rescate": filas_rescate,
+        # Revision de los lunes: 10 chats cotizados que no compraron (solo id y ultimo mensaje).
+        "perdidos_para_revisar": crm7.get("embudo_chat", {}).get("perdidos_para_revisar", []),
         # Para el resumen del director: casos que piden atencion de una persona.
         "chats_sin_respuesta": crm.get("sin_respuesta", []),
         "comentarios_queja": c.get("ejemplos", []) if c.get("queja") else [],
