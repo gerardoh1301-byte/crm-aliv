@@ -35,7 +35,7 @@ const PACKS_TERMIX = [
 
 const PACKS_NAC = [
   { cant: 1, total: 119, label: "1x Frasco (S/ 119)" },
-  { cant: 2, total: 169, label: "2x Frascos (S/ 169)" },
+  { cant: 2, total: 189, label: "2x Frascos (S/ 189)" },
   { cant: 3, total: 199, label: "3x Frascos Promo (S/ 199)", recomendado: true },
 ];
 
