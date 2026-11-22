@@ -3,7 +3,7 @@ import { nombreParaSaludo } from "@/lib/nombres";
 import { esNumeroEntrenador } from "@/lib/alerts/supervisor-alerts";
 import { mostrarNumeroOrden } from "@/lib/pedidos/numero-formato";
 import { db } from "@/db";
-import { activities, contacts, conversations, deals, messages, pipelineStages } from "@/db/schema";
+import { activities, contacts, conversations, deals, messages, pipelineStages, whatsappTemplates } from "@/db/schema";
 import { and, desc, eq, gte, lte, sql } from "drizzle-orm";
 import { getConfig } from "@/lib/config";
 import { deliverMessage } from "@/lib/channels/deliver";
@@ -627,6 +627,95 @@ export function mensajeSegundoToque(
 type Pasada = "primero" | "segundo";
 
 /**
+ * Plantilla del segundo toque: distinta de la del primero para no repetir el mismo texto.
+ * Hay que crearla en WhatsApp Manager (Marketing, español) y sincronizar en el CRM:
+ *   "Hola {{1}}, te escribo por última vez para no incomodarte 🙂. Seguimos guardando tu
+ *    pedido de {{2}}. Si aún lo quieres, responde este mensaje y lo dejamos listo."
+ * Mientras no esté aprobada, el segundo toque fuera de la ventana de 24 h no sale.
+ */
+export const PLANTILLA_SEGUNDO_TOQUE = "aliv_ultimo_recordatorio";
+
+/**
+ * Horas de texto libre que se usan como ventana segura: WhatsApp da 24 h desde el último
+ * mensaje del cliente; se deja 1 h de margen por la demora entre decidir y entregar.
+ */
+export const HORAS_VENTANA_SEGURA = 23;
+
+export interface PlantillaRescate {
+  name: string;
+  language: string;
+  params: string[];
+}
+
+export type EnvioRescate =
+  | { modo: "texto" }
+  | { modo: "plantilla"; plantilla: PlantillaRescate }
+  | { modo: "omitir"; motivo: string };
+
+/** Plantilla aprobada que corresponde a cada escenario y toque. */
+export function plantillaParaRescate(
+  pasada: Pasada,
+  escenario: TipoEscenarioRescate,
+  datos: { nombre: string; producto: string; ciudad: string }
+): PlantillaRescate {
+  if (pasada === "segundo") {
+    return { name: PLANTILLA_SEGUNDO_TOQUE, language: "es", params: [datos.nombre, datos.producto] };
+  }
+  if (escenario === "direccion_incompleta") {
+    return { name: "aliv_completar_direccion", language: "es", params: [datos.nombre, datos.producto, datos.ciudad] };
+  }
+  if (escenario === "adelanto_provincia") {
+    return { name: "aliv_recordatorio_adelanto", language: "es", params: [datos.nombre, datos.producto, datos.ciudad] };
+  }
+  return { name: "aliv_seguimiento_consulta", language: "es", params: [datos.nombre, datos.producto] };
+}
+
+/**
+ * Decide cómo sale el rescate. Dentro de la ventana de 24 h se manda el texto (el mensaje
+ * contextual de la IA o el segundo toque corto): si se adjunta una plantilla, el conector
+ * la prioriza y el cliente recibe la genérica. Fuera de la ventana solo puede salir una
+ * plantilla, y solo si está aprobada; si no, se omite en vez de fallar en cada barrido.
+ */
+export function elegirEnvioRescate(e: {
+  lastInboundAt: Date | string | null | undefined;
+  ahora: Date;
+  plantilla: PlantillaRescate;
+  plantillasAprobadas: ReadonlySet<string>;
+}): EnvioRescate {
+  const ultimo = e.lastInboundAt ? new Date(e.lastInboundAt).getTime() : NaN;
+  const horas = Number.isNaN(ultimo) ? Infinity : (e.ahora.getTime() - ultimo) / 3_600_000;
+  if (horas <= HORAS_VENTANA_SEGURA) return { modo: "texto" };
+  if (!e.plantillasAprobadas.has(e.plantilla.name)) {
+    return { modo: "omitir", motivo: `fuera de la ventana de 24 h y la plantilla ${e.plantilla.name} no está aprobada` };
+  }
+  return { modo: "plantilla", plantilla: e.plantilla };
+}
+
+/** Prefijo de las notas que marcan un chat ya revisado sin envío (o con envío fallido). */
+export const PREFIJO_REVISADO = "[RESCATE REVISADO]";
+export const PREFIJO_REVISADO_FALLO = `${PREFIJO_REVISADO} Falló el envío`;
+/** Tras un envío fallido se reintenta una vez pasada esta espera (error transitorio). */
+export const HORAS_REINTENTO_FALLO = 1;
+
+/**
+ * ¿Hay que saltarse el chat porque ya se revisó desde su último mensaje? Un descarte vale
+ * hasta que la conversación cambie; un envío fallido se reintenta pasada 1 h.
+ */
+export function yaRevisadoSinCambios(
+  ultimaNota: { description: string | null; createdAt: Date | string } | null | undefined,
+  lastMessageAt: Date | string | null | undefined,
+  ahora: Date
+): boolean {
+  if (!ultimaNota || !lastMessageAt) return false;
+  const nota = new Date(ultimaNota.createdAt).getTime();
+  if (nota < new Date(lastMessageAt).getTime()) return false;
+  if ((ultimaNota.description ?? "").startsWith(PREFIJO_REVISADO_FALLO)) {
+    return ahora.getTime() - nota < HORAS_REINTENTO_FALLO * 3_600_000;
+  }
+  return true;
+}
+
+/**
  * Ejecuta el barrido de auditoría sobre todas las conversaciones candidatas en la base de datos.
  * Dos pasadas: primer toque (2-22 h) y segundo toque (22-72 h, solo a quien ya recibió
  * el primero y no respondió). Nunca hay un tercero.
@@ -649,6 +738,23 @@ export async function auditarChatsAbandonados(opts?: { limite?: number; forzarHo
   let rescatados = 0;
   const detalles: Array<{ contactId: string; phone: string | null; escenario: string; mensaje: string; toque?: number }> = [];
 
+  // Plantillas aprobadas (según la última sincronización con Meta): fuera de la ventana de
+  // 24 h solo se envía si la del escenario está aquí.
+  const aprobadas = await db
+    .select({ name: whatsappTemplates.name })
+    .from(whatsappTemplates)
+    .where(sql`upper(${whatsappTemplates.status}) = 'APPROVED'`);
+  const plantillasAprobadas = new Set(aprobadas.map((t) => t.name));
+
+  /** Deja constancia de que el chat se revisó sin envío, para no reevaluarlo (ni gastar IA) en cada barrido. */
+  const marcarRevisado = async (contactId: string, detalle: string) => {
+    try {
+      await db.insert(activities).values({ type: "note", description: `${PREFIJO_REVISADO} ${detalle}`, contactId });
+    } catch (err) {
+      console.warn("[rescate] Error registrando revisión:", err);
+    }
+  };
+
   for (const pasada of ["primero", "segundo"] as Pasada[]) {
     const ventana = pasada === "primero" ? VENTANA_PRIMER_TOQUE : VENTANA_SEGUNDO_TOQUE;
     const desde = new Date(ahora.getTime() - ventana.max * 60 * 60 * 1000);
@@ -660,6 +766,7 @@ export async function auditarChatsAbandonados(opts?: { limite?: number; forzarHo
         convId: conversations.id,
         channel: conversations.channel,
         lastMessageAt: conversations.lastMessageAt,
+        lastInboundAt: conversations.lastInboundAt,
         contactId: contacts.id,
         contactName: contacts.name,
         contactPhone: contacts.phone,
@@ -721,6 +828,20 @@ export async function auditarChatsAbandonados(opts?: { limite?: number; forzarHo
         continue; // Hay un seguimiento programado, no enviar rescate automático
       }
 
+      // Ya revisado desde su último mensaje (descartado o envío fallido hace < 1 h): saltar.
+      const [ultimaRevision] = await db
+        .select({ description: activities.description, createdAt: activities.createdAt })
+        .from(activities)
+        .where(
+          and(
+            eq(activities.contactId, c.contactId),
+            sql`${activities.description} like ${PREFIJO_REVISADO + "%"}`
+          )
+        )
+        .orderBy(desc(activities.createdAt))
+        .limit(1);
+      if (yaRevisadoSinCambios(ultimaRevision, c.lastMessageAt, ahora)) continue;
+
       // Obtener pedido más reciente si existe
       const [pedido] = await db
         .select({
@@ -763,12 +884,35 @@ export async function auditarChatsAbandonados(opts?: { limite?: number; forzarHo
       const nombreCliente = nombreParaSaludo(c.contactName) ?? "estimado(a)";
       const prodRescate = detectarProductoRescate(contexto);
 
+      // Cómo saldría (texto dentro de 24 h, plantilla aprobada fuera). Se decide antes de
+      // llamar a la IA: si no hay forma de entregarlo, no se gasta la llamada.
+      const prodNombre = prodRescate === "termix" ? "Tobillera Termix" : "suplemento NAC600 + NAD+";
+      const ciudadDestino = (pedido?.ciudad || "Perú").trim() || "Perú";
+      const envio = elegirEnvioRescate({
+        lastInboundAt: c.lastInboundAt,
+        ahora,
+        plantilla: plantillaParaRescate(pasada, evaluacion.escenario, {
+          nombre: nombreCliente,
+          producto: prodNombre,
+          ciudad: ciudadDestino,
+        }),
+        plantillasAprobadas,
+      });
+      if (envio.modo === "omitir") {
+        await marcarRevisado(c.contactId, `Sin envío (toque ${pasada === "primero" ? 1 : 2}): ${envio.motivo}.`);
+        continue;
+      }
+
       // Primer toque: auditoría contextual con IA. Segundo toque: mensaje corto y fijo
       // (la IA ya tuvo su oportunidad; aquí solo se ofrece cerrar o se despide).
       let evaluacionFinal = evaluacion;
       if (pasada === "primero") {
         evaluacionFinal = await evaluarRescateConIA(contexto, evaluacion);
         if (!evaluacionFinal.esElegible || !evaluacionFinal.mensajeRescate || !evaluacionFinal.escenario) {
+          await marcarRevisado(
+            c.contactId,
+            `Descartado: ${evaluacionFinal.motivoDescarte ?? "la IA no lo consideró rescatable"}`.slice(0, 500)
+          );
           continue;
         }
       } else {
@@ -779,38 +923,24 @@ export async function auditarChatsAbandonados(opts?: { limite?: number; forzarHo
         };
       }
 
-      // R3: Adjuntar plantilla aprobada de Meta según escenario para garantizar entrega fuera de ventana 24h
-      const prodNombre = prodRescate === "termix" ? "Tobillera Termix" : "suplemento NAC600 + NAD+";
-      const ciudadDestino = (pedido?.ciudad || "Perú").trim() || "Perú";
-      const plantillaRescate =
-        evaluacionFinal.escenario === "direccion_incompleta"
-          ? {
-              name: "aliv_completar_direccion",
-              language: "es",
-              params: [nombreCliente, prodNombre, ciudadDestino],
-              previewText: evaluacionFinal.mensajeRescate!,
-            }
-          : evaluacionFinal.escenario === "adelanto_provincia"
-            ? {
-                name: "aliv_recordatorio_adelanto",
-                language: "es",
-                params: [nombreCliente, prodNombre, ciudadDestino],
-                previewText: evaluacionFinal.mensajeRescate!,
-              }
-            : {
-                name: "aliv_seguimiento_consulta",
-                language: "es",
-                params: [nombreCliente, prodNombre],
-                previewText: evaluacionFinal.mensajeRescate!,
-              };
-
-      // Entregar mensaje oficial de rescate (texto dentro de 24h, plantilla aprobada fuera de 24h)
+      // Dentro de 24 h sale el texto tal cual (sin plantilla: el conector la priorizaría).
+      // Fuera, la plantilla aprobada; el texto queda como vista previa en el CRM.
       const entrega = await deliverMessage(
         c.convId,
-        { text: evaluacionFinal.mensajeRescate!, template: plantillaRescate },
+        envio.modo === "texto"
+          ? { text: evaluacionFinal.mensajeRescate! }
+          : { template: { ...envio.plantilla, previewText: evaluacionFinal.mensajeRescate! } },
         "agent"
       );
-      if (!entrega.ok) continue;
+      if (!entrega.ok) {
+        await marcarRevisado(
+          c.contactId,
+          `${PREFIJO_REVISADO_FALLO.slice(PREFIJO_REVISADO.length + 1)} (toque ${pasada === "primero" ? 1 : 2}, ${
+            envio.modo === "texto" ? "texto" : `plantilla ${envio.plantilla.name}`
+          }): ${entrega.error ?? "sin detalle"}`.slice(0, 500)
+        );
+        continue;
+      }
 
       rescatados++;
       // rescate_enviado tras el primer toque, rescate_2_enviado tras el último

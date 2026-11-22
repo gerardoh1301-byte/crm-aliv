@@ -2,6 +2,12 @@ import { describe, expect, it } from "vitest";
 import {
   determinarEscenarioRescate,
   mensajeSegundoToque,
+  elegirEnvioRescate,
+  plantillaParaRescate,
+  yaRevisadoSinCambios,
+  PLANTILLA_SEGUNDO_TOQUE,
+  PREFIJO_REVISADO,
+  PREFIJO_REVISADO_FALLO,
   type ContextoChatParaAuditoria,
 } from "@/lib/agent/rescate";
 
@@ -105,5 +111,64 @@ describe("formulario abandonado en curso", () => {
       contact: { id: "c", name: "Nancy", phone: "+51911222333", tags: ["formulario_abandonado", "abandono_paso1"] },
     });
     expect(determinarEscenarioRescate(ctx, ahora).esElegible).toBe(false);
+  });
+});
+
+describe("cómo sale el rescate (texto vs plantilla)", () => {
+  const plantilla = { name: "aliv_seguimiento_consulta", language: "es", params: ["Nancy", "NAC600"] };
+  const aprobadas = new Set(["aliv_seguimiento_consulta"]);
+
+  it("dentro de la ventana de 24 h manda el texto, no la plantilla genérica", () => {
+    const r = elegirEnvioRescate({ lastInboundAt: haceHoras(5), ahora, plantilla, plantillasAprobadas: aprobadas });
+    expect(r.modo).toBe("texto");
+  });
+
+  it("con menos de 1 h de margen ya usa la plantilla", () => {
+    const r = elegirEnvioRescate({ lastInboundAt: haceHoras(23.5), ahora, plantilla, plantillasAprobadas: aprobadas });
+    expect(r.modo).toBe("plantilla");
+  });
+
+  it("fuera de la ventana y sin plantilla aprobada, se omite en vez de fallar", () => {
+    const r = elegirEnvioRescate({ lastInboundAt: haceHoras(30), ahora, plantilla, plantillasAprobadas: new Set() });
+    expect(r.modo).toBe("omitir");
+  });
+
+  it("sin mensaje entrante registrado se trata como fuera de la ventana", () => {
+    const r = elegirEnvioRescate({ lastInboundAt: null, ahora, plantilla, plantillasAprobadas: aprobadas });
+    expect(r.modo).toBe("plantilla");
+  });
+
+  it("el segundo toque usa su propia plantilla, distinta de la del primero", () => {
+    const datos = { nombre: "Nancy", producto: "NAC600", ciudad: "Lima" };
+    const p1 = plantillaParaRescate("primero", "cotizacion_abandonada", datos);
+    const p2 = plantillaParaRescate("segundo", "cotizacion_abandonada", datos);
+    expect(p2.name).toBe(PLANTILLA_SEGUNDO_TOQUE);
+    expect(p2.name).not.toBe(p1.name);
+    expect(plantillaParaRescate("segundo", "adelanto_provincia", datos).name).toBe(PLANTILLA_SEGUNDO_TOQUE);
+  });
+});
+
+describe("no reevaluar chats ya revisados", () => {
+  const ultimoMsg = haceHoras(5);
+
+  it("un descarte posterior al último mensaje lo salta", () => {
+    const nota = { description: `${PREFIJO_REVISADO} Descartado: se despidió`, createdAt: haceHoras(4) };
+    expect(yaRevisadoSinCambios(nota, ultimoMsg, ahora)).toBe(true);
+  });
+
+  it("si la conversación cambió después de la nota, se vuelve a evaluar", () => {
+    const nota = { description: `${PREFIJO_REVISADO} Descartado: se despidió`, createdAt: haceHoras(6) };
+    expect(yaRevisadoSinCambios(nota, ultimoMsg, ahora)).toBe(false);
+  });
+
+  it("un envío fallido se reintenta pasada 1 h", () => {
+    const reciente = { description: `${PREFIJO_REVISADO_FALLO} (toque 1, texto): timeout`, createdAt: haceHoras(0.5) };
+    const viejo = { description: `${PREFIJO_REVISADO_FALLO} (toque 1, texto): timeout`, createdAt: haceHoras(2) };
+    expect(yaRevisadoSinCambios(reciente, ultimoMsg, ahora)).toBe(true);
+    expect(yaRevisadoSinCambios(viejo, ultimoMsg, ahora)).toBe(false);
+  });
+
+  it("sin nota no se salta", () => {
+    expect(yaRevisadoSinCambios(null, ultimoMsg, ahora)).toBe(false);
   });
 });
