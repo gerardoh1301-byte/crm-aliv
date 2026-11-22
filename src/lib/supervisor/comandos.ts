@@ -17,6 +17,8 @@ import {
   mejoresPorNombre,
   pareceOrdenNoEntendida,
   consultaPorPedidoExplicito,
+  esAfirmacionSuelta,
+  interpretarModo,
   separarPedidoYMonto,
   type Comando,
   type TokenNumero,
@@ -56,7 +58,11 @@ type Accion =
   | "direccion"
   | "clave_nueva"
   | "total"
-  | "nota";
+  | "nota"
+  // Solo desde el asistente (asistente.ts): mensaje al cliente, bot on/off y distrito.
+  | "mensaje"
+  | "bot"
+  | "distrito";
 
 interface Pendiente {
   accion: Accion;
@@ -181,7 +187,7 @@ async function leerUltimaOrden(): Promise<{ tipo: TipoCorregible; numeroOrden: s
   }
 }
 
-const TIPO_POR_ACCION: Record<Accion, TipoCorregible> = {
+const TIPO_POR_ACCION: Partial<Record<Accion, TipoCorregible>> = {
   pago: "pago",
   flete: "flete",
   entregado: "entregado",
@@ -501,7 +507,10 @@ const AYUDA = [
   "",
   "Antes de cambiar algo te pido confirmar con *SI 1140*. Para mandar la clave al cliente: *ENVIAR 1140*. *NO* cancela.",
   "El pedido puede ir por número (1140), por guía Shalom (104493022), por celular (987654321) o por nombre («clave de Carlos Huaynalaya»).",
-  "Si no pones número, uso el pedido de la última alerta. También puedes escribirme normal («ya me llegó el yape de Manuel», «cuánto le falta a Vertiz»): te digo qué entendí y siempre te pido el SI antes de cambiar algo.",
+  "Si no pones número, uso el pedido de la última alerta.",
+  "",
+  "*Asistente*: pregúntame lo que quieras del CRM con tus palabras («¿ya está todo para entregar el 1160?», «quién no ha recibido respuesta hoy?», «cómo nos fue ayer?», «escríbele a Carlos que pasamos el lunes», «pausa el bot con Marleni»). Leo pedidos, chats y métricas; los cambios y los mensajes a clientes te los propongo y solo se hacen con tu *SI*.",
+  "*modo prueba*: por 1 hora te contesta el bot de ventas como a un cliente. *modo asistente* para volver.",
 ].join("\n");
 
 /**
@@ -1125,6 +1134,9 @@ async function ejecutarPendiente(cmd: Comando, conversationId: string): Promise<
     return `✅ Clave enviada a ${nombre} por WhatsApp.\n${cierre.texto}`;
   }
 
+  const delAsistente = await aplicarAccionAsistente(pend, p);
+  if (delAsistente) return delAsistente;
+
   const cambio = await aplicarCambio(pend, p);
   if (cambio) return cambio;
 
@@ -1147,6 +1159,20 @@ export async function manejarComandoSupervisor(conversationId: string, phone: st
     .limit(1);
   if (!ultimo || ultimo.direction !== "in") return false;
 
+  // «modo prueba» / «modo asistente»: con el modo prueba, lo que no sea una orden va al bot
+  // de ventas para probarlo como cliente; si no, contesta el asistente.
+  const modo = interpretarModo(ultimo.body);
+  if (modo) {
+    await cambiarModoPrueba(modo === "prueba");
+    await responder(
+      conversationId,
+      modo === "prueba"
+        ? "🧪 *Modo prueba* por 1 hora: lo que escribas (salvo órdenes como «SI 1160») lo contesta el bot de ventas como a un cliente. Escribe *modo asistente* para volver."
+        : "🤖 *Modo asistente*: te contesto yo con los datos del CRM. Para probar el bot de ventas escribe *modo prueba*."
+    );
+    return true;
+  }
+
   let cmd = interpretarComando(ultimo.body);
   let entendido = "";
   if (!cmd) {
@@ -1166,8 +1192,41 @@ export async function manejarComandoSupervisor(conversationId: string, phone: st
     }
     const pend = await leerPendiente();
 
-    // Lenguaje libre: la IA traduce el mensaje a una orden estándar, que vuelve a pasar
-    // por el intérprete fijo y sigue pidiendo «SI <pedido>» antes de cambiar algo.
+    // Un "sí" / "ok" suelto con algo pendiente no confirma nada: se le recuerda cómo confirmar.
+    if (pend && esAfirmacionSuelta(ultimo.body)) {
+      const n = digitosPedido(pend.numeroOrden);
+      await responder(
+        conversationId,
+        pend.accion === "enviar_clave"
+          ? `Para mandarle la clave al cliente responde *ENVIAR ${n}*, o *NO* para cancelar.`
+          : `Para confirmar responde *SI ${n}* (con el número), o *NO* para cancelar.`
+      );
+      return true;
+    }
+
+    if (await modoPruebaActivo()) {
+      if (pareceOrdenNoEntendida(ultimo.body)) {
+        await responder(conversationId, `No entendí la orden; no cambié nada.\n\n${AYUDA}`);
+        return true;
+      }
+      return false; // modo prueba: lo contesta el bot de ventas
+    }
+
+    // Asistente personal: consulta el CRM con herramientas de solo lectura y deja los cambios
+    // pendientes de «SI <pedido>». Nunca le contesta el bot de ventas como a un cliente.
+    let respuesta: string | null = null;
+    try {
+      const { responderAsistente } = await import("./asistente");
+      respuesta = await responderAsistente(ultimo.body || "", conversationId);
+    } catch (err) {
+      console.error("[supervisor-comandos] el asistente falló:", err);
+    }
+    if (respuesta) {
+      await responder(conversationId, respuesta);
+      return true;
+    }
+
+    // Respaldo si el asistente no respondió: la IA traduce el mensaje a una orden estándar.
     const traduccion = await traducirConIA(ultimo.body || "", conversationId);
     if (traduccion?.tipo === "no_soportada") {
       await responder(
@@ -1198,26 +1257,14 @@ export async function manejarComandoSupervisor(conversationId: string, phone: st
   }
 
   if (!cmd) {
-    const pend = await leerPendiente();
-    // Un "sí" / "ok" suelto con algo pendiente no va al bot de ventas (que podría
-    // inventar que registró algo): se le recuerda cómo confirmar.
-    if (pend && (ultimo.body || "").trim().length <= 40) {
-      const n = digitosPedido(pend.numeroOrden);
-      await responder(
-        conversationId,
-        pend.accion === "enviar_clave"
-          ? `Para mandarle la clave al cliente responde *ENVIAR ${n}*, o *NO* para cancelar.`
-          : `Para confirmar responde *SI ${n}* (con el número), o *NO* para cancelar.`
-      );
-      return true;
-    }
-    // Parece una orden pero no se entendió: se le avisa a Gerardo en vez de pasarla al bot de
-    // ventas, que le contestaría como a un cliente («un asesor revisará tu pedido»).
-    if (pareceOrdenNoEntendida(ultimo.body)) {
-      await responder(conversationId, `No entendí la orden; no cambié nada.\n\n${AYUDA}`);
-      return true;
-    }
-    return false;
+    // Fuera del modo prueba nada va al bot de ventas, que le contestaría como a un cliente.
+    await responder(
+      conversationId,
+      pareceOrdenNoEntendida(ultimo.body)
+        ? `No entendí la orden; no cambié nada.\n\n${AYUDA}`
+        : "No pude procesar tu mensaje ahora (la IA no respondió). Prueba de nuevo en un momento o usa una orden: «estado 1160», «resumen de hoy». Para probar el bot de ventas escribe *modo prueba*."
+    );
+    return true;
   }
 
   let texto: string;
@@ -1260,6 +1307,194 @@ async function traducirConIA(texto: string, conversationId: string) {
     .reverse()
     .map((m) => `${m.direction === "in" ? "Gerardo" : "CRM"}: ${(m.body || "").replace(/\s+/g, " ").slice(0, 350)}`);
   return traducirOrdenConIA(texto, contexto);
+}
+
+// ---------------------------------------------------------------------------
+// Para el asistente de Gerardo (asistente.ts). Leer es libre; todo cambio queda
+// pendiente de «SI <pedido>» igual que las órdenes escritas a mano.
+
+async function pedidoDeReferencia(ref: string, conversationId: string): Promise<Resolucion> {
+  const limpio = (ref || "").trim();
+  if (!limpio) return { ok: false, texto: "Falta decir qué pedido (número, guía, celular o nombre)." };
+  const cmd = interpretarComando(`estado ${limpio}`);
+  if (!cmd) return { ok: false, texto: `No entendí el pedido «${limpio}».` };
+  return resolverPedido(cmd, conversationId);
+}
+
+/** Ficha completa del pedido con lo que falta para entregar y el chat del cliente. */
+export async function fichaParaAsistente(ref: string, conversationId: string): Promise<string> {
+  const cmd = interpretarComando(`estado ${(ref || "").trim()}`);
+  if (!cmd) return `No entendí el pedido «${ref}».`;
+  const r = await resolverPedido(cmd, conversationId);
+  if (!r.ok) return r.texto;
+  return proponerPara(cmd, r);
+}
+
+/** Últimos mensajes del chat del cliente de un pedido (máx. 25). */
+export async function chatDelPedido(ref: string, conversationId: string, cantidad = 12): Promise<string> {
+  const r = await pedidoDeReferencia(ref, conversationId);
+  if (!r.ok) return r.texto;
+  const p = r.pedido;
+  if (!p.contactId) return `${encabezado(p)} no tiene contacto asociado.`;
+  const filas = await db
+    .select({ body: messages.body, direction: messages.direction, createdAt: messages.createdAt })
+    .from(messages)
+    .innerJoin(conversations, eq(conversations.id, messages.conversationId))
+    .where(eq(conversations.contactId, p.contactId))
+    .orderBy(desc(messages.createdAt))
+    .limit(Math.min(Math.max(cantidad, 1), 25));
+  const lineas = lineasChat(filas.reverse());
+  return lineas.length ? [`Chat de ${encabezado(p)}:`, ...lineas].join("\n") : `${encabezado(p)} no tiene mensajes en el CRM.`;
+}
+
+/**
+ * Pasa una orden estándar («direccion 1160 Mz B Lt 12…», «pagó 1140 179») por el mismo
+ * intérprete y la misma propuesta que una orden escrita a mano. Confirmar, enviar la clave
+ * o cancelar nunca se hace desde aquí: eso lo escribe Gerardo.
+ */
+export async function proponerOrdenEstandar(
+  orden: string,
+  conversationId: string
+): Promise<{ ok: boolean; texto: string; propuesta: boolean }> {
+  const cmd = interpretarComando(orden);
+  if (!cmd) return { ok: false, texto: `«${orden}» no es una orden estándar del CRM. Revisa el formato.`, propuesta: false };
+  if (cmd.tipo === "confirmar" || cmd.tipo === "enviar_clave" || cmd.tipo === "cancelar") {
+    return { ok: false, texto: "Confirmar (SI), enviar la clave (ENVIAR) o cancelar (NO) solo lo puede escribir Gerardo.", propuesta: false };
+  }
+  if (cmd.tipo === "ayuda") return { ok: true, texto: AYUDA, propuesta: false };
+  if (cmd.tipo === "consulta") {
+    const { responderConsultaGeneral } = await import("./consultas");
+    return { ok: true, texto: await responderConsultaGeneral(cmd.consulta ?? "resumen", cmd.periodo ?? "hoy"), propuesta: false };
+  }
+  const texto = await proponer(cmd, conversationId);
+  return { ok: true, texto, propuesta: cmd.tipo !== "estado" };
+}
+
+/** Deja pendiente un mensaje de WhatsApp al cliente del pedido (se envía con «SI <pedido>»). */
+export async function proponerMensajeCliente(ref: string, texto: string, conversationId: string): Promise<string> {
+  const limpio = (texto || "").trim();
+  if (limpio.length < 2) return "Falta el texto del mensaje.";
+  if (limpio.length > 1500) return "El mensaje es muy largo (máx. 1500 caracteres).";
+  const r = await pedidoDeReferencia(ref, conversationId);
+  if (!r.ok) return r.texto;
+  const p = r.pedido;
+  if (!p.contactId) return `${encabezado(p)} no tiene contacto asociado.`;
+  const [conv] = await db
+    .select({ lastInboundAt: conversations.lastInboundAt })
+    .from(conversations)
+    .where(eq(conversations.contactId, p.contactId))
+    .orderBy(desc(conversations.lastMessageAt))
+    .limit(1);
+  if (!conv) return `${encabezado(p)} no tiene chat en el CRM.`;
+  const fueraDeVentana = !conv.lastInboundAt || Date.now() - new Date(conv.lastInboundAt).getTime() > 24 * 3600_000;
+  const n = digitosPedido(p.numeroOrden);
+  await guardarPendiente({ pedidoId: p.id, numeroOrden: p.numeroOrden, monto: null, accion: "mensaje", valor: limpio });
+  return [
+    `✉️ *Mensaje para ${encabezado(p)}*`,
+    "",
+    limpio,
+    "",
+    fueraDeVentana ? "⚠️ Pasaron más de 24 h desde su último mensaje: WhatsApp puede rechazarlo. Si falla te devuelvo el texto." : null,
+    `Responde *SI ${n}* para enviarlo o *NO*.`,
+  ]
+    .filter((l) => l !== null)
+    .join("\n");
+}
+
+/** Deja pendiente pausar o reactivar el bot de ventas en el chat del cliente. */
+export async function proponerBotCliente(ref: string, activar: boolean, conversationId: string): Promise<string> {
+  const r = await pedidoDeReferencia(ref, conversationId);
+  if (!r.ok) return r.texto;
+  const p = r.pedido;
+  if (!p.contactId) return `${encabezado(p)} no tiene contacto asociado.`;
+  const [conv] = await db
+    .select({ aiEnabled: conversations.aiEnabled })
+    .from(conversations)
+    .where(eq(conversations.contactId, p.contactId))
+    .orderBy(desc(conversations.lastMessageAt))
+    .limit(1);
+  const [ct] = await db.select({ aiEnabled: contacts.aiEnabled }).from(contacts).where(eq(contacts.id, p.contactId)).limit(1);
+  const actual = Boolean(conv?.aiEnabled ?? true) && Boolean(ct?.aiEnabled ?? true);
+  if (actual === activar) return `El bot ya está ${activar ? "activo" : "pausado"} con ${encabezado(p)}. No cambié nada.`;
+  const n = digitosPedido(p.numeroOrden);
+  await guardarPendiente({ pedidoId: p.id, numeroOrden: p.numeroOrden, monto: null, accion: "bot", valor: activar ? "on" : "off" });
+  return `🤖 Bot de ventas con *${encabezado(p)}*: ${actual ? "activo" : "pausado"} → *${activar ? "activo" : "pausado"}*. Responde *SI ${n}* para confirmar o *NO*.`;
+}
+
+/** Deja pendiente el distrito del pedido (Lima). */
+export async function proponerDistrito(ref: string, distrito: string, conversationId: string): Promise<string> {
+  const limpio = (distrito || "").trim().slice(0, 80);
+  if (limpio.length < 3) return "Falta el distrito.";
+  const r = await pedidoDeReferencia(ref, conversationId);
+  if (!r.ok) return r.texto;
+  const p = r.pedido;
+  const n = digitosPedido(p.numeroOrden);
+  await guardarPendiente({ pedidoId: p.id, numeroOrden: p.numeroOrden, monto: null, accion: "distrito", valor: limpio });
+  return `📍 *${encabezado(p)}*: distrito ${p.distrito || "sin distrito"} → *${limpio}*. Responde *SI ${n}* para confirmar o *NO*.`;
+}
+
+/** Aplica las acciones que solo propone el asistente. Null si la acción es de otro tipo. */
+async function aplicarAccionAsistente(pend: Pendiente, p: Pedido): Promise<string | null> {
+  if (pend.accion === "distrito" && pend.valor) {
+    await db.update(pedidosOrdenes).set({ distrito: pend.valor, updatedAt: new Date() }).where(eq(pedidosOrdenes.id, p.id));
+    await nota(p, `Distrito del pedido ${p.numeroOrden} cambiado por ${AUTOR}: «${p.distrito || "-"}» → «${pend.valor}».`);
+    if (p.dealId) notificarCambioDealAlErp(p.dealId).catch(() => {});
+    return `✅ Distrito de ${encabezado(p)} actualizado: ${pend.valor}`;
+  }
+
+  if (pend.accion === "bot" && p.contactId) {
+    const activar = pend.valor === "on";
+    await db.update(conversations).set({ aiEnabled: activar }).where(eq(conversations.contactId, p.contactId));
+    if (activar) await db.update(contacts).set({ aiEnabled: true }).where(eq(contacts.id, p.contactId));
+    await nota(p, `[BOT ${activar ? "ACTIVADO" : "PAUSADO"}] por ${AUTOR}.`);
+    return activar
+      ? `✅ Bot de ventas *activo* otra vez con ${encabezado(p)}.`
+      : `✅ Bot de ventas *pausado* con ${encabezado(p)}: ahora le contesta solo el equipo.`;
+  }
+
+  if (pend.accion === "mensaje" && pend.valor && p.contactId) {
+    const [conv] = await db
+      .select({ id: conversations.id })
+      .from(conversations)
+      .where(eq(conversations.contactId, p.contactId))
+      .orderBy(desc(conversations.lastMessageAt))
+      .limit(1);
+    const nombreCliente = (p.contactName || "el cliente").split(" ")[0];
+    const res = conv ? await deliverMessage(conv.id, { text: pend.valor }, "human") : { ok: false, error: "sin_chat" };
+    if (!res.ok) {
+      await nota(p, `[MENSAJE NO ENVIADO] ${AUTOR} pidió enviar un mensaje y WhatsApp no lo entregó (${res.error}).`);
+      return `⚠️ No pude enviárselo a ${nombreCliente} (${res.error === "sin_chat" ? "no tiene chat en el CRM" : "WhatsApp lo rechazó; quizá pasaron más de 24 h desde su último mensaje"}). Mándaselo tú:\n\n${pend.valor}`;
+    }
+    await nota(p, `[MENSAJE ENVIADO] por orden de ${AUTOR}: ${pend.valor.slice(0, 300)}`);
+    return `✅ Mensaje enviado a ${nombreCliente} (${encabezado(p)}).`;
+  }
+
+  return null;
+}
+
+// Modo prueba: los mensajes de Gerardo van al bot de ventas como si fuera un cliente.
+const CLAVE_MODO_PRUEBA = "supervisor_whatsapp_modo_prueba";
+const VIGENCIA_MODO_PRUEBA_MS = 60 * 60_000;
+
+async function modoPruebaActivo(): Promise<boolean> {
+  const [row] = await db.select().from(crmSettings).where(eq(crmSettings.key, CLAVE_MODO_PRUEBA)).limit(1);
+  const desde = Number(row?.value);
+  if (!desde || Date.now() - desde > VIGENCIA_MODO_PRUEBA_MS) return false;
+  // Cada mensaje en modo prueba lo mantiene vivo otra hora.
+  await db.update(crmSettings).set({ value: String(Date.now()) }).where(eq(crmSettings.key, CLAVE_MODO_PRUEBA));
+  return true;
+}
+
+async function cambiarModoPrueba(activar: boolean): Promise<void> {
+  if (!activar) {
+    await db.delete(crmSettings).where(eq(crmSettings.key, CLAVE_MODO_PRUEBA));
+    return;
+  }
+  const value = String(Date.now());
+  await db
+    .insert(crmSettings)
+    .values({ key: CLAVE_MODO_PRUEBA, value })
+    .onConflictDoUpdate({ target: crmSettings.key, set: { value } });
 }
 
 /** Los últimos mensajes del chat del cliente (del más antiguo al más nuevo), para la ficha. */

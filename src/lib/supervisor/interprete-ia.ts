@@ -11,15 +11,8 @@ import { normalizarTraduccion, type TraduccionOrden } from "./traduccion";
  * acción sigue pidiendo «SI 1153» antes de aplicarse. Si la IA no está disponible o
  * falla, se devuelve null y se usa la respuesta de siempre.
  */
-export async function traducirOrdenConIA(
-  texto: string,
-  contexto: string[]
-): Promise<TraduccionOrden | null> {
-  if (!hasOpenRouterKey() || !texto.trim()) return null;
-
-  const prompt = `Eres el asistente interno del CRM de Aliv Perú. Gerardo (dueño y supervisor de pagos) te escribe por WhatsApp. Traduce su ÚLTIMO mensaje a UNA orden estándar del CRM.
-
-ÓRDENES ESTÁNDAR (el <pedido> puede ser el número como 1153 / LEG-1049, la guía Shalom de 8-10 cifras como 104493022, el celular del cliente o su nombre):
+/** Órdenes estándar del CRM: las usa este traductor y el asistente (asistente.ts). */
+export const ORDENES_ESTANDAR = `ÓRDENES ESTÁNDAR (el <pedido> puede ser el número como 1153 / LEG-1049, la guía Shalom de 8-10 cifras como 104493022, el celular del cliente o su nombre):
 - "adelanto <pedido>"            → verificó el Yape/Plin del adelanto de S/20 de un pedido de provincia
 - "pagó <pedido> <monto>"        → el cliente pagó el saldo (monto en soles). "pago completo <pedido>" si dice que pagó todo sin monto
 - "flete <pedido> <monto>"       → flete Shalom pagado
@@ -37,7 +30,17 @@ export async function traducirOrdenConIA(
 - "SI <pedido>" / "ENVIAR <pedido>" / "NO" → confirma, envía la clave o cancela lo que se le propuso
 - "ayuda"                        → pregunta qué órdenes existen
 
-CONSULTAS GENERALES (sin pedido): "resumen de hoy" (o "resumen de ayer", "resumen de la semana", "resumen del mes"), "quién me debe", "adelantos pendientes", "por enviar", "en camino", "pedidos por confirmar".
+CONSULTAS GENERALES (sin pedido): "resumen de hoy" (o "resumen de ayer", "resumen de la semana", "resumen del mes"), "quién me debe", "adelantos pendientes", "por enviar", "en camino", "pedidos por confirmar".`;
+
+export async function traducirOrdenConIA(
+  texto: string,
+  contexto: string[]
+): Promise<TraduccionOrden | null> {
+  if (!hasOpenRouterKey() || !texto.trim()) return null;
+
+  const prompt = `Eres el asistente interno del CRM de Aliv Perú. Gerardo (dueño y supervisor de pagos) te escribe por WhatsApp. Traduce su ÚLTIMO mensaje a UNA orden estándar del CRM.
+
+${ORDENES_ESTANDAR}
 
 REGLAS:
 - Si el mensaje no dice el pedido (ni guía, celular o nombre) pero se refiere al cliente del último aviso del chat (por ejemplo "confirma ese adelanto", "ya pagó"), usa el número de pedido del aviso más reciente.

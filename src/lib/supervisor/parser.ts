@@ -373,6 +373,22 @@ export function interpretarComando(texto: string | null | undefined): Comando | 
   return null;
 }
 
+/** «modo prueba» (el bot de ventas le contesta como a un cliente) o «modo asistente». */
+export function interpretarModo(texto: string | null | undefined): "prueba" | "asistente" | null {
+  if (!texto) return null;
+  const n = normalizarTexto(texto).replace(/[.]+$/, "");
+  if (/^(modo (prueba|cliente|ventas|bot de ventas)|probar (el )?bot( de ventas)?)$/.test(n)) return "prueba";
+  if (/^(modo asistente|salir (del )?modo prueba|fin (de la )?prueba|termine (la )?prueba)$/.test(n)) return "asistente";
+  return null;
+}
+
+/** «sí», «ok», «dale» sueltos: no confirman nada sin el número del pedido. */
+export function esAfirmacionSuelta(texto: string | null | undefined): boolean {
+  if (!texto) return false;
+  const n = normalizarTexto(texto).replace(/[.]+/g, " ").trim();
+  return /^(si|ok|okay|okey|dale|ya|listo|confirmo|confirmado|de acuerdo|hazlo|correcto|perfecto|va|claro|si hazlo|si dale|si confirmo|si por favor)$/.test(n);
+}
+
 /** «pedido 1160», «orden #1160», «#1160», «LEG-1066», «CHAT-0001». */
 const RE_PEDIDO_EXPLICITO = /(\b(pedido|orden|order)\s*(n[°ºo.]?\s*)?#?\s*\d{3,6}\b|#\s?\d{3,6}\b|\b(leg|chat|aliv)-\d{3,6}\b)/i;
 
