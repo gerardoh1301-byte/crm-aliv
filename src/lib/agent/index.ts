@@ -4,6 +4,7 @@ import { activities, agentJobs, contacts, conversations, messages } from "@/db/s
 import { and, desc, eq, gte, inArray, or, sql } from "drizzle-orm";
 import { decidirReintento, esMensajeCortesia, MENSAJE_CORTESIA, VENTANA_FALLAS_MS } from "./reintento";
 import { enqueueAgentJob } from "./queue";
+import { corregirImagenSaliente } from "./etiqueta-imagen";
 import { pausaPorHumano } from "./toques";
 import { ultimoMensajeHumanoDesdeTelefono } from "./toques-servidor";
 import { deliverMessage, getConversationRow } from "@/lib/channels/deliver";
@@ -735,7 +736,8 @@ async function loadHistory(conversationId: string): Promise<CollapsedHistory> {
     // «Disculpa la demora» no es una respuesta: el reintento tiene que contestar la pregunta.
     if (esMensajeCortesia(m.direction, m.body)) continue;
     const role: "user" | "assistant" = m.direction === "in" ? "user" : "assistant";
-    const text = m.body?.trim();
+    // E7: fotos viejas del equipo guardadas como «enviada por el cliente».
+    const text = corregirImagenSaliente(m.direction, m.body)?.trim();
     if (!text) continue;
     // Evitar bucle infinito cuando llegan reacciones, stickers o eventos "[Unsupported message]"
     // si ya hubo atención previa en el chat.

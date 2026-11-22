@@ -161,3 +161,14 @@ describe("V6: embudo por fuente", () => {
     expect(r.sin_valor.enviados).toBe(1);
   });
 });
+
+describe("E7: las fotos que manda el equipo no son del cliente", () => {
+  it("corrige la etiqueta vieja solo en mensajes salientes", async () => {
+    const { corregirImagenSaliente } = await import("@/lib/agent/etiqueta-imagen");
+    const vieja = "📷 [Imagen enviada por el cliente — NO ES COMPROBANTE DE PAGO: empaque de NAC600]";
+    expect(corregirImagenSaliente("out", vieja)).toBe("📷 [Imagen que enviamos nosotros — NO ES COMPROBANTE DE PAGO: empaque de NAC600]");
+    expect(corregirImagenSaliente("in", vieja)).toBe(vieja);
+    expect(corregirImagenSaliente("out", "¿Te lo envío a Lima?")).toBe("¿Te lo envío a Lima?");
+    expect(corregirImagenSaliente("out", null)).toBeNull();
+  });
+});

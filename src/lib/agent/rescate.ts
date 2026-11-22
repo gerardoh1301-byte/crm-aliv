@@ -14,6 +14,7 @@ import { esPedidoDeProvincia } from "@/lib/pedidos/adelanto";
 import { createChatCompletionWithFallback, hasOpenRouterKey, getAgentModel } from "./openrouter";
 import { limpiarFormatoWhatsApp } from "./formato";
 import { abandonoEnCurso } from "@/lib/abandonos/reglas";
+import { corregirImagenSaliente } from "./etiqueta-imagen";
 import {
   clasificarObjecionCliente,
   elegirValorRescate,
@@ -862,6 +863,8 @@ export async function auditarChatsAbandonados(opts?: { limite?: number; forzarHo
         .orderBy(desc(messages.createdAt))
         .limit(8);
 
+      // E7: lo saliente siempre es nuestro, aunque esté guardado como «enviada por el cliente».
+      for (const m of ultimosMensajes) m.body = corregirImagenSaliente(m.direction, m.body);
       const ultimoMsg = ultimosMensajes[0] ?? null;
 
       // Verificar si ya existe una actividad de seguimiento pendiente o programada recientemente
