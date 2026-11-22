@@ -21,7 +21,13 @@ const geminiClients = new Map<string, OpenAI>();
 let groqClient: OpenAI | null = null;
 let openRouterClient: OpenAI | null = null;
 
+/**
+ * Groq queda apagado por defecto (auditoría 21/11): retiró los Llama 3.x (404) y su plan
+ * gratis rechaza el prompt (413), así que en vez de salvar el turno lo hacía fallar.
+ * Se vuelve a encender con GROQ_ENABLED=on si algún día hay un plan que lo admita.
+ */
 function getGroqClient(): OpenAI | null {
+  if (process.env.GROQ_ENABLED !== "on") return null;
   const apiKey = process.env.GROQ_API_KEY;
   if (!apiKey) return null;
   if (!groqClient) {
@@ -79,11 +85,11 @@ export function getOpenRouterClient(): OpenAI {
   const gemini = getGeminiClient();
   if (gemini) return gemini;
 
-  const groq = getGroqClient();
-  if (groq) return groq;
-
   const openRouter = getOpenRouterClientOnly();
   if (openRouter) return openRouter;
+
+  const groq = getGroqClient();
+  if (groq) return groq;
 
   throw new Error("Ni GEMINI_API_KEYS ni GROQ_API_KEY ni OPENROUTER_API_KEY configuradas");
 }
@@ -159,7 +165,7 @@ export async function createChatCompletionWithFallback(
   // ("Request too large"), el turno no se reintentó y el cliente recibió "Disculpa la demora".
   let geminiErr: unknown = null;
 
-  // 1. Probar con hasta 3 claves del pool de Gemini y reservar al menos 15s para Groq/OpenRouter.
+  // 1. Probar con hasta 3 claves del pool de Gemini y reservar al menos 15s para el respaldo (OpenRouter).
   // Si el modelo principal se satura o no contesta a tiempo, los intentos siguientes usan el
   // modelo lite: repetir el mismo modelo saturado con otra clave solo gastaba el presupuesto
   // y el cliente recibía "Disculpa la demora" (Groq gratis no acepta un prompt de ~22k tokens).
@@ -171,7 +177,7 @@ export async function createChatCompletionWithFallback(
   for (let attempt = 0; attempt < maxAttempts; attempt++) {
     // Si quedan menos de 15s de presupuesto, salir de inmediato a Groq/OpenRouter
     if (deadline - Date.now() < 15_000) {
-      console.warn("[agent-llm] Menos de 15s de presupuesto restante. Conmutando a Groq/OpenRouter...");
+      console.warn("[agent-llm] Menos de 15s de presupuesto restante. Conmutando al respaldo (OpenRouter)...");
       break;
     }
 
@@ -215,7 +221,7 @@ export async function createChatCompletionWithFallback(
 
         for (const fallbackModel of GEMINI_FALLBACK_MODELS) {
           if (fallbackModel === requestedModel) continue;
-          if (deadline - Date.now() < 12_000) break; // reservar para Groq
+          if (deadline - Date.now() < 12_000) break; // reservar para el respaldo
           const fbOpts = buildReqOptions();
           if (!fbOpts) break;
           try {
@@ -283,7 +289,34 @@ export async function createChatCompletionWithFallback(
     }
   }
 
-  // 2. Si las claves de Gemini fallaron o agotaron su ventana, conmutar a Groq Cloud dentro del presupuesto de 45s
+  // 2. Si las claves de Gemini fallaron, respaldo pagado en OpenRouter dentro del límite de 45s.
+  //    Los modelos se pueden cambiar sin desplegar con OPENROUTER_MODELS="modelo1,modelo2".
+  const openRouter = getOpenRouterClientOnly();
+  if (openRouter) {
+    const openRouterCandidates = (process.env.OPENROUTER_MODELS || "google/gemini-2.5-flash,openai/gpt-4o-mini")
+      .split(",")
+      .map((m) => m.trim())
+      .filter(Boolean);
+    for (const orModel of openRouterCandidates) {
+      const reqOptions = buildReqOptions();
+      if (!reqOptions) break;
+      try {
+        console.info(`[agent-llm] Intentando failover OpenRouter con ${orModel}`);
+        return await llamar("openrouter", openRouter, 
+          {
+            ...params,
+            model: orModel,
+          },
+          reqOptions
+        );
+      } catch (orErr) {
+        lastErr = orErr;
+        console.warn(`[agent-llm] Falló OpenRouter ${orModel}:`, orErr instanceof Error ? orErr.message : orErr);
+      }
+    }
+  }
+
+  // 3. Groq solo si está encendido a propósito (GROQ_ENABLED=on).
   const groq = getGroqClient();
   if (groq) {
     // Groq retiró los Llama 3.x (devuelven 404). Lista vigente verificada el 19/11/2026 con
@@ -307,33 +340,6 @@ export async function createChatCompletionWithFallback(
       } catch (gErr) {
         lastErr = gErr;
         console.warn(`[agent-llm] Falló Groq ${gModel}:`, gErr instanceof Error ? gErr.message : gErr);
-      }
-    }
-  }
-
-  // 3. Si Gemini y Groq fallaron o no están, conmutar a OpenRouter dentro del límite de 45s
-  const openRouter = getOpenRouterClientOnly();
-  if (openRouter) {
-    const openRouterCandidates = [
-      "google/gemini-2.5-flash",
-      "google/gemini-flash-1.5",
-      "meta-llama/llama-3.3-70b-instruct",
-    ];
-    for (const orModel of openRouterCandidates) {
-      const reqOptions = buildReqOptions();
-      if (!reqOptions) break;
-      try {
-        console.info(`[agent-llm] Intentando failover OpenRouter con ${orModel}`);
-        return await llamar("openrouter", openRouter, 
-          {
-            ...params,
-            model: orModel,
-          },
-          reqOptions
-        );
-      } catch (orErr) {
-        lastErr = orErr;
-        console.warn(`[agent-llm] Falló OpenRouter ${orModel}`);
       }
     }
   }

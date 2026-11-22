@@ -1,7 +1,11 @@
 import type OpenAI from "openai";
 import { db } from "@/db";
-import { activities, contacts, conversations, messages } from "@/db/schema";
-import { and, desc, eq } from "drizzle-orm";
+import { activities, agentJobs, contacts, conversations, messages } from "@/db/schema";
+import { and, desc, eq, gte, inArray, or, sql } from "drizzle-orm";
+import { decidirReintento, esMensajeCortesia, MENSAJE_CORTESIA, VENTANA_FALLAS_MS } from "./reintento";
+import { enqueueAgentJob } from "./queue";
+import { pausaPorHumano } from "./toques";
+import { ultimoMensajeHumanoDesdeTelefono } from "./toques-servidor";
 import { deliverMessage, getConversationRow } from "@/lib/channels/deliver";
 import { isChannel, type Channel } from "@/lib/channels/types";
 import { displayName, listMembers } from "@/lib/team";
@@ -13,7 +17,7 @@ import { getAgentConfig } from "./config";
 import { renderContextoDetallado, renderSystemPrompt } from "./prompt";
 import { exigirDatosEnvio, type RequisitosShalom } from "./datos-envio";
 import { esSaludoAutomatico, productoDelAnuncio, renderOrigenAnuncio } from "./origen-anuncio";
-import { renderGuionVenta } from "./guion-venta";
+import { asegurarPreguntaDeAvance, renderGuionVenta } from "./guion-venta";
 import { detectarSenalesPrompt } from "./prompt-bloques";
 import { MARCA_COD_PROVINCIA } from "@/lib/aliclik/cobertura-cod";
 import { corregirFrasesSalud } from "./filtro-salud";
@@ -37,7 +41,6 @@ const HERRAMIENTAS_SOLO_REGISTRO = new Set([
 const HISTORY_LIMIT = 14;
 const REINTENTO_MS = 20_000;
 const LIMITE_TOTAL_RESPUESTA_MS = 45_000; // A8: límite total de 45s por respuesta
-const MENSAJE_CORTESIA = "Disculpa la demora 🙏 En unos minutos te respondo por aquí.";
 
 export interface RunAgentResult {
   ok: boolean;
@@ -112,6 +115,23 @@ async function executeAgentTurn(
   if (collapsed === "empty") return { ok: false, reason: "no_history" };
   if (collapsed === "no_user") return { ok: false, reason: "no_user_messages" };
   if (collapsed === "already_replied") return { ok: false, reason: "last_message_is_assistant" };
+
+  // E6: si una persona del equipo está escribiendo desde el teléfono, el bot no contesta
+  // encima. Deja un reintento para cuando termine la pausa: si para entonces nadie le
+  // respondió al cliente, contesta el bot (si alguien respondió, el historial lo frena).
+  if (!esNumeroEntrenador(contact.phone)) {
+    const pausa = pausaPorHumano(await ultimoMensajeHumanoDesdeTelefono(conversation.id), new Date());
+    if (pausa.pausado) {
+      const [ultimoCliente] = await db
+        .select({ id: messages.id })
+        .from(messages)
+        .where(and(eq(messages.conversationId, conversation.id), eq(messages.direction, "in")))
+        .orderBy(desc(messages.createdAt))
+        .limit(1);
+      if (ultimoCliente) await enqueueAgentJob(contact.id, ultimoCliente.id, conversation.id, pausa.reanudarEnMs);
+      return { ok: true, reason: "humano_atendiendo" };
+    }
+  }
 
   const tools = await getEnabledToolDefinitions(config.enabledTools);
   const puedeAsignar = tools.some((t) => t.type === "function" && t.function.name === "asignar_asesor");
@@ -361,6 +381,8 @@ async function executeAgentTurn(
         }).catch((err) => console.warn("[agent] aviso a supervisores falló:", err));
       }
 
+      reply = conPreguntaDeAvance(reply, guion, executedTools, checkOrden.bloqueado);
+
       const convMeta = (conversation.metadata as Record<string, unknown> | null) ?? {};
       if (convMeta.copilotMode === true) {
         // En modo asistido: NO despachar directo a WhatsApp. Guardar sugerencia para aprobación humana.
@@ -437,6 +459,7 @@ async function executeAgentTurn(
           db.update(conversations).set({ needsHuman: true, updatedAt: new Date() }).where(eq(conversations.id, conversation.id)),
         ]);
       }
+      textoFinal = conPreguntaDeAvance(textoFinal, guion, executedTools, checkFinal.bloqueado);
       const convMetaFinal = (conversation.metadata as Record<string, unknown> | null) ?? {};
       if (convMetaFinal.copilotMode === true) {
         const updatedMeta = {
@@ -521,6 +544,22 @@ async function executeAgentTurn(
   }
 }
 
+/**
+ * V2 (auditoría 21/11): si la respuesta no tiene pregunta y el chat está en venta, se agrega
+ * la pregunta de avance de la etapa. No aplica si en este turno se registró el pedido, se
+ * derivó a un asesor o una guarda reemplazó la respuesta.
+ */
+const HERRAMIENTAS_SIN_PREGUNTA = ["crear_pedido_chat", "confirmar_pedido", "derivar_asesor", "avisar_asesor", "solicitar_soporte_pedido"];
+function conPreguntaDeAvance(
+  texto: string,
+  guion: { etapa: Parameters<typeof asegurarPreguntaDeAvance>[1]["etapa"]; producto: "nac600" | "termix" | null; ultimoCliente: string },
+  herramientas: string[],
+  intervenida: boolean
+): string {
+  if (intervenida || herramientas.some((h) => HERRAMIENTAS_SIN_PREGUNTA.includes(h))) return texto;
+  return asegurarPreguntaDeAvance(texto, guion);
+}
+
 const PEDIDO_RESPUESTA_TEXTO =
   "Tu turno anterior terminó sin texto. Escribe ahora tu respuesta al último mensaje del cliente, en texto, siguiendo tus reglas.";
 
@@ -537,6 +576,36 @@ async function avisarSinRespuesta(
   toolCalls: number,
   detalle?: string
 ): Promise<RunAgentResult> {
+  // E3: antes de avisar al equipo, el bot reintenta solo (3 y 10 min). La cortesía sale
+  // una vez, en la primera falla.
+  // Si la IA cayó a mitad de un turno que ya ejecutó herramientas, no se repite el turno
+  // (podría duplicar acciones): se avisa como antes.
+  const fallasPrevias = await contarFallasRecientes(conversationId);
+  const decision =
+    reason.startsWith("llm_failure") && toolCalls > 0 ? ({ accion: "avisar_equipo" } as const) : decidirReintento(fallasPrevias);
+  if (decision.accion === "reintentar") {
+    try {
+      if (decision.cortesia) await deliverMessage(conversationId, { text: MENSAJE_CORTESIA }, "agent");
+      const [ultimoCliente] = await db
+        .select({ id: messages.id })
+        .from(messages)
+        .where(and(eq(messages.conversationId, conversationId), eq(messages.direction, "in")))
+        .orderBy(desc(messages.createdAt))
+        .limit(1);
+      if (ultimoCliente) {
+        await enqueueAgentJob(contact.id, ultimoCliente.id, conversationId, decision.enMs);
+        await db.insert(activities).values({
+          type: "note",
+          description: `[BOT REINTENTA] No pudo responder (${categoria}); vuelve a intentar en ${Math.round(decision.enMs / 60_000)} min.`,
+          contactId: contact.id,
+        });
+        return { ok: false, reason, toolCalls };
+      }
+    } catch (err) {
+      console.warn("[agent] No se pudo programar el reintento:", err);
+    }
+  }
+
   try {
     const [ultimo] = await db
       .select({ body: messages.body, direction: messages.direction })
@@ -589,6 +658,25 @@ async function avisarSinRespuesta(
   return { ok: false, reason, toolCalls };
 }
 
+/** Turnos del bot de este chat que no lograron responder en los últimos 30 min. */
+async function contarFallasRecientes(conversationId: string): Promise<number> {
+  const [row] = await db
+    .select({ n: sql<number>`count(*)::int` })
+    .from(agentJobs)
+    .where(
+      and(
+        eq(agentJobs.conversationId, conversationId),
+        eq(agentJobs.status, "failed"),
+        gte(agentJobs.updatedAt, new Date(Date.now() - VENTANA_FALLAS_MS)),
+        or(
+          sql`${agentJobs.error} like 'llm_failure%'`,
+          inArray(agentJobs.error, ["empty_reply", "max_tool_rounds_exceeded"])
+        )
+      )
+    );
+  return row?.n ?? 0;
+}
+
 /**
  * Compatibilidad: resuelve la conversacion mas reciente del contacto y delega. Lo usan
  * los jobs viejos que solo traen contacto.
@@ -632,7 +720,11 @@ async function loadHistory(conversationId: string): Promise<CollapsedHistory> {
 
   const orderedRows = [...rows].reverse();
   const hayRespuestaPrevia = orderedRows.some(
-    (m) => m.direction === "out" && !esSaludoAutomatico(m.direction, m.origin, m.body) && Boolean(m.body?.trim())
+    (m) =>
+      m.direction === "out" &&
+      !esSaludoAutomatico(m.direction, m.origin, m.body) &&
+      !esMensajeCortesia(m.direction, m.body) &&
+      Boolean(m.body?.trim())
   );
 
   const collapsed: Array<{ role: "user" | "assistant"; content: string }> = [];
@@ -640,6 +732,8 @@ async function loadHistory(conversationId: string): Promise<CollapsedHistory> {
     // El saludo automatico de WhatsApp Business no cuenta como respuesta: si lo
     // dejaramos, el primer "Quiero mas informacion" del anuncio quedaria sin contestar.
     if (esSaludoAutomatico(m.direction, m.origin, m.body)) continue;
+    // «Disculpa la demora» no es una respuesta: el reintento tiene que contestar la pregunta.
+    if (esMensajeCortesia(m.direction, m.body)) continue;
     const role: "user" | "assistant" = m.direction === "in" ? "user" : "assistant";
     const text = m.body?.trim();
     if (!text) continue;

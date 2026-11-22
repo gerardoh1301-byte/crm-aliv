@@ -1,7 +1,7 @@
 import "server-only";
 import { db } from "@/db";
-import { contacts, conversations } from "@/db/schema";
-import { eq } from "drizzle-orm";
+import { contacts, conversations, whatsappTemplates } from "@/db/schema";
+import { and, eq, sql } from "drizzle-orm";
 import { deliverMessage } from "@/lib/channels/deliver";
 
 import {
@@ -40,6 +40,28 @@ export function esNumeroEntrenador(phone: string | null | undefined): boolean {
   const digits = normalizarTelefono(phone);
   // Revisa terminaciones de 9 dígitos para Perú
   return SUPERVISORES_DIGITOS.some((d) => digits.endsWith(d));
+}
+
+/**
+ * Plantilla de los avisos internos. `aliv_alerta_supervisor` quedó aprobada como MARKETING y
+ * Meta la bloquea por el límite de marketing (131049): fuera de las 24 h los avisos no
+ * llegaban. `aliv_aviso_interno` es la misma plantilla como UTILITY; se usa apenas figure
+ * aprobada en la última sincronización con Meta (mismos 3 parámetros: título, cliente, detalle).
+ */
+export const PLANTILLA_AVISO_UTILITY = "aliv_aviso_interno";
+export const PLANTILLA_AVISO_ANTERIOR = "aliv_alerta_supervisor";
+
+async function plantillaDeAviso(): Promise<string> {
+  try {
+    const [row] = await db
+      .select({ name: whatsappTemplates.name })
+      .from(whatsappTemplates)
+      .where(and(eq(whatsappTemplates.name, PLANTILLA_AVISO_UTILITY), sql`upper(${whatsappTemplates.status}) = 'APPROVED'`))
+      .limit(1);
+    return row ? PLANTILLA_AVISO_UTILITY : PLANTILLA_AVISO_ANTERIOR;
+  } catch {
+    return PLANTILLA_AVISO_ANTERIOR;
+  }
 }
 
 export interface AlertaSupervisorInput {
@@ -112,6 +134,7 @@ export async function notificarSupervisoresCritico(input: AlertaSupervisorInput)
 
   // Buscar si existen conversaciones activas con los supervisores para enviarles el mensaje por WhatsApp
   const destinos = destinatariosAviso(input.tipo).map((d) => `+51${d}`);
+  const nombrePlantilla = await plantillaDeAviso();
   for (const supRaw of destinos) {
     try {
       const [supContact] = await db
@@ -134,7 +157,7 @@ export async function notificarSupervisoresCritico(input: AlertaSupervisorInput)
             {
               text: mensajeAlerta,
               template: {
-                name: "aliv_alerta_supervisor",
+                name: nombrePlantilla,
                 language: "es",
                 params: [encTitle, clienteStr, detallePlantilla],
                 previewText: mensajeAlerta,

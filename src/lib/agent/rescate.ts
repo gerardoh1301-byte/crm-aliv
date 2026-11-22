@@ -902,6 +902,12 @@ export async function auditarChatsAbandonados(opts?: { limite?: number; forzarHo
         await marcarRevisado(c.contactId, `Sin envío (toque ${pasada === "primero" ? 1 : 2}): ${envio.motivo}.`);
         continue;
       }
+      // E6: tope de 3 mensajes nuestros seguidos sin respuesta (bot, equipo y automáticos).
+      const { puedeEnviarToque } = await import("./toques-servidor");
+      if (!(await puedeEnviarToque(c.convId))) {
+        await marcarRevisado(c.contactId, `Sin envío (toque ${pasada === "primero" ? 1 : 2}): ya hay 3 mensajes nuestros sin respuesta.`);
+        continue;
+      }
 
       // Primer toque: auditoría contextual con IA. Segundo toque: mensaje corto y fijo
       // (la IA ya tuvo su oportunidad; aquí solo se ofrece cerrar o se despide).

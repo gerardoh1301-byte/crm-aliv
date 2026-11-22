@@ -146,6 +146,12 @@ export async function procesarSeguimientos(opts: { ahora?: Date; limite?: number
 
     const pideDatos = /pas(o|ar)|dato|direcci|dni|yape|captura|ubicaci/i.test(a.description);
     const texto = mensajeSeguimiento(contact?.name, pideDatos ? "datos" : "general");
+    // E6: tope de 3 mensajes nuestros seguidos sin respuesta (bot, equipo y automáticos).
+    const { puedeEnviarToque } = await import("./toques-servidor");
+    if (!(await puedeEnviarToque(conv!.id))) {
+      await cerrar("ya hay 3 mensajes nuestros sin respuesta");
+      continue;
+    }
     const entrega = await deliverMessage(conv!.id, { text: texto }, "agent");
     if (!entrega.ok) {
       await cerrar(`no se pudo enviar: ${entrega.error ?? "error"}`);

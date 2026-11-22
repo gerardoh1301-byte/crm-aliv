@@ -33,6 +33,7 @@ const ENDPOINTS = [
 
 declare global {
   var __builderBarridos: ReturnType<typeof setInterval> | undefined;
+  var __builderBarridoEnCurso: boolean | undefined;
 }
 
 export function iniciarBarridos() {
@@ -48,6 +49,22 @@ export function iniciarBarridos() {
   const base = `http://127.0.0.1:${process.env.PORT || 3000}`;
 
   const correr = async () => {
+    // E5: una vuelta puede tardar más que el intervalo (10 rutas de hasta 60 s). Si la
+    // anterior sigue, esta se salta: dos vueltas a la vez podían mandar dos veces el mismo
+    // rescate o mensaje de posventa.
+    if (globalThis.__builderBarridoEnCurso) {
+      console.warn("[barridos] la vuelta anterior sigue en curso; se omite esta");
+      return;
+    }
+    globalThis.__builderBarridoEnCurso = true;
+    try {
+      await correrRutas();
+    } finally {
+      globalThis.__builderBarridoEnCurso = false;
+    }
+  };
+
+  const correrRutas = async () => {
     for (const ruta of ENDPOINTS) {
       try {
         const res = await fetch(base + ruta, {

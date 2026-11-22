@@ -151,6 +151,99 @@ const GUION_ETAPA: Record<EtapaVenta, string> = {
 const PRIMER_MENSAJE_CORTO =
   "PRUEBA A/B (variante B): tu primera respuesta tiene como MÁXIMO 350 caracteres y 3 líneas. Contenido: saludo con su nombre si lo tienes, UN beneficio en palabras simples, el precio del pack recomendado (NAC600: 3 frascos *S/199*; Termix: 2 tobilleras *S/139*), \"envío gratis\" y UNA pregunta fácil de contestar. Nada de listas de precios completas, links, ni explicación del adelanto de provincia en este primer mensaje: eso va después, cuando lo pregunte o cuando ya eligió. Esta instrucción manda sobre cualquier modelo de primera respuesta más largo que aparezca antes.";
 
+// ---------------------------------------------------------------------------
+// Cierre (auditoría 21/11, V1, V2 y V4)
+
+function sinTildes(t: string): string {
+  return t.toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "");
+}
+
+/**
+ * El cliente ya decidió: «deseo comprar 3», «quiero 2», «cómo hago el pedido», «me lo
+ * separas». Antes el bot lo trataba como una consulta más (preguntaba el producto, repetía
+ * la oferta) y la venta se enfriaba.
+ */
+export function detectarSenalCompra(ultimoCliente: string): boolean {
+  const t = sinTildes(ultimoCliente);
+  if (!t.trim()) return false;
+  if (/\b(no (quiero|deseo|me interesa)|por ahora no|ahora no)\b/.test(t)) return false;
+  return (
+    /\b(quiero|quisiera|deseo|me llevo|lo pido|la pido|los pido|las pido|separa(me|melo|mela)?|reservame|lo compro|la compro|mandame|enviame|me lo envias|me la envias)\b.{0,40}\b(\d|uno|una|dos|tres|frascos?|tobilleras?|pack|comprar|pedido|pedir|llevar)/.test(t) ||
+    /\b(quiero|deseo|quisiera) (comprar|pedir|hacer (el|un|mi) pedido|llevarlo|llevarla)\b/.test(t) ||
+    /\bcomo (hago|hago para|puedo) (el |un |mi )?(pedido|pedir|comprar|compro)\b/.test(t) ||
+    /\b(lo|la|los|las) (quiero|compro)\b/.test(t)
+  );
+}
+
+/** El cliente cierra la puerta («gracias, por ahora no», «no tengo dinero»): no se le empuja. */
+export function esRechazo(ultimoCliente: string): boolean {
+  const t = sinTildes(ultimoCliente);
+  return /\b(por ahora no|ahora no|no gracias|no me interesa|no estoy interesad[oa]|no tengo (dinero|plata)|ya no|no por el momento|mas adelante|despues le aviso|yo le aviso|yo te aviso|no me escriban|no me esten escribiendo|dejen de escribir)\b/.test(t);
+}
+
+function nombreProducto(p: "nac600" | "termix" | null): string {
+  return p === "termix" ? "Termix Tobillera" : p === "nac600" ? "NAC600 + NAD+" : "";
+}
+
+function modoCierre(producto: "nac600" | "termix" | null): string {
+  return [
+    "MODO CIERRE: el cliente YA DECIDIÓ comprar. En ESTE mensaje cierras, no vuelves a vender (esto manda sobre el orden paso a paso de la etapa):",
+    producto
+      ? `- El producto es *${nombreProducto(producto)}*: NO le preguntes cuál quiere.`
+      : "- Si no sabes el producto, pregúntalo dentro del mismo mensaje en que pides los datos («¿Es el NAC600 para el hígado o la Termix para tobillos?»), no en un mensaje aparte.",
+    "- Si dijo una cantidad, ese es el pack (3 = 3 frascos o 3 tobilleras) con su precio oficial; confírmalo en media línea.",
+    "- Pide TODOS los datos que faltan en un solo mensaje. Lima o ciudad con contra entrega: nombre completo, dirección con número y una referencia. Provincia con Shalom: propón la agencia Shalom de su ciudad y pide nombre completo y DNI para la guía; el adelanto de S/20 va cuando confirme la agencia.",
+    "- Nada de beneficios, listas de precios ni links ahora. Máximo 4 líneas.",
+    "- En cuanto tengas los datos, registra el pedido con crear_pedido_chat en ese mismo turno.",
+  ].join("\n");
+}
+
+const PRIMER_CONTACTO_SIN_PRODUCTO =
+  "No sabes qué producto vio (escribió sin anuncio, por ejemplo desde la web). NO mandes el menú de los dos productos ni preguntes «¿cuál te interesa?». Pregunta por su necesidad en una línea, por ejemplo: «¡Hola! 👋 ¿Lo buscas para cuidar tu hígado o para el dolor y cansancio de tobillos?». Con su respuesta ya sabes el producto. Esta instrucción manda sobre cualquier modelo de primera respuesta que aparezca antes.";
+
+/**
+ * Pregunta que hace avanzar la venta según la etapa. Antes solo el 49 % de las respuestas
+ * terminaba en pregunta, y un mensaje sin pregunta deja al cliente sin nada que contestar.
+ */
+export function preguntaDeAvance(etapa: EtapaVenta, producto: "nac600" | "termix" | null): string | null {
+  switch (etapa) {
+    case "primer_contacto":
+    case "consulta":
+      return producto ? "¿Te lo enviamos a Lima o a provincia? 😊" : "¿Lo buscas para el hígado o para los tobillos? 😊";
+    case "cotizado":
+      return producto === "termix"
+        ? "¿Te separo el par de tobilleras con envío gratis?"
+        : producto === "nac600"
+          ? "¿Te separo los 3 frascos con envío gratis?"
+          : "¿Cuál te separo con envío gratis?";
+    case "datos_lima":
+      return "¿Me confirmas tu dirección con número y una referencia?";
+    case "datos_provincia":
+      return "¿Qué agencia Shalom te queda más cerca?";
+    default:
+      return null;
+  }
+}
+
+const RE_DESPEDIDA = /(que tengas|aqu[ií] estaremos|respetamos tu decisi[oó]n|cuando gustes|a tu disposici[oó]n|buenas noches|feliz (d[ií]a|tarde|noche)|bendiciones)/i;
+
+/**
+ * Si la respuesta del bot no tiene ninguna pregunta y el chat está en venta, se agrega la
+ * pregunta de avance de la etapa. No toca despedidas, rechazos, pedidos ya registrados ni
+ * la etapa de adelanto (ahí el bot espera la captura).
+ */
+export function asegurarPreguntaDeAvance(
+  respuesta: string,
+  e: { etapa: EtapaVenta; producto: "nac600" | "termix" | null; ultimoCliente: string }
+): string {
+  const limpio = respuesta.trim();
+  if (!limpio || limpio.includes("?")) return respuesta;
+  if (esRechazo(e.ultimoCliente) || RE_DESPEDIDA.test(limpio)) return respuesta;
+  const pregunta = preguntaDeAvance(e.etapa, e.producto);
+  if (!pregunta) return respuesta;
+  return `${limpio}\n\n${pregunta}`;
+}
+
 export interface EntradaGuion {
   conversationId: string;
   historial: MensajeChat[];
@@ -165,6 +258,9 @@ export interface Guion {
   situacion: SituacionVenta | null;
   variante: VarianteAB;
   bloque: string;
+  producto: "nac600" | "termix" | null;
+  senalCompra: boolean;
+  ultimoCliente: string;
 }
 
 /** Bloque para el final del system prompt. */
@@ -177,8 +273,13 @@ export function renderGuionVenta(e: EntradaGuion): Guion {
   const producto = detectarProducto(e.historial, e.productoAnuncio);
   const variante = varianteAB(e.conversationId);
 
+  const textoCliente = texto(ultimoCliente?.content);
+  const senalCompra = etapa !== "con_pedido" && detectarSenalCompra(textoCliente);
+
   const partes = ["\n\n# GUION PARA ESTE MENSAJE (lo más importante ahora)", `Etapa: ${etapa}. ${GUION_ETAPA[etapa]}`];
-  if (etapa === "primer_contacto" && variante === "B") partes.push(PRIMER_MENSAJE_CORTO);
+  if (senalCompra) partes.push(modoCierre(producto));
+  else if (etapa === "primer_contacto" && !producto) partes.push(PRIMER_CONTACTO_SIN_PRODUCTO);
+  else if (etapa === "primer_contacto" && variante === "B") partes.push(PRIMER_MENSAJE_CORTO);
 
   if (etapa !== "con_pedido") {
     const ejemplos = elegirEjemplos(etapa, situacion, producto);
@@ -189,5 +290,5 @@ export function renderGuionVenta(e: EntradaGuion): Guion {
       for (const ej of ejemplos) partes.push(`- Cliente: "${ej.cliente}"\n  Tú: "${ej.respuesta}"`);
     }
   }
-  return { etapa, situacion, variante, bloque: partes.join("\n") };
+  return { etapa, situacion, variante, bloque: partes.join("\n"), producto, senalCompra, ultimoCliente: textoCliente };
 }

@@ -7,6 +7,7 @@ import { conectorParaConversacion } from "./conectores";
 import type { ConversationRow, OutboundMessage } from "./conector";
 import { touchConversation } from "./ingest";
 import type { Channel } from "./types";
+import { aplicaVentana24h, fueraDeVentana24h } from "./ventana-24h";
 
 const VENTANA_DEDUP_MS = 10 * 60 * 1000; // A7: 10 minutos sin reenviar el mismo texto a la misma conversación
 const recentOutboundMemory = new Map<string, { normText: string; sentAt: number; messageId: string | null }>();
@@ -79,6 +80,27 @@ export async function deliverMessage(
     }
     body = body.replace(/tu clave de recojo \([^\)]+\)/gi, "tu clave de retiro (que te compartirá un asesor humano)");
     body = body.replace(/\b\(?0011\)?\b/g, "[verificación humana]");
+  }
+
+  // E4: fuera de la ventana de 24 h Meta rechaza el texto libre. Un mensaje del bot sin
+  // plantilla no sale (el que llama decide: plantilla, nota o nada) en vez de quedar como
+  // «fallido» en el chat y gastar la reputación del número.
+  if (origin === "agent" && !msg.template && aplicaVentana24h(conversation.channel, conversation.provider)) {
+    const [ultimoEntrante] = await db
+      .select({ createdAt: messages.createdAt })
+      .from(messages)
+      .where(and(eq(messages.conversationId, conversation.id), eq(messages.direction, "in")))
+      .orderBy(desc(messages.createdAt))
+      .limit(1);
+    if (fueraDeVentana24h(ultimoEntrante?.createdAt ?? null)) {
+      console.warn(`[deliverMessage] E4: texto del bot omitido en ${conversation.id}: fuera de la ventana de 24 h`);
+      return {
+        ok: false,
+        messageId: null,
+        error: "fuera_de_ventana_24h",
+        hint: "El cliente no escribe hace más de 24 h: solo se puede enviar una plantilla aprobada.",
+      };
+    }
   }
 
   // Asegurar que el mensaje saliente real lleve el body sanitizado

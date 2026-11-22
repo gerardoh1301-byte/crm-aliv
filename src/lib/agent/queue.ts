@@ -19,9 +19,11 @@ const STALE_PROCESSING_MS = 3 * 60 * 1000; // A8: 3 minutos para rescatar trabaj
 export async function enqueueAgentJob(
   contactId: string,
   triggerMessageId: string,
-  conversationId?: string | null
+  conversationId?: string | null,
+  /** Espera antes de procesar (por defecto el debounce de 6 s; los reintentos usan minutos). */
+  esperaMs: number = DEBOUNCE_MS
 ): Promise<{ jobId: string; created: boolean }> {
-  const processAfter = new Date(Date.now() + DEBOUNCE_MS);
+  const processAfter = new Date(Date.now() + esperaMs);
 
   const pendingFilter = conversationId
     ? and(
