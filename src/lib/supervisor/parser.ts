@@ -373,6 +373,23 @@ export function interpretarComando(texto: string | null | undefined): Comando | 
   return null;
 }
 
+/** «pedido 1160», «orden #1160», «#1160», «LEG-1066», «CHAT-0001». */
+const RE_PEDIDO_EXPLICITO = /(\b(pedido|orden|order)\s*(n[°ºo.]?\s*)?#?\s*\d{3,6}\b|#\s?\d{3,6}\b|\b(leg|chat|aliv)-\d{3,6}\b)/i;
+
+/**
+ * Último recurso cuando ni el intérprete fijo ni la IA entendieron el mensaje: si nombra un
+ * pedido de forma explícita («ya tienes todo para agendar la entrega de la orden 1160?»),
+ * se responde con la ficha de ese pedido. Nunca va al bot de ventas, que le contestaría a
+ * Gerardo como si fuera el cliente.
+ */
+export function consultaPorPedidoExplicito(texto: string | null | undefined): Comando | null {
+  if (!texto) return null;
+  const n = normalizarTexto(texto);
+  if (!n || n.length > 300) return null;
+  if (!RE_PEDIDO_EXPLICITO.test(texto) && !RE_PEDIDO_EXPLICITO.test(n)) return null;
+  return comando("estado", n);
+}
+
 const VERBOS_ORDEN =
   /^(?:por favor |porfa )?(confirma|confirmar|valida|validar|verifica|verificar|registra|registrar|marca|marcar|actualiza|actualizar|cambia|cambiar|pasa|pasar|aprueba|aprobar|anota|anotar)\b/;
 

@@ -9,13 +9,14 @@ import { SUPERVISOR_PAGOS, normalizarTelefono } from "@/lib/alerts/supervisor-al
 import { extraerFinanzasShalom } from "@/lib/finanzas/tags-shalom";
 import { registrarFinanzasShalom } from "@/lib/finanzas/registrar-shalom";
 import { notificarCambioDealAlErp } from "@/lib/finanzas/notificar-erp";
-import { adelantoRegistrado, quienVerificoAdelanto } from "@/lib/pedidos/adelanto";
+import { adelantoRegistrado, esPedidoDeProvincia, quienVerificoAdelanto } from "@/lib/pedidos/adelanto";
 import {
   digitosPedido,
   interpretarComando,
   interpretarCorreccion,
   mejoresPorNombre,
   pareceOrdenNoEntendida,
+  consultaPorPedidoExplicito,
   separarPedidoYMonto,
   type Comando,
   type TokenNumero,
@@ -507,13 +508,51 @@ const AYUDA = [
  * Ficha completa del pedido para el Administrador: todo lo que el CRM sabe (cliente,
  * productos, dinero, Shalom con la clave de retiro y lo verificado). Solo lectura.
  */
-function fichaPedido(p: Pedido, c: CuentasPedido, celular: string | null): string {
+/**
+ * Qué le falta al pedido para poder entregarlo («ya tienes todo para agendar la entrega?»).
+ * Lima contraentrega: dirección con número y distrito. Provincia (Shalom): DNI, agencia y
+ * adelanto verificado. Null si ya salió o se cerró.
+ */
+function faltaParaEntregar(p: Pedido, adelantoOk: boolean): string[] | null {
+  if (["enviado", "entregado", "cancelado", "rechazado"].includes(String(p.estado))) return null;
+  const provincia =
+    p.modalidadPago === "adelanto_agencia" ||
+    /shalom/i.test(p.transportadora || "") ||
+    esPedidoDeProvincia({ ciudad: p.ciudad, distrito: p.distrito, direccionEnvio: p.direccionEnvio });
+  const falta: string[] = [];
+  if (provincia) {
+    if (!p.dniCliente) falta.push("DNI");
+    if (!p.direccionEnvio) falta.push("agencia Shalom");
+    if (!adelantoOk) falta.push("adelanto de S/ 20 verificado");
+  } else {
+    const dir = (p.direccionEnvio || "").trim();
+    if (!dir) falta.push("dirección");
+    else if (!/\d/.test(dir)) falta.push("número de casa, lote o Mz en la dirección");
+    if (!p.distrito) falta.push("distrito");
+  }
+  return falta;
+}
+
+function lineaEntrega(p: Pedido, adelantoOk: boolean): string | null {
+  const falta = faltaParaEntregar(p, adelantoOk);
+  if (!falta) return null;
+  return falta.length
+    ? `🚚 *Para entregar falta:* ${falta.join(", ")} (según el pedido en el CRM)`
+    : "🚚 Datos de entrega completos en el CRM";
+}
+
+function fichaPedido(p: Pedido, c: CuentasPedido, celular: string | null, chat: string[] = []): string {
   const productos = (p.items ?? []).map((i) => `${i.cantidad ?? 1}x ${i.titulo ?? "producto"}`).join(", ");
   const fecha = p.createdAt
     ? new Date(p.createdAt).toLocaleDateString("es-PE", { timeZone: "America/Lima", day: "2-digit", month: "2-digit" })
     : null;
   const adelantoOk = adelantoRegistrado(p.notas);
   const quien = adelantoOk ? quienVerificoAdelanto(p.notas) : null;
+  const lima = !(
+    p.modalidadPago === "adelanto_agencia" ||
+    /shalom/i.test(p.transportadora || "") ||
+    esPedidoDeProvincia({ ciudad: p.ciudad, distrito: p.distrito, direccionEnvio: p.direccionEnvio })
+  );
   return [
     `📋 *${encabezado(p)}*${fecha ? ` · ${fecha}` : ""}`,
     `Estado: *${p.estado}* · pago: ${p.modalidadPago}`,
@@ -524,11 +563,15 @@ function fichaPedido(p: Pedido, c: CuentasPedido, celular: string | null): strin
       (c.saldoCobrado !== null
         ? `saldo cobrado ${soles(c.saldoCobrado)}${c.saldoCubierto ? " ✅" : ` (faltan ${soles(c.saldoPendiente - c.saldoCobrado)})`}`
         : `saldo pendiente ${soles(c.saldoPendiente)}`),
-    `📦 ${p.transportadora || "Shalom"}: ${datosRastreo(p)} · flete ${c.fleteRegistrado !== null ? soles(c.fleteRegistrado) : "no registrado"}`,
-    `🔑 Clave de retiro: ${p.claveRecojo ? `*${p.claveRecojo}*` : "no registrada"}`,
+    lima && !p.transportadora && !p.numeroGuia
+      ? "📦 Lima · contraentrega"
+      : `📦 ${p.transportadora || "Shalom"}: ${datosRastreo(p)} · flete ${c.fleteRegistrado !== null ? soles(c.fleteRegistrado) : "no registrado"}`,
+    lima && !p.claveRecojo ? null : `🔑 Clave de retiro: ${p.claveRecojo ? `*${p.claveRecojo}*` : "no registrada"}`,
     p.claveRecojo && p.estado !== "entregado"
       ? `Para mandársela al cliente escribe «clave ${digitosPedido(p.numeroOrden)}».`
       : null,
+    lineaEntrega(p, adelantoOk),
+    chat.length ? `\n💬 *Último en el chat del cliente:*\n${chat.join("\n")}` : null,
   ]
     .filter(Boolean)
     .join("\n");
@@ -663,7 +706,7 @@ async function proponerPara(cmd: Comando, r: Extract<Resolucion, { ok: true }>):
     const [contacto] = p.contactId
       ? await db.select({ phone: contacts.phone }).from(contacts).where(eq(contacts.id, p.contactId)).limit(1)
       : [];
-    return fichaPedido(p, c, contacto?.phone ?? null);
+    return fichaPedido(p, c, contacto?.phone ?? null, p.contactId ? await ultimosDelChat(p.contactId) : []);
   }
 
   if (cmd.tipo === "clave") {
@@ -1151,6 +1194,7 @@ export async function manejarComandoSupervisor(conversationId: string, phone: st
       cmd = traduccion.comando;
       entendido = `🤖 Entendí: *${traduccion.orden}*\n\n`;
     }
+    if (!cmd) cmd = consultaPorPedidoExplicito(ultimo.body);
   }
 
   if (!cmd) {
@@ -1218,5 +1262,34 @@ async function traducirConIA(texto: string, conversationId: string) {
   return traducirOrdenConIA(texto, contexto);
 }
 
+/** Los últimos mensajes del chat del cliente (del más antiguo al más nuevo), para la ficha. */
+async function ultimosDelChat(contactId: string): Promise<string[]> {
+  try {
+    const filas = await db
+      .select({ body: messages.body, direction: messages.direction, createdAt: messages.createdAt })
+      .from(messages)
+      .innerJoin(conversations, eq(conversations.id, messages.conversationId))
+      .where(eq(conversations.contactId, contactId))
+      .orderBy(desc(messages.createdAt))
+      .limit(4);
+    return lineasChat(filas.reverse());
+  } catch (err) {
+    console.warn("[supervisor-comandos] no se pudo leer el chat del cliente:", err);
+    return [];
+  }
+}
+
+function lineasChat(filas: Array<{ body: string | null; direction: string; createdAt: Date | string | null }>): string[] {
+  return filas
+    .filter((m) => (m.body || "").trim())
+    .map((m) => {
+      const hora = m.createdAt
+        ? new Date(m.createdAt).toLocaleString("es-PE", { timeZone: "America/Lima", day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" })
+        : "";
+      const texto = (m.body || "").replace(/\s+/g, " ").trim();
+      return `${m.direction === "in" ? "Cliente" : "Aliv"}${hora ? ` (${hora})` : ""}: ${texto.length > 160 ? `${texto.slice(0, 157)}…` : texto}`;
+    });
+}
+
 // Exportado para pruebas.
-export const _internas = { AYUDA, textoClaveCliente, fichaPedido };
+export const _internas = { AYUDA, textoClaveCliente, fichaPedido, faltaParaEntregar, lineasChat };

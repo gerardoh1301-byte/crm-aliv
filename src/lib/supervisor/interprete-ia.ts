@@ -45,6 +45,7 @@ REGLAS:
 - Nunca inventes montos ni números de pedido que no estén en el mensaje o en el chat.
 - Todo cambio se le volverá a confirmar a Gerardo con "SI <pedido>": tradúcelo a la orden aunque sea un cambio.
 - Si es una instrucción para el CRM que no está en la lista (cambiar productos, devolver dinero, borrar un cliente, etc.), responde tipo "no_soportada" y describe en pocas palabras qué pide.
+- Cualquier PREGUNTA sobre un pedido o cliente concreto («ya tienes todo para agendar la entrega de Carlos?», «está listo para enviar el de Marleni?», «qué le falta al 1160?») es "estado <pedido>": la ficha dirá qué falta. Nunca es "no_es_orden".
 - Si NO es una instrucción para el CRM (Gerardo está probando el bot de ventas escribiendo como un cliente, saluda, pregunta precios del producto, etc.), responde tipo "no_es_orden".
 
 ÚLTIMOS MENSAJES DEL CHAT (del más antiguo al más reciente; "CRM" son avisos y respuestas del sistema):
