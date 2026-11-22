@@ -31,12 +31,16 @@ const ENDPOINTS = [
   "/api/agent/postventa?backfill=true",
 ];
 
+import { iniciarMantenerDespierto } from "./mantener-despierto";
+
 declare global {
   var __builderBarridos: ReturnType<typeof setInterval> | undefined;
   var __builderBarridoEnCurso: boolean | undefined;
 }
 
 export function iniciarBarridos() {
+  // Independiente del secreto: sin esto Render gratis se duerme y pierde los webhooks.
+  iniciarMantenerDespierto();
   if (globalThis.__builderBarridos) return;
 
   const secreto = process.env.AGENT_WORKER_SECRET;
