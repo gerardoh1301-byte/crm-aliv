@@ -85,6 +85,7 @@ export function detectarSituacion(ultimoCliente: string): SituacionVenta | null 
   const t = ultimoCliente.toLowerCase().trim();
   if (!t) return null;
   if (/\b(en (unos )?\d+ ?(min|minutos|hora|horas)|m[aá]s tarde|en un rato|ahorita te|ma[nñ]ana te|luego te (paso|escribo|confirmo)|te aviso|te escribo)\b/.test(t)) return "promete_volver";
+  if (/\b(no tengo (dinero|plata)|no me alcanza|sin plata|ando (corto|misio)|estoy (corto|misio))\b/.test(t)) return "sin_dinero";
   if (/\b(caro|car[ií]simo|descuento|rebaja|menos precio|muy costoso)\b/.test(t)) return "caro";
   if (/\b(lo pienso|lo voy a pensar|pensarlo|despu[eé]s veo|lo analizo)\b/.test(t)) return "lo_pienso";
   if (/\b(esposo|esposa|mi hij[oa]|mi mam[aá]|mi pap[aá]|consult(o|ar)|familia)\b/.test(t)) return "consulta_tercero";
@@ -137,7 +138,7 @@ const GUION_ETAPA: Record<EtapaVenta, string> = {
   consulta:
     "El cliente todavía no tiene precios. Responde lo que preguntó en 1 o 2 líneas, da el precio del pack recomendado y propón el pedido.",
   cotizado:
-    "Ya le diste precios. No los repitas. Responde lo que dijo y propón el pedido armado (pack recomendado + su distrito o ciudad) con una pregunta de sí o no.",
+    "Ya le diste precios. No los repitas. Responde lo que dijo y propón el pedido armado (pack recomendado + su distrito o ciudad). Cierra con una alternativa entre dos opciones de compra («¿Te separo los 3 o prefieres empezar con 1?»), no con «¿te ayudo a registrar tu pedido?». Si elige 1 o 2, di una sola vez cuánto más cuesta el siguiente pack («por solo S/10 más te llevas 3 y tienes 90 días»).",
   datos_lima:
     "Está eligiendo o ya eligió. Pide solo el dato que falta (nombre, dirección con número y referencia, día de entrega) en una frase. Con todo completo, registra el pedido en este turno.",
   datos_provincia:
@@ -217,7 +218,7 @@ export function preguntaDeAvance(etapa: EtapaVenta, producto: "nac600" | "termix
           ? "¿Te separo los 3 frascos con envío gratis?"
           : "¿Cuál te separo con envío gratis?";
     case "datos_lima":
-      return "¿Me confirmas tu dirección con número y una referencia?";
+      return "¿Me pasas tu dirección con número y una referencia, y qué día de esta semana te acomoda recibirlo?";
     case "datos_provincia":
       return "¿Qué agencia Shalom te queda más cerca?";
     default:

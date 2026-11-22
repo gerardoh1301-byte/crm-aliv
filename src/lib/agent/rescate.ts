@@ -14,6 +14,15 @@ import { esPedidoDeProvincia } from "@/lib/pedidos/adelanto";
 import { createChatCompletionWithFallback, hasOpenRouterKey, getAgentModel } from "./openrouter";
 import { limpiarFormatoWhatsApp } from "./formato";
 import { abandonoEnCurso } from "@/lib/abandonos/reglas";
+import {
+  clasificarObjecionCliente,
+  elegirValorRescate,
+  instruccionValor,
+  marcaValor,
+  textoPrimerToquePackEntrada,
+  textoSegundoToque,
+  type ValorRescate,
+} from "./rescate-valor";
 
 export type TipoEscenarioRescate = "direccion_incompleta" | "adelanto_provincia" | "cotizacion_abandonada";
 
@@ -56,6 +65,8 @@ export interface ResultadoAuditoriaRescate {
   motivoDescarte?: string;
   escenario?: TipoEscenarioRescate;
   mensajeRescate?: string;
+  /** Qué trae de nuevo este toque (V3); va en la nota para medir respuestas por valor. */
+  valor?: ValorRescate;
 }
 
 /**
@@ -143,6 +154,36 @@ export function determinarEscenarioRescate(
   contexto: ContextoChatParaAuditoria,
   ahora: Date = new Date(),
   opciones: { segundoToque?: boolean } = {}
+): ResultadoAuditoriaRescate {
+  const r = determinarEscenarioBase(contexto, ahora, opciones);
+  if (!r.esElegible || !r.escenario) return r;
+  const objecion = clasificarObjecionCliente(
+    (contexto.historialMensajes ?? []).filter((m) => m.direction === "in").map((m) => m.body ?? "")
+  );
+  const total = Number(contexto.pedidoReciente?.total ?? 0);
+  const toque = opciones.segundoToque ? 2 : 1;
+  const valor = elegirValorRescate({
+    escenario: r.escenario,
+    objecion,
+    toque,
+    packEntradaYa: total > 0 && total <= 119,
+  });
+  let mensajeRescate = r.mensajeRescate;
+  if (toque === 1 && valor === "pack_entrada") {
+    const nombre = nombreParaSaludo(contexto.contact.name);
+    mensajeRescate = textoPrimerToquePackEntrada(
+      nombre ? `¡Hola ${nombre}!` : "¡Hola!",
+      detectarProductoRescate(contexto),
+      r.escenario === "adelanto_provincia"
+    );
+  }
+  return { ...r, valor, mensajeRescate };
+}
+
+function determinarEscenarioBase(
+  contexto: ContextoChatParaAuditoria,
+  ahora: Date,
+  opciones: { segundoToque?: boolean }
 ): ResultadoAuditoriaRescate {
   const { contact, conversation, ultimoMensaje, pedidoReciente, historialMensajes } = contexto;
   const tags = contact.tags ?? [];
@@ -277,10 +318,12 @@ export function determinarEscenarioRescate(
   }
 
   // 5. Validar rechazo explícito del cliente (prioridad alta sobre despedidas corteses)
+  // V3: un rechazo firme en cualquiera de sus 3 últimos mensajes («por ahora no», «yo le
+  // aviso», «no me escriban»). «Está caro» ya no descarta: recibe el pack de entrada.
   const clienteRechazo =
-    /\b(ya no deseo|no deseo|no gracias|no voy a querer|canc[eé]lalo|muy caro|compr[eé] en otro|ya no me interesa|deja no m[aá]s)\b/i.test(
+    /\b(ya no deseo|no deseo|no gracias|no voy a querer|canc[eé]lalo|compr[eé] en otro|ya no me interesa|deja no m[aá]s)\b/i.test(
       ultimoMsgCliente
-    );
+    ) || clasificarObjecionCliente(mensajesCliente.map((m) => m.body || "")) === "rechazo";
 
   if (clienteRechazo) {
     return {
@@ -517,7 +560,7 @@ REGLAS DE DECISIÓN CRÍTICAS (CUMPLIMIENTO ESTRICTO):
    - El pedido es de provincia (fuera de Lima/Callao) y la propuesta habla de motorizado contraentrega. (En provincia es por agencia Shalom/Olva).
    - El cliente YA COMPRÓ, ya coordinó la entrega con motorizado, o el pedido ya fue agendado/confirmado.
    - La conversación concluyó cordialmente con agradecimiento o despedida mutua (ej: el cliente dijo "no listo gracias", "gracias amigo", "todo claro" y el bot respondió cordialmente).
-   - El cliente rechazó la compra ("no gracias", "ya no deseo", "muy caro").
+   - El cliente rechazó la compra o pidió que no le escriban ("no gracias", "ya no deseo", "por ahora no", "yo le aviso", "no me escriban"). Si solo dijo que está caro o que no le alcanza, SÍ se rescata con la opción más chica.
    - El último mensaje fue del cliente (aún espera respuesta nuestra, no está abandonado por él).
 
 2. DEBES RESPONDER "debeRescatar": true ÚNICAMENTE SI:
@@ -536,6 +579,12 @@ REGLAS DE DECISIÓN CRÍTICAS (CUMPLIMIENTO ESTRICTO):
    - NUNCA uses los términos "cápsula blanda" o "softgel" para NAC600 (usa siempre "cápsulas").
    - En provincia por Shalom: NUNCA digas que el cliente paga en ventanilla de la agencia. El cliente nos transfiere el saldo a nosotros cuando llega a la agencia y nosotros le enviamos la clave secreta de recojo para que retire con su DNI.
    - Extensión: 2 a 3 líneas naturales de WhatsApp, cálidas y cordiales, con 1 emoji adecuado.
+
+4. ALGO NUEVO (obligatorio): el mensaje no repite la oferta que ya recibió; aporta esto: ${instruccionValor(
+      evaluacionHeuristica.valor ?? "pago_al_recibir",
+      detectarProductoRescate(contexto),
+      evaluacionHeuristica.escenario === "adelanto_provincia"
+    )}
 
 Responde ÚNICAMENTE un objeto JSON válido con la siguiente estructura:
 {
@@ -590,6 +639,7 @@ Responde ÚNICAMENTE un objeto JSON válido con la siguiente estructura:
       return {
         esElegible: true,
         escenario: evaluacionHeuristica.escenario,
+        valor: evaluacionHeuristica.valor,
         // Reglas 2 y 3: sin promesas de salud ni "estándares" también en el rescate.
         mensajeRescate: limpiarFormatoWhatsApp(corregirFrasesSalud(mensajeFinal).texto),
       };
@@ -611,8 +661,11 @@ Responde ÚNICAMENTE un objeto JSON válido con la siguiente estructura:
 export function mensajeSegundoToque(
   escenario: TipoEscenarioRescate,
   nombre: string | null,
-  producto: "nac600" | "termix"
+  producto: "nac600" | "termix",
+  valor?: ValorRescate
 ): string {
+  // V3: con valor, el segundo toque trae algo distinto del primero.
+  if (valor) return textoSegundoToque(escenario, valor, nombre, producto);
   const saludo = nombre ? `${nombre}, ` : "";
   const pack = producto === "termix" ? "el par de Tobilleras Termix (S/139)" : "los 3 frascos de NAC600 (S/199)";
   if (escenario === "direccion_incompleta") {
@@ -925,7 +978,7 @@ export async function auditarChatsAbandonados(opts?: { limite?: number; forzarHo
         const nombreReal = nombreParaSaludo(c.contactName);
         evaluacionFinal = {
           ...evaluacion,
-          mensajeRescate: mensajeSegundoToque(evaluacion.escenario!, nombreReal, prodRescate),
+          mensajeRescate: mensajeSegundoToque(evaluacion.escenario!, nombreReal, prodRescate, evaluacion.valor),
         };
       }
 
@@ -964,8 +1017,8 @@ export async function auditarChatsAbandonados(opts?: { limite?: number; forzarHo
           type: "note",
           description:
             pasada === "primero"
-              ? `[RESCATE VENTAS] Mensaje enviado automáticamente para recuperar venta abandonada (${evaluacionFinal.escenario}).`
-              : `[RESCATE VENTAS] Segundo y último toque enviado (${evaluacionFinal.escenario}).`,
+              ? `[RESCATE VENTAS] Mensaje enviado automáticamente para recuperar venta abandonada (${evaluacionFinal.escenario}; ${marcaValor(evaluacionFinal.valor ?? "dato_pendiente")}).`
+              : `[RESCATE VENTAS] Segundo y último toque enviado (${evaluacionFinal.escenario}; ${marcaValor(evaluacionFinal.valor ?? "dato_pendiente")}).`,
           contactId: c.contactId,
         });
       } catch (actErr) {

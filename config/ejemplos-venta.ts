@@ -35,7 +35,8 @@ export type SituacionVenta =
   | "pago"
   | "silencio_ok"
   | "elige_pack"
-  | "promete_volver";
+  | "promete_volver"
+  | "sin_dinero";
 
 export interface EjemploVenta {
   id: string;
@@ -256,6 +257,75 @@ export const EJEMPLOS_VENTA: EjemploVenta[] = [
     respuesta:
       "Perfecto. Para dejar tu pedido de 3 frascos (*S/199*) listo en la agencia, pásame tu nombre completo y DNI para la guía, junto con la captura del adelanto de S/20 al Yape *951365418* (Gerardo Huaynalaya). Quedo atento por aquí.",
     origen: "real",
+  },
+  // ── Chats reales que terminaron en pedido (12 al 21/11, auditoría 21/11 V5) ───────────
+  {
+    id: "real-ancla-3-lima",
+    etapas: ["cotizado", "datos_lima"],
+    situacion: "elige_pack",
+    producto: "nac600",
+    cliente: "Quiero 2, soy de Lima",
+    respuesta:
+      "Perfecto: 2 frascos de *NAC600 + NAD+* por *S/189*. Un dato: por solo 10 soles más te llevas 3 frascos y tienes 90 días de uso diario. Pagas al recibir por transferencia, Yape o Plin. ¿Qué día y en qué horario te encuentras?",
+    origen: "real",
+  },
+  {
+    id: "real-ancla-2-provincia",
+    etapas: ["cotizado", "datos_provincia"],
+    situacion: "elige_pack",
+    producto: "nac600",
+    cliente: "1 frasco",
+    respuesta:
+      "Perfecto, 1 frasco de *NAC600 + NAD+* por *S/119*. Un dato: por 70 soles más te llevas 2 y tienes 60 días de uso diario. Para enviártelo a tu agencia Shalom, confírmame tu nombre completo y tu DNI.",
+    origen: "real",
+  },
+  {
+    id: "real-cierre-alternativa",
+    etapas: ["cotizado", "datos_lima"],
+    situacion: "silencio_ok",
+    cliente: "Ok, por ahora solo el del hígado",
+    respuesta:
+      "Entendido. Nos quedamos con los 3 frascos de *NAC600 + NAD+* por *S/199* con envío gratis. ¿Te lo programamos para este martes en la mañana o prefieres otro día?",
+    origen: "real",
+  },
+  {
+    id: "real-web-no-deja",
+    etapas: ["consulta", "cotizado"],
+    situacion: "elige_pack",
+    cliente: "Sí deseo 2, en la página no me deja comprar",
+    respuesta:
+      "No te preocupes, te ayudo a registrarlo directamente por aquí para que no tengas problema. ¿Son 2 frascos de *NAC600 + NAD+* (*S/189*) o 2 *Termix Tobilleras* (*S/139* el par)?",
+    origen: "real",
+  },
+  {
+    id: "real-agencia-opciones",
+    etapas: ["datos_provincia", "adelanto"],
+    situacion: "entrega",
+    cliente: "¿A qué agencia de Sullana me lo pueden enviar?",
+    respuesta:
+      "¿A qué agencia Shalom prefieres el envío: Zona Industrial, Bellavista, Ignacio Escudero o Santa Rosa? Con eso y tu DNI dejo lista tu guía.",
+    origen: "real",
+  },
+  // ── «No tengo dinero» (sin presión: una opción más chica y la puerta abierta) ──────────
+  {
+    id: "sin-dinero-nac",
+    etapas: ["consulta", "cotizado", "datos_lima", "datos_provincia"],
+    situacion: "sin_dinero",
+    producto: "nac600",
+    cliente: "Ahorita no tengo dinero",
+    respuesta:
+      "Te entiendo, no te preocupes. Si te sirve, puedes empezar con 1 frasco a *S/119* y en Lima pagas recién al recibir. Y si prefieres esperar, aquí estaré cuando lo necesites 🌿",
+    origen: "modelo",
+  },
+  {
+    id: "sin-dinero-termix",
+    etapas: ["consulta", "cotizado", "datos_lima", "datos_provincia"],
+    situacion: "sin_dinero",
+    producto: "termix",
+    cliente: "No me alcanza ahora",
+    respuesta:
+      "Te entiendo. Si te sirve, puedes empezar con 1 tobillera a *S/79* con envío gratis y en Lima pagas al recibir. Y si prefieres esperar, aquí estaré cuando lo necesites 🙂",
+    origen: "modelo",
   },
   // ── Datos de envío (Lima) ─────────────────────────────────────────────────────────────
   {

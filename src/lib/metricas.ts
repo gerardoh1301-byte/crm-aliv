@@ -2,6 +2,7 @@ import "server-only";
 import { sql } from "drizzle-orm";
 import { db } from "@/db";
 import { varianteAB } from "@/lib/agent/guion-venta";
+import { embudoPorFuente, fuenteDelChat, rescatePorValor } from "@/lib/metricas-embudo";
 import { SUPERVISORES_DIGITOS } from "@/lib/alerts/supervisor-alerts";
 
 /** Excluye las conversaciones de los supervisores (sus chats son pruebas, no clientes). */
@@ -283,6 +284,15 @@ export async function calcularMetricas({ desde, hasta }: RangoMetricas) {
       and (description like '[ABANDONO]%' or description like '[RESCATE VENTAS]%')`);
   const sg = seguimiento[0] ?? {};
 
+  // V3/V6: ¿respondió el cliente dentro de 72 h de cada rescate? Por valor ofrecido.
+  const rescates = await filas(sql`
+    select a.description as descripcion,
+      exists(select 1 from conversations c join messages m on m.conversation_id = c.id
+             where c.contact_id = a.contact_id and m.direction = 'in'
+               and m.created_at > a.created_at and m.created_at < a.created_at + interval '72 hours') as respondio
+    from activities a
+    where a.created_at >= ${ini} and a.created_at < ${fin} and a.description like '[RESCATE VENTAS]%'`);
+
   // ---- comentarios (comment.received de Zernio, aun sin respuesta automatica) ----
   const clasificados = comentarios.map((c) => {
     const texto = textoComentario(c.payload);
@@ -333,6 +343,9 @@ export async function calcularMetricas({ desde, hasta }: RangoMetricas) {
     rescate_chats: {
       primer_toque: num(sg.rescate_toque1),
       segundo_toque: num(sg.rescate_toque2),
+      por_valor: rescatePorValor(
+        rescates.map((r) => ({ descripcion: String(r.descripcion ?? ""), respondio: Boolean(r.respondio) }))
+      ),
     },
     comentarios: {
       total: clasificados.length,
@@ -380,12 +393,16 @@ export async function calcularMetricas({ desde, hasta }: RangoMetricas) {
 async function calcularEmbudoChat(ini: ReturnType<typeof sql>, fin: ReturnType<typeof sql>) {
   const rows = await filas(sql`
     with conv as (
-      select c.id, c.contact_id, c.created_at
+      select c.id, c.contact_id, c.created_at,
+        (coalesce(c.metadata->>'ctwa_source_id', c.metadata->>'meta_ad_id') is not null) as de_anuncio,
+        c.last_direction, left(coalesce(c.last_message_body, ''), 80) as ultimo_mensaje
       from conversations c
       where c.created_at >= ${ini} and c.created_at < ${fin} and c.provider <> 'simulador' and ${sinSupervisores("c.contact_id")}
     ),
     base as (
-      select conv.id, conv.contact_id,
+      select conv.id, conv.contact_id, conv.de_anuncio, conv.last_direction, conv.ultimo_mensaje,
+        (select left(m.body, 80) from messages m where m.conversation_id = conv.id and m.direction = 'in'
+           order by m.created_at limit 1) as primer_mensaje,
         (select min(m.created_at) from messages m where m.conversation_id = conv.id and m.direction = 'in') as t_in,
         (select m.body from messages m where m.conversation_id = conv.id and m.direction = 'out'
            and m.origin = 'agent' order by m.created_at limit 1) as primer_bot,
@@ -401,9 +418,21 @@ async function calcularEmbudoChat(ini: ReturnType<typeof sql>, fin: ReturnType<t
         and m.body ~* 'S/ ?(79|119|139|189|199)') as cotizado,
       exists(select 1 from messages m where m.conversation_id = b.id and m.direction = 'out'
         and m.body ~* '(direcci[oó]n|referencia|dni|adelanto de s/ ?20|agencia shalom)') as pidio_datos,
-      exists(select 1 from pedidos_ordenes p where p.contact_id = b.contact_id
-        and p.created_at >= b.t_in and p.created_at < b.t_in + interval '7 days') as pedido
+      (ped.id is not null) as pedido,
+      ped.estado as estado_pedido,
+      ped.de_chat as pedido_de_chat,
+      (select o.origin from messages o where o.conversation_id = b.id and o.direction = 'out'
+         and o.created_at <= ped.created_at order by o.created_at desc limit 1) as cerro_origen,
+      exists(select 1 from pedidos_ordenes w where w.contact_id = b.contact_id and w.shopify_order_id is not null
+        and w.created_at < b.t_in and w.created_at > b.t_in - interval '3 days') as pedido_web_previo,
+      b.de_anuncio, b.primer_mensaje, b.last_direction, b.ultimo_mensaje
     from base b
+    left join lateral (
+      select p.id, p.estado, p.created_at, (p.shopify_order_id is null) as de_chat
+      from pedidos_ordenes p
+      where p.contact_id = b.contact_id and p.created_at >= b.t_in and p.created_at < b.t_in + interval '7 days'
+      order by p.created_at limit 1
+    ) ped on true
     where b.t_in is not null`);
 
   type Cuenta = { chats: number; bot_respondio: number; siguio: number; cotizado: number; pidio_datos: number; pedido: number };
@@ -433,6 +462,37 @@ async function calcularEmbudoChat(ini: ReturnType<typeof sql>, fin: ReturnType<t
       B: tasa(porVariante.B),
     },
     por_largo_primer_mensaje: Object.fromEntries(Object.entries(porLargo).map(([k, v]) => [k, tasa(v)])),
+    // V6: embudo por fuente y quién cerró cada pedido.
+    ...embudoPorFuente(
+      rows.map((r) => ({
+        de_anuncio: Boolean(r.de_anuncio),
+        pedido_web_previo: Boolean(r.pedido_web_previo),
+        primer_mensaje: (r.primer_mensaje as string | null) ?? null,
+        bot_respondio: Boolean(r.bot_respondio),
+        siguio: Boolean(r.siguio),
+        cotizado: Boolean(r.cotizado),
+        pidio_datos: Boolean(r.pidio_datos),
+        pedido: Boolean(r.pedido),
+        estado_pedido: (r.estado_pedido as string | null) ?? null,
+        cerro_origen: (r.cerro_origen as string | null) ?? null,
+        pedido_de_chat: r.pedido_de_chat == null ? null : Boolean(r.pedido_de_chat),
+      }))
+    ),
+    // Revisión de los lunes: 10 chats cotizados que no compraron y quedaron con nuestro
+    // mensaje sin respuesta (sin nombres ni teléfonos; el id abre el chat en el CRM).
+    perdidos_para_revisar: rows
+      .filter((r) => r.cotizado && !r.pedido && r.last_direction === "out")
+      .slice(0, 10)
+      .map((r) => ({
+        conversacion_id: r.id,
+        fuente: fuenteDelChat({
+          de_anuncio: Boolean(r.de_anuncio),
+          pedido_web_previo: Boolean(r.pedido_web_previo),
+          primer_mensaje: (r.primer_mensaje as string | null) ?? null,
+        }),
+        llego_a_pedir_datos: Boolean(r.pidio_datos),
+        ultimo_mensaje_nuestro: r.ultimo_mensaje,
+      })),
   };
 }
 
