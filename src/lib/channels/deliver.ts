@@ -49,7 +49,13 @@ export async function getConversationRow(
 export async function deliverMessage(
   conversationId: string,
   msg: OutboundMessage,
-  origin: DeliverOrigin = "human"
+  origin: DeliverOrigin = "human",
+  /**
+   * permitirRepetido: se salta el filtro A7 de mensajes idénticos. Solo para las respuestas
+   * a órdenes del supervisor: si Gerardo vuelve a preguntar, quiere la respuesta otra vez
+   * (el 23/11 «Código de retiro» se quedó sin respuesta por este filtro).
+   */
+  opts: { permitirRepetido?: boolean } = {}
 ): Promise<DeliverResult> {
   const conversation = await getConversationRow(conversationId);
   if (!conversation) {
@@ -109,7 +115,7 @@ export async function deliverMessage(
   // A7: Evitar reenviar un mensaje con el mismo texto a la misma conversación dentro de 10 minutos
   const normBody = normalizarTextoDedup(body);
   const nowMs = Date.now();
-  const memPrev = recentOutboundMemory.get(conversationId);
+  const memPrev = opts.permitirRepetido ? undefined : recentOutboundMemory.get(conversationId);
   if (memPrev && memPrev.normText === normBody && nowMs - memPrev.sentAt < VENTANA_DEDUP_MS) {
     console.warn(`[deliverMessage] A7 Dedup (memoria): mensaje idéntico omitido en conversación ${conversationId}`);
     return {
@@ -120,7 +126,7 @@ export async function deliverMessage(
   }
 
   const hace10Min = new Date(nowMs - VENTANA_DEDUP_MS);
-  const recientesOut = await db
+  const recientesOut = opts.permitirRepetido ? [] : await db
     .select({ id: messages.id, body: messages.body, status: messages.status })
     .from(messages)
     .where(

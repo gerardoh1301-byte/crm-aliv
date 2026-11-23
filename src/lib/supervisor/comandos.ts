@@ -502,7 +502,8 @@ function encabezado(p: Pedido): string {
 
 function datosRastreo(p: Pedido): string {
   if (!p.numeroGuia) return "sin N° de orden Shalom todavía";
-  return `orden ${p.numeroGuia}${p.codigoRastreo ? ` · código ${p.codigoRastreo}` : " · sin código"}`;
+  // «código de rastreo» y no solo «código»: el 23/11 Gerardo lo confundió con la clave de retiro.
+  return `orden ${p.numeroGuia}${p.codigoRastreo ? ` · código de rastreo ${p.codigoRastreo} (no es la clave)` : " · sin código de rastreo"}`;
 }
 
 const AYUDA = [
@@ -594,7 +595,7 @@ function fichaPedido(p: Pedido, c: CuentasPedido, celular: string | null, chat: 
     lima && !p.transportadora && !p.numeroGuia
       ? "📦 Lima · contraentrega"
       : `📦 ${p.transportadora || "Shalom"}: ${datosRastreo(p)} · flete ${c.fleteRegistrado !== null ? soles(c.fleteRegistrado) : "no registrado"}`,
-    lima && !p.claveRecojo ? null : `🔑 Clave de retiro: ${p.claveRecojo ? `*${p.claveRecojo}*` : "no registrada"}`,
+    lima && !p.claveRecojo ? null : `🔐 *CLAVE SECRETA DE RETIRO: ${p.claveRecojo ?? "no registrada"}*`,
     p.claveRecojo && p.estado !== "entregado"
       ? `Para mandársela al cliente escribe «clave ${digitosPedido(p.numeroOrden)}».`
       : null,
@@ -623,8 +624,11 @@ function textoClaveCliente(p: Pedido, c: CuentasPedido): string {
 function mensajeClaveParaSupervisor(p: Pedido, c: CuentasPedido): string {
   const nombre = (p.contactName || "el cliente").split(" ")[0];
   return [
-    `🔑 Clave de retiro ${encabezado(p)}: *${p.claveRecojo}*`,
-    `📦 ${datosRastreo(p)} · ${
+    `*${encabezado(p)}*`,
+    `🔐 *CLAVE SECRETA DE RETIRO: ${p.claveRecojo}*`,
+    "",
+    `📦 Rastreo Shalom: ${datosRastreo(p)}`,
+    `💰 ${
       c.saldoCubierto
         ? `saldo cobrado ${soles(c.saldoCobrado ?? 0)}`
         : `⚠️ al enviarla registro el saldo de ${soles(c.saldoPendiente)} como cobrado`
@@ -704,7 +708,8 @@ export async function registrarClaveEntregada(
 async function responder(conversationId: string, texto: string): Promise<void> {
   // "human": son respuestas del sistema a una orden del supervisor, no texto de la IA.
   // Con "agent" el blindaje anti-filtración taparía la clave que Gerardo pidió ver.
-  const res = await deliverMessage(conversationId, { text: texto }, "human");
+  // permitirRepetido: si Gerardo vuelve a preguntar lo mismo, la respuesta igual le llega.
+  const res = await deliverMessage(conversationId, { text: texto }, "human", { permitirRepetido: true });
   if (!res.ok) console.warn("[supervisor-comandos] no se pudo responder:", res.error);
 }
 

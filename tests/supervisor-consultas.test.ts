@@ -109,7 +109,7 @@ describe("ficha del pedido para el Administrador", () => {
     expect(texto).toContain("2x NAC600");
     expect(texto).toContain("saldo pendiente S/ 169.00");
     expect(texto).toContain("104493022");
-    expect(texto).toContain("*2468*");
+    expect(texto).toContain("*CLAVE SECRETA DE RETIRO: 2468*");
     expect(texto).toContain("+51987654321");
   });
 });
