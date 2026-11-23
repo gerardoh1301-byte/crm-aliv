@@ -268,6 +268,7 @@ export function DealCard({
   // Regla: en "Entregado y Cobrado" la clave ya se entregó, así que el saldo Shalom está cobrado
   const saldoShalomVisible: number | null =
     currentFinanzas?.saldoMonto ?? (esEntregado ? saldoPorClaveEntregada(value / 100, currentFinanzas) : null);
+  const soles = (n: number) => (Number.isInteger(n) ? String(n) : n.toFixed(2));
   const esConfirmadoODespacho =
     stageKeyLower.includes("confirmad") ||
     stageKeyLower.includes("reparto") ||
@@ -589,8 +590,10 @@ export function DealCard({
           >
             <Landmark className="h-3.5 w-3.5 shrink-0" aria-hidden />
             <span className="truncate">
+              {/* El estado va primero: con el flete cargado el texto se cortaba en «co…» y
+                  parecía que el saldo no se había marcado como cobrado (Juan #LEG-1048, 22/11). */}
               {currentFinanzas || saldoShalomVisible !== null
-                ? `Envío ${currentFinanzas?.fleteShalom != null ? `S/${currentFinanzas.fleteShalom.toFixed(2)}` : "?"} · Saldo ${saldoShalomVisible !== null ? `S/${saldoShalomVisible.toFixed(2)} cobrado` : "pendiente"}`
+                ? `${saldoShalomVisible !== null ? `Cobrado S/${soles(saldoShalomVisible)}` : "Saldo pendiente"} · Envío ${currentFinanzas?.fleteShalom != null ? `S/${soles(currentFinanzas.fleteShalom)}` : "?"}`
                 : "Registrar dinero Shalom"}
             </span>
           </Button>
