@@ -33,7 +33,10 @@ const ESTADOS_CERRADOS = ["adelanto_pagado", "confirmado", "preparando", "enviad
 
 /** El mensaje del bot cierra la conversación (no espera nada del cliente). */
 const RE_CIERRE =
-  /(pedido (qued[oó] |ha sido |fue )?(registrado|confirmado)|gracias por tu compra|que tengas (un )?(buen|lindo|excelente)|hasta pronto|cualquier (duda|consulta) (me |nos )?(escribes|avisas))/i;
+  /(pedido (qued[oó] |queda |ha sido |fue )?(registrado|confirmado)|(qued[oó]|queda|est[aá]) (programad|agendad|anotad|registrad)[oa]|quedamos en contacto|gracias por tu compra|que tengas (un )?(buen|lindo|excelente)|hasta pronto|cualquier (duda|consulta) (me |nos )?(escribes|avisas))/i;
+
+/** Contra entrega (Lima o provincia con cobertura): ahí no hay adelanto que perseguir. */
+const RE_CONTRA_ENTREGA = /contra ?entrega|pagas? al recibir|pago al recibir/i;
 
 /**
  * Qué estaba esperando el bot según su último mensaje; null si no esperaba nada concreto
@@ -44,7 +47,13 @@ export function escenarioDesdeMensajeBot(texto: string | null | undefined): Esce
   if (!t) return null;
   if (RE_CIERRE.test(t)) return null;
   const pregunta = t.includes("?");
-  if (/\b(adelanto|yape|plin)\b/i.test(t) && /(captura|comprobante|voucher|adelant|yape)/i.test(t)) return "adelanto";
+  // «Yape o Plin» como forma de pago contra entrega NO es pedir el adelanto (caso Juan #1171, 23/11).
+  if (
+    !RE_CONTRA_ENTREGA.test(t) &&
+    (/\badelanto\b/i.test(t) || (/\b(yape|plin)\b/i.test(t) && /(captura|comprobante|voucher)/i.test(t)))
+  ) {
+    return "adelanto";
+  }
   if (
     /\b(dni|direcci[oó]n|referencia|agencia|sede|nombre completo|nombres? y apellidos?|ubicaci[oó]n|distrito|ciudad)\b/i.test(t) &&
     (pregunta || /\b(p[aá]sa(me|nos)|env[ií]a(me|nos)|ind[ií]ca(me|nos)|conf[ií]rma(me|nos)|necesito|falta)\b/i.test(t))

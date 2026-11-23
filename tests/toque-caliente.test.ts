@@ -36,6 +36,16 @@ describe("toque en caliente (12-45 min)", () => {
     expect(escenarioDesdeMensajeBot("El NAC600 se toma 2 cápsulas al día.")).toBeNull();
   });
 
+  it("un pedido contra entrega agendado no recibe el toque del adelanto (caso Juan #1171)", () => {
+    const cierre =
+      "Anotado, Juan. Tu pedido del NAC600 queda programado para hoy de 4:00 p. m. a 9:00 p. m. en tu dirección de Carabayllo, con pago contra entrega al recibir (S/ 119) por transferencia, Yape o Plin. ¡Quedamos en contacto! 🌿✨";
+    expect(escenarioDesdeMensajeBot(cierre)).toBeNull();
+    // Mencionar Yape como forma de pago al recibir tampoco es pedir el adelanto.
+    expect(escenarioDesdeMensajeBot("Pagas al recibir en efectivo, Yape o Plin. ¿Qué día te acomoda?")).not.toBe("adelanto");
+    // Pedir la captura del Yape del adelanto sí lo es.
+    expect(escenarioDesdeMensajeBot("Cuando hagas el Yape de S/20 me envías la captura")).toBe("adelanto");
+  });
+
   it("envía a los 15 min si el bot pidió el adelanto", () => {
     expect(decidirToqueCaliente(base())).toEqual({ accion: "enviar", escenario: "adelanto" });
   });
