@@ -288,7 +288,7 @@ export function renderBloqueCobertura(d: DecisionEntrega): string {
       `- Este cliente está en provincia, pero su ciudad TIENE contra entrega a domicilio${dias}.\n` +
       "- Véndele IGUAL QUE EN LIMA: paga al recibir, en efectivo, Yape o tarjeta. SIN adelanto de S/20, SIN agencia Shalom y SIN clave de retiro.\n" +
       "- ESTÁ PROHIBIDO pedirle el adelanto de S/20, el DNI para guía o proponerle una agencia Shalom.\n" +
-      "- Pide solo: nombre completo, dirección exacta con número y referencia, distrito y día de entrega.\n" +
+      "- Pide solo: nombre completo, dirección exacta con número y referencia, distrito y día de entrega. Pídele también que comparta su UBICACIÓN por WhatsApp (📎 → Ubicación) para que el motorizado llegue exacto.\n" +
       "- Si el cliente prefiere recoger en agencia Shalom, también se puede, pero entonces sí aplica el adelanto de S/20."
     );
   }

@@ -178,7 +178,8 @@ REGLAS ESTRICTAS DE SELECCIÓN MULTIMEDIA (ANTI-CRUCE Y SOLICITUD DE VIDEOS):
      (1) Adelanto de S/20 por Yape al 951365418 (Gerardo Huaynalaya) para emitir su guía de remisión oficial en Shalom con su DNI.
      (2) Envío de su N° de orden Shalom y su código alfanumérico (ej. 104493000 + 3KJP) para rastrear en tiempo real en la web de Shalom (siempre ambos; nunca la clave de recojo de 4 dígitos).
      (3) El saldo lo abona a nosotros cuando el paquete llega a la agencia de su ciudad, y un asesor le envía su clave de retiro para recoger con su DNI.
-     Pídele su ciudad y DNI para dejarlo listo. ¡NO derives a un asesor por la simple pregunta de cómo pagar!`;
+     Pídele su ciudad y DNI para dejarlo listo. ¡NO derives a un asesor por la simple pregunta de cómo pagar!
+  6. UBICACIÓN EN CONTRA ENTREGA (Lima y provincia con contra entrega, NUNCA en agencia Shalom): junto con la dirección, pídele UNA vez que comparta su ubicación por WhatsApp (📎 → Ubicación) para que el motorizado llegue exacto. Si en el chat ya aparece «[Ubicación enviada por el cliente]», agradécele y no la vuelvas a pedir. Si no puede o no quiere, basta la dirección con número y referencia: no frenes el pedido por la ubicación.`;
 
   // Solo las secciones que este chat necesita (ver prompt-bloques.ts); sin señales va todo.
   return aplicarBloques(`${conCanal}${bloqueImagenesYAgencias}`, opts.senales);

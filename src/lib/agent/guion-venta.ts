@@ -140,7 +140,7 @@ const GUION_ETAPA: Record<EtapaVenta, string> = {
   cotizado:
     "Ya le diste precios. No los repitas. Responde lo que dijo y propón el pedido armado (pack recomendado + su distrito o ciudad). Cierra con una alternativa entre dos opciones de compra («¿Te separo los 3 o prefieres empezar con 1?»), no con «¿te ayudo a registrar tu pedido?». Si elige 1 o 2, di una sola vez cuánto más cuesta el siguiente pack («por solo S/10 más te llevas 3 y tienes 90 días»).",
   datos_lima:
-    "Está eligiendo o ya eligió. Pide solo el dato que falta (nombre, dirección con número y referencia, día de entrega) en una frase. Con todo completo, registra el pedido en este turno.",
+    "Está eligiendo o ya eligió. Pide solo el dato que falta (nombre, dirección con número y referencia, día de entrega) en una frase, y que comparta su UBICACIÓN por WhatsApp (📎 → Ubicación) si aún no la mandó. Con todo completo, registra el pedido en este turno (no esperes la ubicación para registrarlo).",
   datos_provincia:
     "Provincia, en este orden y sin juntar todo: 1) confirma la agencia Shalom más cercana; 2) recién entonces el adelanto de S/20 al Yape; 3) nombre completo y DNI para la guía. Da la prueba de confianza (guía oficial de Shalom con rastreo, RUC 20612283134).",
   adelanto:
@@ -218,7 +218,7 @@ export function preguntaDeAvance(etapa: EtapaVenta, producto: "nac600" | "termix
           ? "¿Te separo los 3 frascos con envío gratis?"
           : "¿Cuál te separo con envío gratis?";
     case "datos_lima":
-      return "¿Me pasas tu dirección con número y una referencia, y qué día de esta semana te acomoda recibirlo?";
+      return "¿Me pasas tu dirección con número y una referencia, y qué día de esta semana te acomoda recibirlo? Si puedes, compárteme también tu ubicación por aquí 📍";
     case "datos_provincia":
       return "¿Qué agencia Shalom te queda más cerca?";
     default:

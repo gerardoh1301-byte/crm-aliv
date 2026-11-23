@@ -368,7 +368,7 @@ const sendMessage: ActionDef = {
           previewText: renderedOrderText,
         };
       } else {
-        renderedOrderText = `¡Hola, ${clienteNombre}! 👋 Te saluda Aliv Perú.\nRecibimos tu pedido #${ordenNum}: ${prods} por S/${tot} con envío gratis.\n📍 Dirección: ${direccionCompleta}.\n¿Nos confirmas tu pedido y el horario en que te encuentras para coordinar la entrega? Pagas al recibir.\n¡Gracias por tu confianza! 💚`;
+        renderedOrderText = `¡Hola, ${clienteNombre}! 👋 Te saluda Aliv Perú.\nRecibimos tu pedido #${ordenNum}: ${prods} por S/${tot} con envío gratis.\n📍 Dirección: ${direccionCompleta}.\n¿Nos confirmas tu pedido y el horario en que te encuentras para coordinar la entrega? Pagas al recibir.\n📌 Si puedes, compártenos tu ubicación por aquí (📎 → Ubicación) para que el motorizado llegue exacto.\n¡Gracias por tu confianza! 💚`;
 
         template = {
           name: "aliv_confirmacion_lima",

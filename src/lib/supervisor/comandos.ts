@@ -9,6 +9,20 @@ import { SUPERVISOR_PAGOS, normalizarTelefono } from "@/lib/alerts/supervisor-al
 import { extraerFinanzasShalom } from "@/lib/finanzas/tags-shalom";
 import { registrarFinanzasShalom } from "@/lib/finanzas/registrar-shalom";
 import { notificarCambioDealAlErp } from "@/lib/finanzas/notificar-erp";
+import {
+  coordenadasDeTexto,
+  cotizarEnvio,
+  crearOrdenAliclik,
+  geocodificarDireccion,
+  ordenAliclikRegistrada,
+  pedidoParaRegistroAliclik,
+  productosParaAliclik,
+  separarNombre,
+  separarReferencia,
+  telefonoAliclik,
+  type Coordenadas,
+  type OrdenAliclik,
+} from "@/lib/aliclik/registrar-orden";
 import { adelantoRegistrado, esPedidoDeProvincia, quienVerificoAdelanto } from "@/lib/pedidos/adelanto";
 import {
   digitosPedido,
@@ -63,7 +77,8 @@ type Accion =
   // Solo desde el asistente (asistente.ts): mensaje al cliente, bot on/off y distrito.
   | "mensaje"
   | "bot"
-  | "distrito";
+  | "distrito"
+  | "aliclik";
 
 interface Pendiente {
   accion: Accion;
@@ -505,6 +520,7 @@ const AYUDA = [
   "• *pasa 1140 a confirmado* (o preparando, enviado, por confirmar)",
   "• *dni 1140 45678912* · *direccion 1140 Av. Lima 123* · *agencia 1140 Shalom Huancayo Real*",
   "• *registra clave 1140 1330* · *total 1140 189* · *nota 1140 llamar después de las 6*",
+  "• *registra 1171 en aliclik* → te muestro la orden contra entrega con el costo de envío; se crea en AliClik con tu *SI* (no aplica a Shalom con adelanto)",
   "",
   "Antes de cambiar algo te pido confirmar con *SI 1140*. Para mandar la clave al cliente: *ENVIAR 1140*. *NO* cancela.",
   "El pedido puede ir por número (1140), por guía Shalom (104493022), por celular (987654321) o por nombre («clave de Carlos Huaynalaya»).",
@@ -1174,6 +1190,20 @@ export async function manejarComandoSupervisor(conversationId: string, phone: st
     return true;
   }
 
+  // «registra 1171 en aliclik»: propuesta fija, sin pasar por la IA.
+  const refAliclik = pedidoParaRegistroAliclik(ultimo.body);
+  if (refAliclik) {
+    let texto: string;
+    try {
+      texto = await proponerRegistroAliclik(refAliclik, conversationId);
+    } catch (err) {
+      console.error("[supervisor-comandos] error al preparar el registro en AliClik:", err);
+      texto = "❌ Hubo un error al preparar el registro en AliClik. No se registró nada.";
+    }
+    await responder(conversationId, texto);
+    return true;
+  }
+
   // Intérprete previo: las órdenes cortas o que empiezan con la palabra de la orden
   // («SI 1047», «adelanto 1153», «cancela 1047 porque…») las lee directo el intérprete
   // fijo. Un mensaje largo lo interpreta primero la IA, que lee la intención completa;
@@ -1453,8 +1483,167 @@ export async function proponerDistrito(ref: string, distrito: string, conversati
   return `📍 *${encabezado(p)}*: distrito ${p.distrito || "sin distrito"} → *${limpio}*. Responde *SI ${n}* para confirmar o *NO*.`;
 }
 
+/** Última ubicación que el cliente mandó por WhatsApp (el CRM guarda «lat X, lng Y»). */
+async function ubicacionDelCliente(contactId: string): Promise<{ lat: number; lng: number } | null> {
+  const filas = await db
+    .select({ body: messages.body })
+    .from(messages)
+    .innerJoin(conversations, eq(conversations.id, messages.conversationId))
+    .where(
+      and(
+        eq(conversations.contactId, contactId),
+        eq(messages.direction, "in"),
+        or(eq(messages.type, "location"), ilike(messages.body, "%lat %lng%"), ilike(messages.body, "%maps%"))
+      )
+    )
+    .orderBy(desc(messages.createdAt))
+    .limit(10);
+  for (const f of filas) {
+    const c = coordenadasDeTexto(f.body);
+    if (c) return c;
+  }
+  return null;
+}
+
+const ESTADOS_SIN_REGISTRO = new Set(["cancelado", "rechazado", "entregado", "enviado"]);
+
+/**
+ * Deja pendiente registrar un pedido CONTRA ENTREGA en AliClik. Muestra a Gerardo el
+ * resumen con el costo de envío; la orden se crea solo con «SI <pedido>». Los pedidos por
+ * agencia Shalom (adelanto) no se registran aquí.
+ */
+export async function proponerRegistroAliclik(ref: string, conversationId: string): Promise<string> {
+  const r = await pedidoDeReferencia(ref, conversationId);
+  if (!r.ok) return r.texto;
+  const p = r.pedido;
+  const n = digitosPedido(p.numeroOrden);
+
+  const previa = ordenAliclikRegistrada(p.notas);
+  if (previa) return `${encabezado(p)} ya está registrado en AliClik (orden ${previa}). No hice nada.`;
+  if (p.modalidadPago !== "contraentrega" || /shalom/i.test(p.transportadora || "")) {
+    return `${encabezado(p)} va por agencia Shalom con adelanto: se maneja como siempre, no se registra en AliClik.`;
+  }
+  if (ESTADOS_SIN_REGISTRO.has(p.estado)) return `${encabezado(p)} está *${p.estado}*: no se registra en AliClik.`;
+
+  const [ct] = p.contactId
+    ? await db.select({ name: contacts.name, phone: contacts.phone }).from(contacts).where(eq(contacts.id, p.contactId)).limit(1)
+    : [];
+  const falta: string[] = [];
+  const nombre = separarNombre(ct?.name || p.contactName);
+  if (!nombre.name) falta.push("nombre del cliente");
+  const telefono = telefonoAliclik(ct?.phone);
+  if (!telefono) falta.push("celular válido (9 dígitos)");
+  const { direccion, referencia } = separarReferencia(p.direccionEnvio);
+  if (direccion.length < 6) falta.push("dirección con número");
+  const total = Number(p.total) || 0;
+  const { productos, desconocidos, cobrar } = productosParaAliclik(p.items ?? [], total);
+  if (!productos.length) falta.push("productos (el pedido no tiene NAC600 ni Termix)");
+  if (desconocidos.length) falta.push(`código AliClik de: ${desconocidos.join(", ")}`);
+  if (total <= 0) falta.push("monto del pedido");
+
+  // Coordenadas: primero la ubicación de WhatsApp; si no, la dirección en Google Maps.
+  let coord: Coordenadas | null = null;
+  let errorMapa = "";
+  const deChat = p.contactId ? await ubicacionDelCliente(p.contactId) : null;
+  if (deChat) coord = { ...deChat, fuente: "ubicacion_whatsapp" };
+  else if (direccion.length >= 6) {
+    const g = await geocodificarDireccion({ direccion, distrito: p.distrito, ciudad: p.ciudad });
+    if (g.ok) coord = g.coordenadas;
+    else errorMapa = g.error;
+  }
+  if (!coord) {
+    falta.push(`ubicación (el cliente no mandó su ubicación por WhatsApp${errorMapa ? ` y ${errorMapa}` : ""})`);
+  }
+
+  if (falta.length || !coord || !telefono) {
+    return [
+      `🛵 *${encabezado(p)}* todavía no se puede registrar en AliClik.`,
+      `Falta: ${falta.join("; ")}.`,
+      coord ? null : "Lo mejor: pídele al cliente que comparta su ubicación por WhatsApp (📎 → Ubicación).",
+    ]
+      .filter(Boolean)
+      .join("\n");
+  }
+
+  const envio = await cotizarEnvio(coord.lat, coord.lng);
+  if (!envio.ok) return `🛵 *${encabezado(p)}*: AliClik no da envío para ese punto (${envio.error}). No se registró nada.`;
+
+  const { transportName: _nombreCourier, ...courier } = envio.courier;
+  // Envío gratis para el cliente; solo los céntimos del redondeo del pack (199 / 3) van
+  // como envío para que el motorizado cobre exacto el total del pedido.
+  const ajuste = Math.round((total - cobrar) * 100) / 100;
+  const delivery = ajuste > 0 && ajuste < 1 ? ajuste : 0;
+  const cobraMotorizado = Math.round((cobrar + delivery) * 100) / 100;
+  const orden: OrdenAliclik = {
+    note: `CRM ${p.numeroOrden}`,
+    channel: "WHATSAPP",
+    delivery,
+    customer: { name: nombre.name, lastName: nombre.lastName || undefined, phone: telefono, address: direccion },
+    shipping: {
+      address1: direccion,
+      address2: p.distrito || "",
+      lat: coord.lat.toFixed(6),
+      lng: coord.lng.toFixed(6),
+      reference: referencia || undefined,
+    },
+    products: productos,
+    courier,
+  };
+  await guardarPendiente({ pedidoId: p.id, numeroOrden: p.numeroOrden, monto: cobraMotorizado, accion: "aliclik", valor: JSON.stringify(orden) });
+
+  const aproximada = coord.fuente === "google_maps" && !/ROOFTOP|RANGE_INTERPOLATED/.test(coord.precision || "");
+  const lineasProductos = productos
+    .map((x) => `${x.quantity} × ${x.ean === "1400091740516" ? "NAC600" : "Termix tobillera"} (S/ ${x.price.toFixed(2)} c/u)`)
+    .join(" + ");
+  const c = envio.courier;
+  return [
+    `🛵 *Registrar en AliClik: ${encabezado(p)}*`,
+    `• Cliente: ${[nombre.name, nombre.lastName].filter(Boolean).join(" ")} · ${telefono}`,
+    `• Dirección: ${direccion}${p.distrito ? ` (${p.distrito})` : ""}`,
+    referencia ? `• Referencia: ${referencia}` : null,
+    `• Ubicación: ${coord.fuente === "ubicacion_whatsapp" ? "la que mandó el cliente por WhatsApp ✅" : `Google Maps${aproximada ? " ⚠️ aproximada, revisa el punto" : ""}`} https://maps.google.com/?q=${coord.lat.toFixed(6)},${coord.lng.toFixed(6)}`,
+    envio.distrito ? `• Zona según AliClik: ${envio.distrito}` : null,
+    `• Productos: ${lineasProductos}`,
+    `• Cobra el motorizado: *S/ ${cobraMotorizado.toFixed(2)}*${Math.abs(cobraMotorizado - total) > 0.05 ? ` ⚠️ (el pedido dice S/ ${total.toFixed(2)})` : ""}`,
+    `• Costo de envío AliClik: *S/ ${c.deliveryCost.toFixed(2)}* · devolución S/ ${c.returnCost.toFixed(2)}${c.transportName ? ` · ${c.transportName}` : ""}${c.addDays ? ` · +${c.addDays} día(s)` : ""}`,
+    "",
+    `Responde *SI ${n}* para crear la orden o *NO*.`,
+  ]
+    .filter((l) => l !== null)
+    .join("\n");
+}
+
 /** Aplica las acciones que solo propone el asistente. Null si la acción es de otro tipo. */
 async function aplicarAccionAsistente(pend: Pendiente, p: Pedido): Promise<string | null> {
+  if (pend.accion === "aliclik" && pend.valor) {
+    const previa = ordenAliclikRegistrada(p.notas);
+    if (previa) return `${encabezado(p)} ya estaba registrado en AliClik (orden ${previa}). No creé otra.`;
+    let orden: OrdenAliclik;
+    try {
+      orden = JSON.parse(pend.valor) as OrdenAliclik;
+    } catch {
+      return "No pude leer la orden pendiente. Vuelve a pedir el registro.";
+    }
+    const res = await crearOrdenAliclik(orden);
+    if (!res.ok) {
+      await nota(p, `[ALICLIK NO REGISTRADO] ${AUTOR} confirmó el registro y AliClik respondió: ${res.error}`);
+      return `❌ AliClik no creó la orden de ${encabezado(p)}: ${res.error}`;
+    }
+    const nuevaNota = `[ALICLIK_ORDEN:${res.orderNumber}] registrado por ${AUTOR} el ${new Date().toISOString()}`;
+    await db
+      .update(pedidosOrdenes)
+      .set({
+        notas: `${p.notas ? `${p.notas}\n` : ""}${nuevaNota}`,
+        transportadora: "AliClik",
+        ...(p.estado === "por_confirmar_cod" ? { estado: "confirmado" } : {}),
+        updatedAt: new Date(),
+      })
+      .where(eq(pedidosOrdenes.id, p.id));
+    await nota(p, `[ALICLIK REGISTRADO] Orden ${res.orderNumber} creada en AliClik por ${AUTOR} (cobra S/ ${(pend.monto ?? 0).toFixed(2)}).`);
+    if (p.dealId) notificarCambioDealAlErp(p.dealId).catch(() => {});
+    return `✅ ${encabezado(p)} registrado en AliClik: orden *${res.orderNumber}*.`;
+  }
+
   if (pend.accion === "distrito" && pend.valor) {
     await db.update(pedidosOrdenes).set({ distrito: pend.valor, updatedAt: new Date() }).where(eq(pedidosOrdenes.id, p.id));
     await nota(p, `Distrito del pedido ${p.numeroOrden} cambiado por ${AUTOR}: «${p.distrito || "-"}» → «${pend.valor}».`);
