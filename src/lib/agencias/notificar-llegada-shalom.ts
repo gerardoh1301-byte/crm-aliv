@@ -18,6 +18,7 @@ import { deliverMessage } from "@/lib/channels/deliver";
 import { aplicarEtiquetaAContacto } from "../agent/etiquetado";
 import { setDealStage } from "@/lib/deals/stage";
 import { notifyMember } from "@/lib/notifications";
+import { decidirToqueAgencia, mensajeToqueAgencia, PREFIJO_LLAMADA_AGENCIA } from "./cadencia-agencia";
 
 export interface OpcionesNotificarLlegada {
   forzarReenvio?: boolean;
@@ -471,45 +472,46 @@ ${marca}` : marca;
         continue;
       }
       const yaNotificadoEnPedido = notasPed.includes("[aviso_llegada_enviado");
-      const yaNotificado =
-        yaNotificadoEnPedido ||
-        tags.includes("en agencia shalom") ||
-        tags.includes("aviso_llegada_enviado");
+      const avisadoPorEtiqueta = tags.includes("en agencia shalom") || tags.includes("aviso_llegada_enviado");
 
-      // Si ya fue notificado y no se fuerza reenvío, verificar si han pasado más de 20 horas desde el último mensaje
-      // para enviar recordatorio preventivo anti-devolución de Shalom.
-      let esRecordatorio = false;
-      if (yaNotificado) {
-        if (!forzar) {
-          // Consultar último mensaje en la conversación para no saturar si ya se habló hace poco (< 20 horas)
-          const [ultimoMsg] = await db
-            .select({ createdAt: messages.createdAt, direction: messages.direction })
-            .from(messages)
-            .where(eq(messages.conversationId, c.convId || ""))
-            .orderBy(desc(messages.createdAt))
-            .limit(1);
-
-          const horasDesdeUltimo = ultimoMsg?.createdAt
-            ? (Date.now() - new Date(ultimoMsg.createdAt).getTime()) / (1000 * 60 * 60)
-            : 999;
-
-          if (horasDesdeUltimo < 20) {
-            detalles.push({
-              numeroOrden: c.numeroOrden,
-              cliente: c.contactName,
-              phone: c.contactPhone,
-              guia: c.numeroGuia,
-              agencia: agenciaNombre,
-              saldo: saldoSoles,
-              estadoLive: "En destino (ya avisado recientemente)",
-              notificado: false,
-              motivoNoNotificado: `Avisado hace ${horasDesdeUltimo.toFixed(1)}h. Se recordará automáticamente si supera 20h.`,
-            });
-            continue;
-          }
-        }
-        esRecordatorio = true;
+      // Cadencia (22/11): llegada -> toque de la tarde (+4 h, mismo día) -> diario -> riesgo (día 4+).
+      const [ultimoMsg] = await db
+        .select({ createdAt: messages.createdAt })
+        .from(messages)
+        .where(eq(messages.conversationId, c.convId || ""))
+        .orderBy(desc(messages.createdAt))
+        .limit(1);
+      const [ultimoIn] = await db
+        .select({ createdAt: messages.createdAt })
+        .from(messages)
+        .where(and(eq(messages.conversationId, c.convId || ""), eq(messages.direction, "in")))
+        .orderBy(desc(messages.createdAt))
+        .limit(1);
+      const decisionCadencia = decidirToqueAgencia({
+        ahora: new Date(),
+        notasPedido: c.notasPedido,
+        horasEnAgencia,
+        ultimoEntranteEn: ultimoIn?.createdAt ?? null,
+        ultimoMensajeEn: ultimoMsg?.createdAt ?? null,
+        forzar,
+        avisadoSinMarca: !yaNotificadoEnPedido && avisadoPorEtiqueta,
+      });
+      if (decisionCadencia.accion === "esperar") {
+        detalles.push({
+          numeroOrden: c.numeroOrden,
+          cliente: c.contactName,
+          phone: c.contactPhone,
+          guia: c.numeroGuia,
+          agencia: agenciaNombre,
+          saldo: saldoSoles,
+          estadoLive: "En destino (ya avisado recientemente)",
+          notificado: false,
+          motivoNoNotificado: `Sin aviso por ahora: ${decisionCadencia.motivo}.`,
+        });
+        continue;
       }
+      const toque = decisionCadencia.toque;
+      const esRecordatorio = toque !== "llegada";
 
       if (!c.convId) {
         detalles.push({
@@ -542,30 +544,15 @@ ${marca}` : marca;
         continue;
       }
 
-      // Redactar mensaje: Primer aviso o Recordatorio Preventivo Anti-Devolución
-      const mensajeAviso = esRecordatorio
-        ? `¡Hola, ${nombreLimpio}! Te saludamos de Aliv Perú 🌿📦.
-
-Te recordamos con mucho aprecio que tu pedido sigue listo en ventanilla de la *Agencia Shalom ${agenciaNombre}* 🏢.
-
-• *N° de Orden Shalom:* ${c.numeroGuia}
-• *Código:* ${c.codigoRastreo}
-
-⏰ *Importante:* Recuerda que la agencia mantiene los paquetes por tiempo limitado antes de programar su devolución a almacén central.
-
-Para enviarte tu *clave secreta de recojo* y puedas retirarlo hoy mismo con tu DNI físico en ventanilla, confírmanos por aquí el abono del saldo restante de *S/ ${saldoSoles.toFixed(2)}* a nuestro Yape / Plin (*951365418* - Gerardo Huaynalaya).
-
-¿Nos confirmas si te acercas hoy a retirarlo? Quedamos a tu completa disposición. 🙌`
-        : `¡Hola, ${nombreLimpio}! 👋 Te saludamos de Aliv Perú 🌿🚚.
-
-¡Buenas noticias! Te confirmamos que tu paquete ya llegó y se encuentra listo para retirar en la *Agencia Shalom ${agenciaNombre}* 📦✨.
-
-• *N° de Orden Shalom:* ${c.numeroGuia}
-• *Código:* ${c.codigoRastreo}
-
-Para enviarte tu *clave secreta de recojo* y puedas retirarlo hoy mismo con tu DNI físico en ventanilla, confírmanos por aquí el abono del saldo restante de *S/ ${saldoSoles.toFixed(2)}* a nuestro Yape / Plin (*951365418* - Gerardo Huaynalaya).
-
-¿Nos compartes tu constancia por aquí para liberarte tu clave secreta de inmediato? 🔑🙌`;
+      // Redactar mensaje según el toque de la cadencia
+      const mensajeAviso = mensajeToqueAgencia(toque, decisionCadencia.diasEnAgencia, {
+        nombre: nombreLimpio,
+        agencia: agenciaNombre,
+        guia: c.numeroGuia,
+        codigo: c.codigoRastreo,
+        saldo: saldoSoles,
+        medioPago: "Yape / Plin (*951365418* - Gerardo Huaynalaya)",
+      });
 
       const entrega = await deliverMessage(
         c.convId,
@@ -615,7 +602,7 @@ Para enviarte tu *clave secreta de recojo* y puedas retirarlo hoy mismo con tu D
           await db.insert(activities).values({
             type: "note",
             description: esRecordatorio
-              ? `[SHALOM RECORDATORIO] Recordatorio preventivo de recojo enviado: paquete en espera en ${agenciaNombre}. Saldo: S/ ${saldoSoles.toFixed(2)}.`
+              ? `[SHALOM RECORDATORIO] Toque «${toque}» (día ${decisionCadencia.diasEnAgencia} en agencia) enviado: paquete en espera en ${agenciaNombre}. Saldo: S/ ${saldoSoles.toFixed(2)}.`
               : `[SHALOM LLEGADA] Notificación automática enviada: paquete listo para recojo en ${agenciaNombre}. Saldo: S/ ${saldoSoles.toFixed(2)}.`,
             contactId: c.contactId,
             dealId: c.dealId,
@@ -624,8 +611,23 @@ Para enviarte tu *clave secreta de recojo* y puedas retirarlo hoy mismo con tu D
           console.warn("[notificar-llegada] Error registrando actividad:", actErr);
         }
 
+        // Día 4 o más: tarea de llamada para una persona (una por día como máximo).
+        if (toque === "riesgo") {
+          try {
+            await db.insert(activities).values({
+              type: "call",
+              description: `${PREFIJO_LLAMADA_AGENCIA} Llamar a ${c.contactName}: pedido #${c.numeroOrden} lleva ${decisionCadencia.diasEnAgencia} días en Shalom ${agenciaNombre} (guía ${c.numeroGuia}). Saldo pendiente: S/ ${saldoSoles.toFixed(2)}.`,
+              contactId: c.contactId,
+              dealId: c.dealId,
+              scheduledAt: new Date(),
+            });
+          } catch (errCall) {
+            console.warn("[notificar-llegada] Error creando tarea de llamada:", errCall);
+          }
+        }
+
         // Si lleva más de 24 horas en agencia sin retirar, alertar de inmediato a los supervisores (deduplicado 20h)
-        if (esRecordatorio && esHorarioAlertaSupervisores()) {
+        if ((toque === "diario" || toque === "riesgo") && esHorarioAlertaSupervisores()) {
           try {
             const [supReciente] = await db
               .select({ id: activities.id })
@@ -671,7 +673,7 @@ Para enviarte tu *clave secreta de recojo* y puedas retirarlo hoy mismo con tu D
           guia: c.numeroGuia,
           agencia: agenciaNombre,
           saldo: saldoSoles,
-          estadoLive: esRecordatorio ? "En destino (Recordatorio enviado)" : "En destino (Aviso enviado exitosamente)",
+          estadoLive: esRecordatorio ? `En destino (toque ${toque} enviado)` : "En destino (Aviso enviado exitosamente)",
           notificado: true,
         });
       } else {
