@@ -8,6 +8,8 @@ import {
   ordenAliclikRegistrada,
   pedidoParaRegistroAliclik,
   productosParaAliclik,
+  referenciaCercana,
+  referenciaDeTexto,
   nombreParaAliclik,
   separarNombre,
   separarReferencia,
@@ -194,6 +196,66 @@ describe("llamadas a AliClik y Google", () => {
     const r = await geocodificarDireccion({ direccion: "Rinconada del Lago 1649" });
     expect(r).toEqual({ ok: false, error: "falta GOOGLE_MAPS_API_KEY" });
     expect(fetchMock).not.toHaveBeenCalled();
+  });
+});
+
+describe("referencia para AliClik", () => {
+  it("saca la referencia que el cliente escribió en el chat", () => {
+    expect(referenciaDeTexto("Referencia: frente al parque Lucyana")).toBe("frente al parque Lucyana");
+    expect(referenciaDeTexto("vivo al costado de la bodega Don Pepe")).toBe("al costado de la bodega Don Pepe");
+    expect(referenciaDeTexto("ref. espalda del colegio 2045")).toBe("espalda del colegio 2045");
+    expect(referenciaDeTexto("hola quiero 2 frascos")).toBe("");
+    expect(referenciaDeTexto("https://maps.google.com/?q=-11.8,-77.0")).toBe("");
+  });
+
+  it("usa un lugar cercano de Places cuando está habilitado", async () => {
+    fetchMock.mockResolvedValueOnce(
+      new Response(
+        JSON.stringify({
+          places: [
+            { displayName: { text: "Calle San Martín" }, primaryType: "route", location: { latitude: -11.8929, longitude: -77.0309 } },
+            { displayName: { text: "Parque Lucyana" }, primaryType: "park", location: { latitude: -11.8935, longitude: -77.0309 } },
+            { displayName: { text: "Bodega Don Pepe" }, primaryType: "store", location: { latitude: -11.8929, longitude: -77.0315 } },
+          ],
+        }),
+        { status: 200 }
+      )
+    );
+    const r = await referenciaCercana(-11.89286, -77.030931);
+    expect(r?.origen).toBe("places");
+    expect(r?.referencia).toMatch(/^Cerca de Parque Lucyana \(a ~\d+ m\) y Bodega Don Pepe/);
+  });
+
+  it("sin Places, usa el paradero del Geocoding (caso Juan #1171)", async () => {
+    fetchMock.mockResolvedValueOnce(new Response("{}", { status: 403 }));
+    fetchMock.mockResolvedValueOnce(
+      new Response(
+        JSON.stringify({
+          status: "OK",
+          results: [
+            {
+              types: ["establishment", "point_of_interest"],
+              address_components: [{ long_name: "203" }],
+              geometry: { location: { lat: -11.8925, lng: -77.0305 } },
+            },
+            {
+              types: ["establishment", "point_of_interest", "transit_station"],
+              address_components: [{ long_name: "José Carlos Mariátegui" }],
+              geometry: { location: { lat: -11.8917, lng: -77.0312 } },
+            },
+          ],
+        }),
+        { status: 200 }
+      )
+    );
+    const r = await referenciaCercana(-11.89286, -77.030931);
+    expect(r).toEqual({ referencia: "Cerca del paradero José Carlos Mariátegui (a ~130 m)", origen: "geocoding" });
+  });
+
+  it("si Google no da nada, no inventa", async () => {
+    fetchMock.mockResolvedValueOnce(new Response("{}", { status: 403 }));
+    fetchMock.mockResolvedValueOnce(new Response(JSON.stringify({ status: "ZERO_RESULTS", results: [] }), { status: 200 }));
+    expect(await referenciaCercana(-11.89286, -77.030931)).toBeNull();
   });
 });
 

@@ -257,6 +257,107 @@ export async function geocodificarDireccion(partes: {
   }
 }
 
+/**
+ * Referencia escrita por el cliente en un mensaje del chat («referencia: frente al parque»,
+ * «al costado de la bodega…»). Devuelve el tramo útil, o "" si el mensaje no trae una.
+ */
+export function referenciaDeTexto(texto: string | null | undefined): string {
+  const t = (texto || "").replace(/\s+/g, " ").trim();
+  if (!t || /https?:\/\//i.test(t)) return "";
+  const conEtiqueta = t.match(/\bref(?:erencia)?s?\b\.?\s*:?\s*(.{4,})/i);
+  const libre = t.match(
+    /\b(frente (?:a|al)\b.*|al (?:costado|lado|fondo) (?:de|del)\b.*|(?:a )?(?:espaldas?|detr[aá]s) (?:de|del)\b.*|cerca (?:de|del|al|a)\b.*|a una cuadra (?:de|del)\b.*|esquina (?:con|de)\b.*|a la altura (?:de|del)\b.*|altura (?:de|del)\b.*)/i
+  );
+  const r = (conEtiqueta?.[1] ?? libre?.[1] ?? "").replace(/^[\s:,.-]+|[\s.]+$/g, "");
+  return r.length >= 4 ? r.slice(0, 140) : "";
+}
+
+/** Metros entre dos puntos (aproximado, suficiente para «a ~80 m»). */
+export function distanciaMetros(a: { lat: number; lng: number }, b: { lat: number; lng: number }): number {
+  const rad = (g: number) => (g * Math.PI) / 180;
+  const dLat = rad(b.lat - a.lat);
+  const dLng = rad(b.lng - a.lng);
+  const h = Math.sin(dLat / 2) ** 2 + Math.cos(rad(a.lat)) * Math.cos(rad(b.lat)) * Math.sin(dLng / 2) ** 2;
+  return Math.round(6371000 * 2 * Math.asin(Math.sqrt(h)));
+}
+
+const TIPOS_SIN_REFERENCIA = /^(route|street_address|premise|subpremise|plus_code|locality|political|postal_code|administrative_area)/;
+
+/**
+ * Referencia sugerida por Google Maps cuando el cliente no dio ninguna (AliClik la exige).
+ * 1) Places API (lugares conocidos a menos de 250 m: parque, colegio, bodega, paradero…).
+ * 2) Si Places no está habilitado, el Geocoding inverso: paradero o lugar de interés cercano.
+ * 3) Si tampoco, la urbanización o zona. Nunca inventa: si Google no da nada, devuelve null.
+ */
+export async function referenciaCercana(
+  lat: number,
+  lng: number
+): Promise<{ referencia: string; origen: "places" | "geocoding" } | null> {
+  const clave = (process.env.GOOGLE_MAPS_API_KEY ?? "").trim();
+  if (!clave) return null;
+  const punto = { lat, lng };
+  const conDistancia = (nombre: string, l?: { lat: number; lng: number }) =>
+    l && Number.isFinite(l.lat) && Number.isFinite(l.lng)
+      ? `${nombre} (a ~${Math.max(10, Math.round(distanciaMetros(punto, l) / 10) * 10)} m)`
+      : nombre;
+
+  try {
+    const res = await fetch("https://places.googleapis.com/v1/places:searchNearby", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "X-Goog-Api-Key": clave,
+        "X-Goog-FieldMask": "places.displayName,places.primaryType,places.location",
+      },
+      body: JSON.stringify({
+        locationRestriction: { circle: { center: { latitude: lat, longitude: lng }, radius: 250 } },
+        rankPreference: "DISTANCE",
+        maxResultCount: 6,
+        languageCode: "es",
+      }),
+      signal: AbortSignal.timeout(6000),
+    });
+    if (res.ok) {
+      const body = (await res.json().catch(() => null)) as { places?: Array<Record<string, any>> } | null;
+      const lugares = (body?.places ?? [])
+        .filter((x) => typeof x.displayName?.text === "string" && !TIPOS_SIN_REFERENCIA.test(String(x.primaryType ?? "")))
+        .slice(0, 2)
+        .map((x) =>
+          conDistancia(String(x.displayName.text).trim(), { lat: Number(x.location?.latitude), lng: Number(x.location?.longitude) })
+        );
+      if (lugares.length) return { referencia: `Cerca de ${lugares.join(" y ")}`, origen: "places" };
+    }
+  } catch {
+    // Places no disponible: seguimos con el Geocoding (misma clave).
+  }
+
+  try {
+    const tipos = "transit_station|point_of_interest|park|school|establishment|neighborhood|sublocality";
+    const url =
+      "https://maps.googleapis.com/maps/api/geocode/json" +
+      `?latlng=${lat},${lng}&language=es&result_type=${encodeURIComponent(tipos)}&key=${encodeURIComponent(clave)}`;
+    const res = await fetch(url, { signal: AbortSignal.timeout(6000) });
+    const body = (await res.json().catch(() => null)) as Record<string, any> | null;
+    if (!res.ok || body?.status !== "OK") return null;
+    const resultados = (body.results ?? []) as Array<Record<string, any>>;
+    const nombre = (r: Record<string, any>) => String(r.address_components?.[0]?.long_name ?? "").trim();
+    const ubic = (r: Record<string, any>) => ({ lat: Number(r.geometry?.location?.lat), lng: Number(r.geometry?.location?.lng) });
+    const paradero = resultados.find((r) => r.types?.includes("transit_station") && /[a-z]/i.test(nombre(r)));
+    if (paradero) return { referencia: `Cerca del paradero ${conDistancia(nombre(paradero), ubic(paradero))}`, origen: "geocoding" };
+    const lugar = resultados.find(
+      (r) =>
+        (r.types?.includes("park") || r.types?.includes("school") || r.types?.includes("point_of_interest")) &&
+        /[a-z]{3}/i.test(nombre(r))
+    );
+    if (lugar) return { referencia: `Cerca de ${conDistancia(nombre(lugar), ubic(lugar))}`, origen: "geocoding" };
+    const zona = resultados.find((r) => r.types?.includes("neighborhood") || r.types?.includes("sublocality"));
+    if (zona && nombre(zona)) return { referencia: `Zona ${nombre(zona)}`, origen: "geocoding" };
+    return null;
+  } catch {
+    return null;
+  }
+}
+
 export async function cotizarEnvio(
   lat: number,
   lng: number

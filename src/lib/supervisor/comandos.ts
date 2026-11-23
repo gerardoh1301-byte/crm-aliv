@@ -14,6 +14,8 @@ import {
   cotizarEnvio,
   crearOrdenAliclik,
   geocodificarDireccion,
+  referenciaCercana,
+  referenciaDeTexto,
   ordenAliclikRegistrada,
   pedidoParaRegistroAliclik,
   productosParaAliclik,
@@ -1516,6 +1518,22 @@ async function ubicacionDelCliente(contactId: string): Promise<{ lat: number; ln
   return null;
 }
 
+/** Referencia que el cliente escribió en el chat (la más reciente de sus últimos 30 mensajes). */
+async function referenciaDelChat(contactId: string): Promise<string> {
+  const filas = await db
+    .select({ body: messages.body })
+    .from(messages)
+    .innerJoin(conversations, eq(conversations.id, messages.conversationId))
+    .where(and(eq(conversations.contactId, contactId), eq(messages.direction, "in")))
+    .orderBy(desc(messages.createdAt))
+    .limit(30);
+  for (const f of filas) {
+    const r = referenciaDeTexto(f.body);
+    if (r) return r;
+  }
+  return "";
+}
+
 const ESTADOS_SIN_REGISTRO = new Set(["cancelado", "rechazado", "entregado", "enviado"]);
 
 /**
@@ -1545,7 +1563,7 @@ export async function proponerRegistroAliclik(ref: string, conversationId: strin
   if (!nombreCompleto) falta.push("nombre del cliente");
   const telefono = telefonoAliclik(ct?.phone);
   if (!telefono) falta.push("celular válido (9 dígitos)");
-  const { direccion, referencia } = separarReferencia(p.direccionEnvio);
+  const { direccion, referencia: referenciaDireccion } = separarReferencia(p.direccionEnvio);
   if (direccion.length < 6) falta.push("dirección con número");
   const total = Number(p.total) || 0;
   const { productos, desconocidos, cobrar } = productosParaAliclik(p.items ?? [], total);
@@ -1577,6 +1595,23 @@ export async function proponerRegistroAliclik(ref: string, conversationId: strin
       .join("\n");
   }
 
+  // Referencia (AliClik la exige): la de la dirección, la que el cliente escribió en el chat
+  // o, si no dio ninguna, un lugar cercano según Google Maps (marcada como sugerida).
+  let referencia = referenciaDireccion;
+  let origenReferencia: "cliente" | "chat" | "google" | "sin" = referencia ? "cliente" : "sin";
+  if (!referencia && p.contactId) {
+    referencia = await referenciaDelChat(p.contactId);
+    if (referencia) origenReferencia = "chat";
+  }
+  if (!referencia) {
+    const g = await referenciaCercana(coord.lat, coord.lng);
+    if (g) {
+      referencia = g.referencia;
+      origenReferencia = "google";
+    }
+  }
+  if (!referencia) referencia = "Sin referencia del cliente: guiarse por el GPS y llamar al llegar";
+
   const envio = await cotizarEnvio(coord.lat, coord.lng);
   if (!envio.ok) return `🛵 *${encabezado(p)}*: AliClik no da envío para ese punto (${envio.error}). No se registró nada.`;
 
@@ -1596,7 +1631,7 @@ export async function proponerRegistroAliclik(ref: string, conversationId: strin
       address2: p.distrito || "",
       lat: coord.lat.toFixed(6),
       lng: coord.lng.toFixed(6),
-      reference: referencia || undefined,
+      reference: referencia,
     },
     products: productos,
     courier,
@@ -1612,7 +1647,15 @@ export async function proponerRegistroAliclik(ref: string, conversationId: strin
     `🛵 *Registrar en AliClik: ${encabezado(p)}*`,
     `• Cliente: ${nombreCompleto} · ${telefono}`,
     `• Dirección: ${direccion}${p.distrito ? ` (${p.distrito})` : ""}`,
-    referencia ? `• Referencia: ${referencia}` : null,
+    `• Referencia: ${referencia}${
+      origenReferencia === "chat"
+        ? " (la escribió el cliente en el chat)"
+        : origenReferencia === "google"
+          ? " ⚠️ sugerida por Google Maps, confírmala"
+          : origenReferencia === "sin"
+            ? " ⚠️ pídesela al cliente"
+            : ""
+    }`,
     `• Ubicación: ${coord.fuente === "ubicacion_whatsapp" ? "la que mandó el cliente por WhatsApp ✅" : `Google Maps${aproximada ? " ⚠️ aproximada, revisa el punto" : ""}`} https://maps.google.com/?q=${coord.lat.toFixed(6)},${coord.lng.toFixed(6)}`,
     envio.distrito ? `• Zona según AliClik: ${envio.distrito}` : null,
     `• Productos: ${lineasProductos}`,
