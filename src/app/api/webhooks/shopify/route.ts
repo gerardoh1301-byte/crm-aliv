@@ -12,6 +12,7 @@ import { sincronizarEtapaPipeline } from "../../../../../modules/pedidos/servido
 import { emitAutomationEvent } from "@/lib/automations";
 import { extraerDatosFormularioShopify } from "@/lib/shopify/form-extractor";
 import { marcarAbandonoRecuperado } from "@/lib/abandonos/servidor";
+import { clasificarEntregaWeb, textoClasificacion } from "@/lib/shopify/clasificar-entrega-web";
 
 export const dynamic = "force-dynamic";
 
@@ -186,6 +187,8 @@ export async function POST(req: NextRequest) {
     const distrito = datosForm.distrito;
     const direccion = datosForm.direccionEnvio;
     const dni = datosForm.dni;
+    // AG (agencia Shalom con adelanto) o CE (contra entrega) según la cobertura de AliClik.
+    const entregaWeb = await clasificarEntregaWeb({ esProvincia: datosForm.esProvincia, ciudad, distrito, direccion });
 
   // Buscar o crear contacto
   let contactId: string | null = null;
@@ -211,9 +214,7 @@ export async function POST(req: NextRequest) {
             distrito: distrito || cf.distrito,
             direccion_envio: direccion || cf.direccion_envio,
             dni_ruc: dni || cf.dni_ruc,
-            modalidad_entrega: datosForm.esProvincia
-              ? "Agencia Shalom / Olva (Provincia)"
-              : "Contraentrega Domicilio (Lima)",
+            modalidad_entrega: entregaWeb.modalidadEntrega,
           },
         })
         .where(eq(contacts.id, existente.id));
@@ -240,9 +241,7 @@ export async function POST(req: NextRequest) {
           ...(distrito ? { distrito } : {}),
           ...(direccion ? { direccion_envio: direccion } : {}),
           ...(dni ? { dni_ruc: dni } : {}),
-          modalidad_entrega: datosForm.esProvincia
-            ? "Agencia Shalom / Olva (Provincia)"
-            : "Contraentrega Domicilio (Lima)",
+          modalidad_entrega: entregaWeb.modalidadEntrega,
         },
         tenantId,
       })
@@ -328,7 +327,7 @@ export async function POST(req: NextRequest) {
       contactId,
       dealId,
       estado: "por_confirmar_cod",
-      modalidadPago: "contraentrega",
+      modalidadPago: entregaWeb.modalidadPago,
       items,
       total: String(payload.total_price ?? "0.00"),
       moneda: payload.currency || "PEN",
@@ -336,9 +335,11 @@ export async function POST(req: NextRequest) {
       ciudad,
       distrito,
       direccionEnvio: direccion || null,
-      notas:
+      notas: `${
         payload.note ||
-        `Pedido web ${numeroOrden} desde ${shopDomain} (Canal: ${payload.gateway || "EasySell COD Form"})`,
+        `Pedido web ${numeroOrden} desde ${shopDomain} (Canal: ${payload.gateway || "EasySell COD Form"})`
+      }
+${entregaWeb.marca}`,
     }).returning({ id: pedidosOrdenes.id });
 
     // R1: Detección inteligente de duplicados
@@ -393,7 +394,7 @@ export async function POST(req: NextRequest) {
         });
       }
 
-      const esProv = datosForm.esProvincia;
+      const esProv = entregaWeb.esAgencia;
       const totalNum = Number(payload.total_price) || 0;
       const saldoNum = Math.max(0, totalNum - 20);
 
@@ -414,7 +415,7 @@ export async function POST(req: NextRequest) {
           esProvincia: String(esProv),
           adelanto: "20.00",
           saldo: saldoNum.toFixed(2),
-          modalidadPago: "contraentrega",
+          modalidadPago: entregaWeb.modalidadPago,
           canal: "shopify",
           origen: "shopify",
         },
@@ -423,7 +424,7 @@ export async function POST(req: NextRequest) {
       await notificarSupervisoresCritico({
         tipo: "pedido_shopify",
         titulo: `Pedido web ${numeroOrden}`,
-        detalle: `${numeroOrden} por S/ ${totalNum.toFixed(2)} (${items.map((i) => `${i.cantidad}x ${i.titulo}`).join(", ")}) · ${distrito ? `${distrito}, ` : ""}${ciudad}${esProv ? " · provincia: falta adelanto S/20" : ""}`,
+        detalle: `${numeroOrden} por S/ ${totalNum.toFixed(2)} (${items.map((i) => `${i.cantidad}x ${i.titulo}`).join(", ")}) · ${distrito ? `${distrito}, ` : ""}${ciudad} · ${textoClasificacion(entregaWeb)}`,
         clienteNombre: nombre,
         clienteTelefono: telefono,
         contactId,

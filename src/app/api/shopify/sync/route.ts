@@ -9,6 +9,8 @@ import { requireAdmin } from "@/lib/api-auth";
 import { resolveDefaultTenantId } from "@/lib/tenants";
 import { sincronizarConGoogleDrive } from "@/lib/drive-sync";
 import { extraerDatosFormularioShopify } from "@/lib/shopify/form-extractor";
+import { clasificarEntregaWeb } from "@/lib/shopify/clasificar-entrega-web";
+import { esPedidoDeProvincia } from "@/lib/pedidos/adelanto";
 import { debeAvisarPedidoImportado, HORAS_AVISO_PEDIDO_IMPORTADO } from "@/lib/pedidos/numero-formato";
 
 export const dynamic = "force-dynamic";
@@ -128,6 +130,12 @@ export async function POST(req: NextRequest) {
       const distrito = o.distrito?.trim() || null;
       const direccion = o.direccion?.trim() || null;
       const total = Number(o.total) || 199;
+      const entregaWeb = await clasificarEntregaWeb({
+        esProvincia: esPedidoDeProvincia({ ciudad, distrito, direccionEnvio: direccion }),
+        ciudad,
+        distrito,
+        direccion,
+      });
 
       // Buscar o crear contacto
       let contactId: string | null = null;
@@ -199,17 +207,18 @@ export async function POST(req: NextRequest) {
           contactId,
           dealId,
           estado: "por_confirmar_cod",
-          modalidadPago: "contraentrega",
+          modalidadPago: entregaWeb.modalidadPago,
           items,
           total: total.toFixed(2),
           moneda: "PEN",
           ciudad,
           distrito,
           direccionEnvio: direccion,
-          notas: o.notas || "Importado desde Shopify (Canal: EasySell COD Form)",
+          notas: `${o.notas || "Importado desde Shopify (Canal: EasySell COD Form)"}
+${entregaWeb.marca}`,
         });
 
-        const esProv = !ciudad.toLowerCase().includes("lima") && !ciudad.toLowerCase().includes("callao");
+        const esProv = entregaWeb.esAgencia;
         const totalNum = Number(total) || 199;
         const saldoNum = Math.max(0, totalNum - 20);
 
@@ -239,7 +248,7 @@ export async function POST(req: NextRequest) {
             esProvincia: String(esProv),
             adelanto: "20.00",
             saldo: saldoNum.toFixed(2),
-            modalidadPago: "contraentrega",
+            modalidadPago: entregaWeb.modalidadPago,
             canal: "shopify",
             origen: "shopify",
           },
@@ -340,6 +349,7 @@ export async function POST(req: NextRequest) {
         const distrito = datosForm.distrito;
         const direccion = datosForm.direccionEnvio;
         const dni = datosForm.dni;
+        const entregaWeb = await clasificarEntregaWeb({ esProvincia: datosForm.esProvincia, ciudad, distrito, direccion });
 
         let contactId: string | null = null;
         if (telefono || email) {
@@ -363,9 +373,7 @@ export async function POST(req: NextRequest) {
                   distrito: distrito || cf.distrito,
                   direccion_envio: direccion || cf.direccion_envio,
                   dni_ruc: dni || cf.dni_ruc,
-                  modalidad_entrega: datosForm.esProvincia
-                    ? "Agencia Shalom / Olva (Provincia)"
-                    : "Contraentrega Domicilio (Lima)",
+                  modalidad_entrega: entregaWeb.modalidadEntrega,
                 },
               })
               .where(eq(contacts.id, existente.id));
@@ -388,9 +396,7 @@ export async function POST(req: NextRequest) {
                 ...(distrito ? { distrito } : {}),
                 ...(direccion ? { direccion_envio: direccion } : {}),
                 ...(dni ? { dni_ruc: dni } : {}),
-                modalidad_entrega: datosForm.esProvincia
-                  ? "Agencia Shalom / Olva (Provincia)"
-                  : "Contraentrega Domicilio (Lima)",
+                modalidad_entrega: entregaWeb.modalidadEntrega,
               },
               tenantId,
             })
@@ -421,19 +427,20 @@ export async function POST(req: NextRequest) {
           contactId,
           dealId,
           estado: "por_confirmar_cod",
-          modalidadPago: "contraentrega",
+          modalidadPago: entregaWeb.modalidadPago,
           items,
           total: String(po.total_price ?? "0.00"),
           moneda: String(po.currency || "PEN"),
           ciudad,
           distrito,
           direccionEnvio: direccion || null,
-          notas: String(
+          notas: `${String(
             po.note || `Pedido importado desde Shopify (Canal: ${po.gateway || "web"})`
-          ),
+          )}
+${entregaWeb.marca}`,
         });
 
-        const esProv = datosForm.esProvincia;
+        const esProv = entregaWeb.esAgencia;
         const totalNum = Number(po.total_price) || 0;
         const saldoNum = Math.max(0, totalNum - 20);
 
@@ -465,7 +472,7 @@ export async function POST(req: NextRequest) {
             esProvincia: String(esProv),
             adelanto: "20.00",
             saldo: saldoNum.toFixed(2),
-            modalidadPago: "contraentrega",
+            modalidadPago: entregaWeb.modalidadPago,
             canal: "shopify",
             origen: "shopify",
           },
