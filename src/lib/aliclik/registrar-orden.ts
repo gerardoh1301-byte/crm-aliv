@@ -283,9 +283,22 @@ export function distanciaMetros(a: { lat: number; lng: number }, b: { lat: numbe
 
 const TIPOS_SIN_REFERENCIA = /^(route|street_address|premise|subpremise|plus_code|locality|political|postal_code|administrative_area)/;
 
+/** Lugares que un motorizado reconoce (Places API, tabla A). Sin filtro, Google da talleres y casas. */
+const TIPOS_REFERENCIA_PLACES = [
+  "park", "school", "primary_school", "secondary_school", "university", "church", "supermarket",
+  "grocery_store", "convenience_store", "market", "pharmacy", "drugstore", "bank", "gas_station",
+  "hospital", "medical_clinic", "police", "fire_station", "bus_station", "bus_stop", "transit_station",
+  "restaurant", "bakery", "hardware_store", "shopping_mall", "stadium", "sports_complex",
+  "community_center", "city_hall", "library", "post_office", "hotel", "gym",
+];
+
+/** Quita emojis y comillas sobrantes del nombre que da Google. */
+const limpiarNombreLugar = (n: string) =>
+  n.replace(/[\p{Extended_Pictographic}\uFE0F]/gu, "").replace(/\s+/g, " ").trim();
+
 /**
  * Referencia sugerida por Google Maps cuando el cliente no dio ninguna (AliClik la exige).
- * 1) Places API (lugares conocidos a menos de 250 m: parque, colegio, bodega, paradero…).
+ * 1) Places API (lugares conocidos a menos de 300 m: parque, colegio, iglesia, bodega, mercado…).
  * 2) Si Places no está habilitado, el Geocoding inverso: paradero o lugar de interés cercano.
  * 3) Si tampoco, la urbanización o zona. Nunca inventa: si Google no da nada, devuelve null.
  */
@@ -310,7 +323,8 @@ export async function referenciaCercana(
         "X-Goog-FieldMask": "places.displayName,places.primaryType,places.location",
       },
       body: JSON.stringify({
-        locationRestriction: { circle: { center: { latitude: lat, longitude: lng }, radius: 250 } },
+        includedTypes: TIPOS_REFERENCIA_PLACES,
+        locationRestriction: { circle: { center: { latitude: lat, longitude: lng }, radius: 300 } },
         rankPreference: "DISTANCE",
         maxResultCount: 6,
         languageCode: "es",
@@ -323,7 +337,7 @@ export async function referenciaCercana(
         .filter((x) => typeof x.displayName?.text === "string" && !TIPOS_SIN_REFERENCIA.test(String(x.primaryType ?? "")))
         .slice(0, 2)
         .map((x) =>
-          conDistancia(String(x.displayName.text).trim(), { lat: Number(x.location?.latitude), lng: Number(x.location?.longitude) })
+          conDistancia(limpiarNombreLugar(String(x.displayName.text)), { lat: Number(x.location?.latitude), lng: Number(x.location?.longitude) })
         );
       if (lugares.length) return { referencia: `Cerca de ${lugares.join(" y ")}`, origen: "places" };
     }
