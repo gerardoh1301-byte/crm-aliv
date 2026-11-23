@@ -1256,6 +1256,17 @@ export async function manejarComandoSupervisor(conversationId: string, phone: st
     const traduccion = await traducirConIA(ultimo.body || "", conversationId);
     // Si la IA no respondió, el intérprete fijo (con sus reglas estrictas) es el respaldo.
     if (!traduccion && !directa) cmd = interpretarComando(ultimo.body);
+    if (traduccion?.tipo === "aliclik") {
+      let texto: string;
+      try {
+        texto = await proponerRegistroAliclik(traduccion.pedido, conversationId);
+      } catch (err) {
+        console.error("[supervisor-comandos] error al preparar el registro en AliClik:", err);
+        texto = "❌ Hubo un error al preparar el registro en AliClik. No se registró nada.";
+      }
+      await responder(conversationId, `🤖 Entendí: *${traduccion.orden}*\n\n${texto}`);
+      return true;
+    }
     if (traduccion?.tipo === "no_soportada") {
       await responder(
         conversationId,

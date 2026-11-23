@@ -36,7 +36,17 @@ describe("orden del supervisor", () => {
     expect(pedidoParaRegistroAliclik("regístralo en aliclik 942843548")).toBe("942843548");
   });
 
+  it("entiende el pedido escrito con sus palabras (caso Gerardo 23/11)", () => {
+    expect(
+      pedidoParaRegistroAliclik(
+        "el pedido de Juan Carlos Rodriguez (#1171) es Contra entrega y en Lima, puedes programar su entrega en aliclik?"
+      )
+    ).toBe("1171");
+    expect(pedidoParaRegistroAliclik("agenda en aliclik el 1171 por favor")).toBe("1171");
+  });
+
   it("una pregunta o un mensaje sin AliClik no es la orden", () => {
+    expect(pedidoParaRegistroAliclik("¿se registró el 1171 en aliclik?")).toBeNull();
     expect(pedidoParaRegistroAliclik("¿ya está registrado el 1171 en aliclik?")).toBeNull();
     expect(pedidoParaRegistroAliclik("registra 1171")).toBeNull();
     expect(pedidoParaRegistroAliclik("pasa 1140 a confirmado")).toBeNull();
@@ -182,5 +192,21 @@ describe("llamadas a AliClik y Google", () => {
     const r = await geocodificarDireccion({ direccion: "Rinconada del Lago 1649" });
     expect(r).toEqual({ ok: false, error: "falta GOOGLE_MAPS_API_KEY" });
     expect(fetchMock).not.toHaveBeenCalled();
+  });
+});
+
+describe("traducción de la IA", () => {
+  it("la orden de AliClik que devuelve la IA se acepta (con número o con nombre)", async () => {
+    const { normalizarTraduccion } = await import("@/lib/supervisor/traduccion");
+    expect(normalizarTraduccion({ tipo: "orden", orden: "registra 1171 en aliclik", descripcion: "programar entrega" })).toEqual({
+      tipo: "aliclik",
+      orden: "registra 1171 en aliclik",
+      pedido: "1171",
+      descripcion: "programar entrega",
+    });
+    expect(normalizarTraduccion({ tipo: "orden", orden: "registra juan carlos rodriguez en aliclik", descripcion: "" })).toMatchObject({
+      tipo: "aliclik",
+      pedido: "juan carlos rodriguez",
+    });
   });
 });

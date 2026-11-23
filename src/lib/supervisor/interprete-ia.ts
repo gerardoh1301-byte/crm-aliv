@@ -27,6 +27,7 @@ export const ORDENES_ESTANDAR = `ÓRDENES ESTÁNDAR (el <pedido> puede ser el n�
 - "registra clave <pedido> <clave>" → guardar la clave de retiro de Shalom
 - "total <pedido> <monto>"       → corregir el total del pedido
 - "nota <número de pedido> <texto>" → dejar una nota en el pedido
+- "registra <pedido> en aliclik"  → registrar, programar, agendar o subir a AliClik la entrega de un pedido CONTRA ENTREGA (Lima o provincia con cobertura). El CRM muestra el costo de envío y pide SI. No aplica a Shalom con adelanto.
 - "SI <pedido>" / "ENVIAR <pedido>" / "NO" → confirma, envía la clave o cancela lo que se le propuso
 - "ayuda"                        → pregunta qué órdenes existen
 

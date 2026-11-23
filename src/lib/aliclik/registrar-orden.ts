@@ -169,10 +169,18 @@ export function elegirCourier(couriers: unknown[]): CourierAliclik | null {
 export function pedidoParaRegistroAliclik(texto: string | null | undefined): string | null {
   const t = (texto || "").trim().toLowerCase();
   if (!/\bali\s*cli(c|k)k?\b/.test(t)) return null;
-  if (!/^(por favor\s+|porfa\s+)?(reg[ií]str(a|ar|alo|ame)|sub(e|ir|elo)|cre(a|ar)|carg(a|ar|alo)|ingres(a|ar|alo)|pas(a|ar|alo))\b/.test(t)) return null;
+  // Pide la acción: registrar, programar, agendar, subir, crear, cargar, ingresar, pasar, mandar, despachar.
+  if (!/\b(reg[ií]str|program|agend|sub(e|ir|elo|irlo)\b|cre(a|ar)\b|carg(a|ar|alo|arlo)\b|ingres|pas(a|ar|alo|arlo)\b|mand(a|ar|alo|arlo)\b|despach)/.test(t)) return null;
+  // Una pregunta por el estado («¿ya está registrado…?», «¿se registró…?») no es la orden.
+  if (/\b(est[aá]|fue|qued[oó]|ya) (registrad|programad|agendad|subid|cread|cargad|ingresad)|\bse (registr|program|agend|subi|cre)[oó](?![a-záéíóúñ])/.test(t)) {
+    return null;
+  }
   const sinMarca = t.replace(/\bali\s*cli(c|k)k?\b/g, " ");
   const m =
-    sinMarca.match(/\b([a-z]{2,5}-\d{2,6})\b/i) ?? sinMarca.match(/\b(9\d{8})\b/) ?? sinMarca.match(/#?\b(\d{3,6})\b/);
+    sinMarca.match(/\b([a-z]{2,5}-\d{2,6})\b/i) ??
+    sinMarca.match(/#\s?(\d{3,6})\b/) ??
+    sinMarca.match(/\b(9\d{8})\b/) ??
+    sinMarca.match(/\b(\d{3,6})\b/);
   return m ? m[1].toUpperCase() : null;
 }
 
