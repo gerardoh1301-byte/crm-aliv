@@ -22,3 +22,18 @@ describe("Supervisores y Entrenadores Oficiales", () => {
     expect(normalizarTelefono("+51 951-365-418")).toBe("51951365418");
   });
 });
+
+describe("avisos internos sin plantilla (sin cobro de Meta)", () => {
+  it("el aviso interno es solo texto, nunca plantilla", async () => {
+    const { mensajeAvisoInterno } = await import("@/lib/alerts/supervisor-alerts");
+    const m = mensajeAvisoInterno("🚨 ALERTA");
+    expect(m).toEqual({ text: "🚨 ALERTA" });
+    expect("template" in m).toBe(false);
+  });
+  it("el módulo ya no usa plantillas de aviso", async () => {
+    const fs = await import("node:fs");
+    const src = fs.readFileSync("src/lib/alerts/supervisor-alerts.ts", "utf8");
+    expect(src).not.toMatch(/template\s*:/);
+    expect(src).not.toMatch(/aliv_aviso_interno|aliv_alerta_supervisor/);
+  });
+});

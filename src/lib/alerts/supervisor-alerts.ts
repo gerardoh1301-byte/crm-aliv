@@ -1,7 +1,7 @@
 import "server-only";
 import { db } from "@/db";
-import { contacts, conversations, whatsappTemplates } from "@/db/schema";
-import { and, eq, sql } from "drizzle-orm";
+import { contacts, conversations } from "@/db/schema";
+import { eq } from "drizzle-orm";
 import { deliverMessage } from "@/lib/channels/deliver";
 
 import {
@@ -43,25 +43,13 @@ export function esNumeroEntrenador(phone: string | null | undefined): boolean {
 }
 
 /**
- * Plantilla de los avisos internos. `aliv_alerta_supervisor` quedó aprobada como MARKETING y
- * Meta la bloquea por el límite de marketing (131049): fuera de las 24 h los avisos no
- * llegaban. `aliv_aviso_interno` es la misma plantilla como UTILITY; se usa apenas figure
- * aprobada en la última sincronización con Meta (mismos 3 parámetros: título, cliente, detalle).
+ * Los avisos internos salen SIEMPRE como texto libre, nunca como plantilla: Gerardo y el
+ * equipo conversan con el CRM todo el día, así que la ventana de 24 h está abierta y una
+ * plantilla solo generaría un cobro de Meta (decisión de Gerardo, 23/11/2026). Si la
+ * ventana de un supervisor estuviera cerrada, el aviso no sale y queda el error en el log.
  */
-export const PLANTILLA_AVISO_UTILITY = "aliv_aviso_interno";
-export const PLANTILLA_AVISO_ANTERIOR = "aliv_alerta_supervisor";
-
-async function plantillaDeAviso(): Promise<string> {
-  try {
-    const [row] = await db
-      .select({ name: whatsappTemplates.name })
-      .from(whatsappTemplates)
-      .where(and(eq(whatsappTemplates.name, PLANTILLA_AVISO_UTILITY), sql`upper(${whatsappTemplates.status}) = 'APPROVED'`))
-      .limit(1);
-    return row ? PLANTILLA_AVISO_UTILITY : PLANTILLA_AVISO_ANTERIOR;
-  } catch {
-    return PLANTILLA_AVISO_ANTERIOR;
-  }
+export function mensajeAvisoInterno(texto: string): { text: string } {
+  return { text: texto };
 }
 
 export interface AlertaSupervisorInput {
@@ -134,7 +122,6 @@ export async function notificarSupervisoresCritico(input: AlertaSupervisorInput)
 
   // Buscar si existen conversaciones activas con los supervisores para enviarles el mensaje por WhatsApp
   const destinos = destinatariosAviso(input.tipo).map((d) => `+51${d}`);
-  const nombrePlantilla = await plantillaDeAviso();
   for (const supRaw of destinos) {
     try {
       const [supContact] = await db
@@ -151,29 +138,9 @@ export async function notificarSupervisoresCritico(input: AlertaSupervisorInput)
           .limit(1);
 
         if (supConv) {
-          const detallePlantilla = input.detalle.replace(/\s+/g, " ").trim().slice(0, 220);
-          let res = await deliverMessage(
-            supConv.id,
-            {
-              text: mensajeAlerta,
-              template: {
-                name: nombrePlantilla,
-                language: "es",
-                params: [encTitle, clienteStr, detallePlantilla],
-                previewText: mensajeAlerta,
-              },
-            },
-            "agent"
-          );
-
-          // Fallback resiliente: si la plantilla no está aprobada aún en Meta, enviar como texto plano directo
-          if (!res.ok) {
-            console.warn(`[notificarSupervisoresCritico] Plantilla falló (${res.error}), reintentando como texto plano para supervisor ${supRaw}...`);
-            res = await deliverMessage(
-              supConv.id,
-              { text: mensajeAlerta },
-              "agent"
-            );
+          const res = await deliverMessage(supConv.id, mensajeAvisoInterno(mensajeAlerta), "agent");
+          if (!res.ok && res.error === "fuera_de_ventana_24h") {
+            console.warn(`[notificarSupervisoresCritico] ${supRaw} sin ventana de 24 h: aviso no enviado (sin plantilla, para no generar cobro).`);
           }
 
           if (res.ok) {
