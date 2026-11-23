@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { procesarToquesCalientes } from "@/lib/agent/toque-caliente";
+import { procesarToquesCalientes, registroPruebaToqueCaliente } from "@/lib/agent/toque-caliente";
+import { requireMember } from "@/lib/api-auth";
 import { autorizadoPorSecreto } from "@/lib/secreto-worker";
 
 export const dynamic = "force-dynamic";
@@ -11,8 +12,12 @@ export const maxDuration = 60;
  * el precio. Solo envía con TOQUE_CALIENTE=on; sin ella responde qué enviaría.
  */
 export async function GET(request: NextRequest) {
+  // Un miembro del equipo puede verlo a mano (incluye el registro del modo prueba).
   if (!autorizadoPorSecreto(request)) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    const auth = await requireMember();
+    if ("response" in auth) return auth.response;
+    const res = await procesarToquesCalientes();
+    return NextResponse.json({ ok: true, ...res, registroPrueba: registroPruebaToqueCaliente() });
   }
   const ahoraParam = process.env.NODE_ENV !== "production" ? request.nextUrl.searchParams.get("ahora") : null;
   const ahora = ahoraParam && !Number.isNaN(Date.parse(ahoraParam)) ? new Date(ahoraParam) : undefined;

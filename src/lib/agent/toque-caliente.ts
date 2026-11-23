@@ -19,6 +19,22 @@ export function toqueCalienteActivo(): boolean {
   return (process.env.TOQUE_CALIENTE ?? "").trim().toLowerCase() === "on";
 }
 
+/** Registro del modo prueba (en memoria, últimos 200): qué habría enviado y a quién. */
+export interface RegistroPrueba {
+  fecha: string;
+  contactId: string;
+  nombre: string | null;
+  escenario: EscenarioToqueCaliente;
+  ultimoBot: string;
+  mensaje: string;
+}
+declare global {
+  var __toqueCalientePrueba: RegistroPrueba[] | undefined;
+}
+export function registroPruebaToqueCaliente(): RegistroPrueba[] {
+  return globalThis.__toqueCalientePrueba ?? [];
+}
+
 export interface ResultadoToqueCaliente {
   activo: boolean;
   revisados: number;
@@ -133,6 +149,19 @@ export async function procesarToquesCalientes(opts: { ahora?: Date; limite?: num
 
     const texto = mensajeToqueCaliente(decision.escenario, c.name);
     if (!activo) {
+      const reg = (globalThis.__toqueCalientePrueba ??= []);
+      const clave = `${c.contactId}|${ultimo!.createdAt.toISOString()}`;
+      if (!reg.some((r) => `${r.contactId}|${r.fecha}` === clave)) {
+        reg.unshift({
+          fecha: ultimo!.createdAt.toISOString(),
+          contactId: c.contactId,
+          nombre: c.name,
+          escenario: decision.escenario,
+          ultimoBot: String(ultimo!.body ?? "").slice(0, 400),
+          mensaje: texto,
+        });
+        reg.length = Math.min(reg.length, 200);
+      }
       res.detalles.push({ contactId: c.contactId, escenario: decision.escenario, accion: "enviaria", mensaje: texto });
       continue;
     }
