@@ -14,6 +14,7 @@ La crea `scripts/hoja_inicial.py`. Regla de diseño: **datos crudos a la izquier
 | **Competencia** | radar | A:L | — |
 | **Embudo** | panel (7 días que terminan en la fecha) | A:N fecha, fuente (anuncio, mensaje_web, directo, confirmacion_web, total), chats … entregados; en la fila total, pedidos_bot / equipo / web y pct_bot_chats_nuevos | O conversion |
 | **Rescate** | panel (7 días) | A:D fecha, valor ofrecido, enviados, respondieron | E respuesta |
+| **Operacion** | panel (reemplaza las últimas 8 semanas en cada corrida) | A:M semana (lunes), producto, tipo AG / CE / TOTAL, recibidos, confirmados, entregados, desc_confirmacion, desc_entrega, en_curso, ingresos_entregados, unidades_entregadas, flete_shalom_real, actualizado | N tasa_confirmacion · O tasa_entrega · P tasa_exito · Q gasto_meta (de Anuncios, repartido por recibidos) · R cpa_entregado · S costo_producto · T logistica · U utilidad · V utilidad_por_entregado · W semaforo |
 | **Registro** | todas las tareas | fecha_hora, tarea, resultado, detalle | — |
 | **Config** | tú | B2:B9 umbrales y tope semanal · A12:C13 CPA por producto | — |
 
@@ -30,6 +31,18 @@ Resumen B24:B26 (auditoría del bot 21/11): pedidos del bot sobre chats nuevos (
 | B8 | Zernio: comentarios de compra en 7 días para Revisar | 20 |
 | B9 | Tope de gasto semanal en Meta (S/) para el optimizador | 210 |
 | A12:C13 | CPA para escalar / pausar: NAC600 8 / 16 · TERMIX 9 / 13 | de `rentabilidad.py` |
+| B18 / B19 | Costo unitario NAC600 / TERMIX (S/) | 18 / 38,42 (Gerardo, 22/11) |
+| B20 | Flete Shalom por envío si no se registró (S/) | 10 |
+| B21 | Empaque + traslado AliClik por envío a agencia (S/) | 5 |
+| B22 | Costo logístico por entrega contra entrega (S/) | 16,5 |
+| B23:B26 | Metas: confirmación AG / entrega AG / confirmación CE / entrega CE | 40 % / 90 % / 80 % / 65 % (clase CRM Driven) |
+
+## Operacion (matriz AG / CE)
+
+- **AG** = agencia Shalom (con adelanto); **CE** = contra entrega a domicilio (AliClik o motorizado). Lo decide el CRM por la modalidad de pago y la transportadora.
+- **Confirmados** incluye los cancelados ya despachados; **desc_confirmacion** son cancelados antes de despachar y **desc_entrega** cancelados después.
+- **Semáforo (W)**: «Confirmación baja» si la tasa de confirmación está bajo la meta de su tipo; «En curso» si quedan pedidos sin resolver (la tasa de entrega todavía no es final); si no, «Entrega baja» u «OK».
+- **Utilidad (U)** = ingresos de entregados − costo de producto − logística − gasto de Meta asignado. Es utilidad bruta: no incluye gastos fijos ni devoluciones de flete.
 
 ## Semáforo del día (Anuncios!R)
 

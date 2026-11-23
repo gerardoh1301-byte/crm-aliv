@@ -4,6 +4,7 @@
 Uso:
     python hoja_inicial.py > pasos.json                    # hoja vacia, todo
     python hoja_inicial.py --agregar-embudo > pasos.json   # hoja ya armada: solo Embudo y Rescate
+    python hoja_inicial.py --agregar-operacion > pasos.json  # hoja ya armada: pestana Operacion + costos en Config
 
 Salida: {"update_spreadsheet": [requests...], "update_values": [{range, values}...]}
   1. Enviar "update_spreadsheet" en UNA llamada (crea pestanas, congela encabezados, formatos).
@@ -20,7 +21,7 @@ import sys
 TITULO = "Sistema integrado Aliv Perú"
 IDS = {"Resumen": 0, "Diario": 101, "Anuncios": 102, "Pedidos": 103, "Salud_CRM": 104,
        "Decisiones_pago": 105, "Aprobaciones": 106, "Competencia": 107, "Registro": 108, "Config": 109,
-       "Embudo": 110, "Rescate": 111}
+       "Embudo": 110, "Rescate": 111, "Operacion": 112}
 FILAS = 1000  # filas de cada pestana; los rangos no pueden pasarse del tamano
 AZUL = {"red": 0.0, "green": 0.0, "blue": 1.0}
 GRIS = {"red": 0.93, "green": 0.93, "blue": 0.93}
@@ -49,6 +50,12 @@ ENCABEZADOS = {
                "confirmados", "entregados", "pedidos_bot", "pedidos_equipo", "pedidos_web", "pct_bot_chats_nuevos",
                "conversion"],
     "Rescate": ["fecha", "valor", "enviados", "respondieron", "respuesta"],
+    # Matriz operativa (clase CRM Driven, 22/11): por semana (lunes), producto y tipo AG / CE / TOTAL.
+    "Operacion": ["semana", "producto", "tipo", "recibidos", "confirmados", "entregados", "desc_confirmacion",
+                  "desc_entrega", "en_curso", "ingresos_entregados", "unidades_entregadas", "flete_shalom_real",
+                  "actualizado",
+                  "tasa_confirmacion", "tasa_entrega", "tasa_exito", "gasto_meta", "cpa_entregado",
+                  "costo_producto", "logistica", "utilidad", "utilidad_por_entregado", "semaforo"],
 }
 
 # Formulas de fila 2 (ARRAYFORMULA): crecen solas con cada fila de datos nueva.
@@ -69,6 +76,42 @@ FORMULAS_ANUNCIOS = [  # M2:R2
     '=ARRAYFORMULA(IF(LEN(A2:A),IF(F2:F<Config!$B$2,"Sin datos",IF(P2:P="","Sin umbral",'
     'IF(N2:N=0,IF(F2:F>Q2:Q,"Rojo (sin pedidos)","Amarillo"),'
     'IF(O2:O<=P2:P,"Verde",IF(O2:O<=Q2:Q,"Amarillo","Rojo"))))),))',
+]
+
+# Operacion N2:W2. Config B18:B26 = costos y metas (filas fijas, ver CONFIG_OPERACION).
+_AG = 'SUMIFS(F2:F,A2:A,A2:A,B2:B,B2:B,C2:C,"AG")'
+_CE = 'SUMIFS(F2:F,A2:A,A2:A,B2:B,B2:B,C2:C,"CE")'
+FORMULAS_OPERACION = [
+    "=ARRAYFORMULA(IF(LEN(A2:A),IF(D2:D=0,,E2:E/D2:D),))",   # N tasa_confirmacion
+    "=ARRAYFORMULA(IF(LEN(A2:A),IF(E2:E=0,,F2:F/E2:E),))",   # O tasa_entrega
+    "=ARRAYFORMULA(IF(LEN(A2:A),IF(D2:D=0,,F2:F/D2:D),))",   # P tasa_exito
+    # Q gasto de Meta del producto en la semana, repartido por pedidos recibidos (TOTAL = todo).
+    '=ARRAYFORMULA(IF(LEN(A2:A),IFERROR(SUMIFS(Anuncios!F:F,Anuncios!E:E,B2:B,Anuncios!A:A,">="&A2:A,'
+    'Anuncios!A:A,"<"&(A2:A+7))*D2:D/SUMIFS(D2:D,A2:A,A2:A,B2:B,B2:B,C2:C,"<>TOTAL"),0),))',
+    "=ARRAYFORMULA(IF(LEN(A2:A),IF(F2:F=0,,Q2:Q/F2:F),))",   # R cpa_entregado
+    '=ARRAYFORMULA(IF(LEN(A2:A),K2:K*IF(B2:B="NAC600",Config!$B$18,IF(B2:B="TERMIX",Config!$B$19,0)),))',  # S
+    # T logistica: AG = flete Shalom real (o el de Config si falta) + S/5 AliClik; CE = costo por entrega.
+    '=ARRAYFORMULA(IF(LEN(A2:A),IF(C2:C="AG",IF(L2:L>F2:F*Config!$B$20,L2:L,F2:F*Config!$B$20)+F2:F*Config!$B$21,'
+    'IF(C2:C="CE",F2:F*Config!$B$22,'
+    f'IF(L2:L>{_AG}*Config!$B$20,L2:L,{_AG}*Config!$B$20)+{_AG}*Config!$B$21+{_CE}*Config!$B$22)),))',
+    "=ARRAYFORMULA(IF(LEN(A2:A),J2:J-S2:S-T2:T-Q2:Q,))",      # U utilidad
+    "=ARRAYFORMULA(IF(LEN(A2:A),IF(F2:F=0,,U2:U/F2:F),))",   # V utilidad_por_entregado
+    '=ARRAYFORMULA(IF(LEN(A2:A),IF(C2:C="TOTAL","",IF(D2:D=0,"Sin datos",'
+    'IF(N2:N<IF(C2:C="AG",Config!$B$23,Config!$B$25),"Confirmación baja",IF(I2:I>0,"En curso",'
+    'IF(O2:O<IF(C2:C="AG",Config!$B$24,Config!$B$26),"Entrega baja","OK"))))),))',  # W semaforo
+]
+
+CONFIG_OPERACION = [  # Config!A17:C26
+    ["Costos y metas de la pestaña Operacion", "", ""],
+    ["Costo unitario NAC600 (S/ por frasco)", 18, "Dato de Gerardo, 22/11/2026"],
+    ["Costo unitario TERMIX (S/ por unidad)", 38.42, "Dato de Gerardo, 22/11/2026"],
+    ["Flete Shalom por envío si no se registró (S/)", 10, "Estimado; el real sale de [SHALOM_FLETE] en el CRM"],
+    ["Empaque + traslado AliClik por envío a agencia (S/)", 5, "ERP: S/3 empaque + S/2 traslado"],
+    ["Costo logístico por entrega contra entrega (S/)", 16.5, "ERP: envío 13,50 + fulfillment 3,00"],
+    ["Meta de confirmación AG (agencia)", 0.40, "Clase CRM Driven: > 40 %"],
+    ["Meta de entrega AG (agencia)", 0.90, "Clase CRM Driven: > 90 %"],
+    ["Meta de confirmación CE (contra entrega)", 0.80, "Clase CRM Driven: > 80 %"],
+    ["Meta de entrega CE (contra entrega)", 0.65, "Clase CRM Driven: > 65 %"],
 ]
 
 FORMULA_EMBUDO = "=ARRAYFORMULA(IF(LEN(A2:A),IF(C2:C=0,,H2:H/C2:C),))"  # O2
@@ -273,6 +316,46 @@ def pasos_embudo():
     return {"update_spreadsheet": req, "update_values": valores}
 
 
+def pasos_operacion():
+    """Para la hoja ya armada: pestana Operacion, sus formulas y los costos/metas en Config A17:C26."""
+    h = "Operacion"
+    req = [
+        {"addSheet": {"properties": {"sheetId": IDS[h], "title": h,
+                                     "gridProperties": {"rowCount": FILAS, "columnCount": len(ENCABEZADOS[h]),
+                                                        "frozenRowCount": 1, "frozenColumnCount": 3}}}},
+        {"repeatCell": {"range": rango(h, 0, 1, 0, len(ENCABEZADOS[h])),
+                        "cell": {"userEnteredFormat": {"textFormat": {"bold": True},
+                                                       "backgroundColorStyle": {"rgbColor": GRIS}}},
+                        "fields": "userEnteredFormat.textFormat.bold,userEnteredFormat.backgroundColorStyle"}},
+        formato_numero(h, 0, 1, "yyyy-mm-dd", "DATE"),
+        formato_numero(h, 9, 10, "#,##0.00"),
+        formato_numero(h, 11, 12, "#,##0.00"),
+        formato_numero(h, 13, 16, "0%", "PERCENT"),
+        formato_numero(h, 16, 22, "#,##0.00"),
+        {"repeatCell": {"range": rango("Config", 17, 26, 1, 2),
+                        "cell": {"userEnteredFormat": {"textFormat": {"foregroundColorStyle": {"rgbColor": AZUL}}}},
+                        "fields": "userEnteredFormat.textFormat.foregroundColorStyle"}},
+        {"repeatCell": {"range": rango("Config", 22, 26, 1, 2),
+                        "cell": {"userEnteredFormat": {"numberFormat": {"type": "PERCENT", "pattern": "0%"}}},
+                        "fields": "userEnteredFormat.numberFormat"}},
+        {"repeatCell": {"range": rango("Config", 16, 17, 0, 1),
+                        "cell": {"userEnteredFormat": {"textFormat": {"bold": True}}},
+                        "fields": "userEnteredFormat.textFormat.bold"}},
+    ]
+    valores = [
+        {"range": "Operacion!A1", "values": [ENCABEZADOS[h]]},
+        {"range": "Operacion!N2", "values": [FORMULAS_OPERACION]},
+        {"range": "Config!A17", "values": CONFIG_OPERACION},
+    ]
+    return {"update_spreadsheet": req, "update_values": valores}
+
+
 if __name__ == "__main__":
     sys.stdout.reconfigure(encoding="utf-8")  # en Windows la consola no es UTF-8
-    print(json.dumps(pasos_embudo() if "--agregar-embudo" in sys.argv else pasos(), ensure_ascii=False, indent=1))
+    if "--agregar-operacion" in sys.argv:
+        salida = pasos_operacion()
+    elif "--agregar-embudo" in sys.argv:
+        salida = pasos_embudo()
+    else:
+        salida = pasos()
+    print(json.dumps(salida, ensure_ascii=False, indent=1))

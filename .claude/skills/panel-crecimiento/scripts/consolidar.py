@@ -17,6 +17,8 @@ Entradas en --dir (formato en references/entradas.md); las que falten se avisan:
                                   utm_content, cancelado}]}   (sin nombres ni telefonos)
     crm_dia.json    respuesta de GET /api/metricas?desde=FECHA&hasta=FECHA
     crm_7d.json     respuesta de GET /api/metricas de los 7 dias que terminan en FECHA
+    crm_8s.json     respuesta de GET /api/metricas desde el lunes de hace 7 semanas hasta FECHA
+                    (matriz Operacion: confirmacion y entrega AG / CE por semana y producto)
 
 Solo libreria estandar.
 """
@@ -46,7 +48,14 @@ COLUMNAS = {
     "Embudo": ["fecha", "fuente", "chats", "bot_respondio", "siguio", "cotizado", "pidio_datos", "pedidos",
                "confirmados", "entregados", "pedidos_bot", "pedidos_equipo", "pedidos_web", "pct_bot_chats_nuevos"],
     "Rescate": ["fecha", "valor", "enviados", "respondieron"],
+    # Semanas que se recalculan en cada corrida (los pedidos cambian de estado): se reemplazan.
+    "Operacion": ["semana", "producto", "tipo", "recibidos", "confirmados", "entregados", "desc_confirmacion",
+                  "desc_entrega", "en_curso", "ingresos_entregados", "unidades_entregadas", "flete_shalom_real",
+                  "actualizado"],
 }
+
+SUMABLES_OPERACION = ["recibidos", "confirmados", "entregados", "desc_confirmacion", "desc_entrega", "en_curso",
+                      "ingresos_entregados", "unidades_entregadas", "flete_shalom_real"]
 
 FUENTES = ["anuncio", "mensaje_web", "directo", "confirmacion_web"]
 
@@ -148,12 +157,48 @@ def embudo(crm7: dict, fecha: str, avisos: list[str]) -> tuple[list[list], list[
     return filas, rescate
 
 
+def lunes(fecha: str) -> str:
+    d = datetime.strptime(fecha, "%Y-%m-%d")
+    return (d - timedelta(days=d.weekday())).strftime("%Y-%m-%d")
+
+
+def redondeo(campo: str, valor: float):
+    """Conteos enteros; soles con 2 decimales."""
+    return round(valor, 2) if campo in ("ingresos_entregados", "flete_shalom_real") else int(round(valor))
+
+
+def operacion(crm8: dict, avisos: list[str]) -> tuple[list[list], str]:
+    """Filas de Operacion (AG, CE y TOTAL por semana y producto) y la primera semana que cubren.
+    El CRM las da desde la matriz operativa (22/11); sin ellas la pestana no se toca."""
+    filas_crm = crm8.get("operacion")
+    if filas_crm is None:
+        if crm8:
+            avisos.append("el CRM no devuelve 'operacion': la pestana Operacion no se actualiza")
+        return [], ""
+    desde = lunes(crm8.get("periodo", {}).get("desde", "")) if crm8.get("periodo", {}).get("desde") else ""
+    ahora = datetime.now(LIMA).strftime("%Y-%m-%d %H:%M")
+    filas, totales = [], {}
+    for f in filas_crm:
+        if desde and f.get("semana", "") < desde:
+            continue  # semana incompleta al inicio del rango: no se pisa la fila completa que ya existe
+        filas.append([f["semana"], f["producto"], f["tipo"], *(redondeo(k, num(f.get(k))) for k in SUMABLES_OPERACION), ahora])
+        t = totales.setdefault((f["semana"], f["producto"]), {k: 0.0 for k in SUMABLES_OPERACION})
+        for k in SUMABLES_OPERACION:
+            t[k] += num(f.get(k))
+    for (semana, producto), t in totales.items():
+        filas.append([semana, producto, "TOTAL", *(redondeo(k, t[k]) for k in SUMABLES_OPERACION), ahora])
+    orden_tipo = {"AG": 0, "CE": 1, "TOTAL": 2}
+    filas.sort(key=lambda r: (r[0], r[1], orden_tipo.get(r[2], 9)))
+    return filas, (filas[0][0] if filas else "")
+
+
 def consolidar(fecha: str, carpeta: Path) -> dict:
     avisos: list[str] = []
     meta = leer(carpeta, "meta.json", avisos)
     shopify = leer(carpeta, "shopify.json", avisos)
     crm = leer(carpeta, "crm_dia.json", avisos)
     crm7 = leer(carpeta, "crm_7d.json", avisos)
+    crm8 = leer(carpeta, "crm_8s.json", avisos)
 
     anuncios = meta.get("anuncios", [])
     pedidos_shop = [p for p in shopify.get("pedidos", []) if p.get("creado") and fecha_lima(p["creado"]) == fecha]
@@ -217,6 +262,7 @@ def consolidar(fecha: str, carpeta: Path) -> dict:
     ]
 
     filas_embudo, filas_rescate = embudo(crm7, fecha, avisos)
+    filas_operacion, operacion_desde = operacion(crm8, avisos)
 
     return {
         "fecha": fecha,
@@ -228,6 +274,9 @@ def consolidar(fecha: str, carpeta: Path) -> dict:
         "Decisiones_pago": decisiones(crm7, fecha, avisos),
         "Embudo": filas_embudo,
         "Rescate": filas_rescate,
+        # Reemplaza en la hoja todas las filas con semana >= operacion_desde (ver SKILL.md, paso 5).
+        "Operacion": filas_operacion,
+        "operacion_desde": operacion_desde,
         # Revision de los lunes: 10 chats cotizados que no compraron (solo id y ultimo mensaje).
         "perdidos_para_revisar": crm7.get("embudo_chat", {}).get("perdidos_para_revisar", []),
         # Para el resumen del director: casos que piden atencion de una persona.

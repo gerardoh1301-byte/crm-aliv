@@ -3,6 +3,7 @@ import { sql } from "drizzle-orm";
 import { db } from "@/db";
 import { varianteAB } from "@/lib/agent/guion-venta";
 import { embudoPorFuente, fuenteDelChat, rescatePorValor } from "@/lib/metricas-embudo";
+import { fleteShalomDeNotas, matrizOperacion } from "@/lib/metricas-operacion";
 import { SUPERVISORES_DIGITOS } from "@/lib/alerts/supervisor-alerts";
 
 /** Excluye las conversaciones de los supervisores (sus chats son pruebas, no clientes). */
@@ -139,6 +140,10 @@ export async function calcularMetricas({ desde, hasta }: RangoMetricas) {
       select p.numero_orden, ${dia(sql`p.created_at`)} as fecha,
              case when p.shopify_order_id is null then 'chat' else 'web' end as origen,
              p.estado, p.total::float8 as total, p.ciudad, p.contact_id,
+             p.modalidad_pago, p.transportadora, p.notas,
+             (p.numero_guia is not null or p.estado in ('enviado', 'entregado')
+               or position('[ALICLIK_ORDEN' in coalesce(p.notas, '')) > 0
+               or position('[AVISO_LLEGADA_ENVIADO' in coalesce(p.notas, '')) > 0) as despachado,
              (select coalesce(sum((i->>'cantidad')::int), 0) from jsonb_array_elements(p.items) i)::int as unidades,
              p.items->0->>'titulo' as producto,
              (select coalesce(c.metadata->>'ctwa_source_id', c.metadata->>'meta_ad_id')
@@ -338,6 +343,20 @@ export async function calcularMetricas({ desde, hasta }: RangoMetricas) {
       cerrados_sin_compra: num(sg.cerrados),
       errores_envio: num(sg.errores),
     },
+    // Matriz AG/CE por semana y producto (pedidos creados en el rango).
+    operacion: matrizOperacion(
+      pedidosLista.map((p) => ({
+        fecha: String(p.fecha),
+        estado: String(p.estado ?? ""),
+        total: num(p.total),
+        unidades: num(p.unidades),
+        producto: (p.producto as string | null) ?? null,
+        modalidad_pago: (p.modalidad_pago as string | null) ?? null,
+        transportadora: (p.transportadora as string | null) ?? null,
+        despachado: Boolean(p.despachado),
+        flete_shalom: fleteShalomDeNotas(p.notas as string | null),
+      }))
+    ),
     embudo_chat: embudo,
     consumo_ia: consumoIA,
     rescate_chats: {

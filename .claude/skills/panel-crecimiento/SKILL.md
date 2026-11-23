@@ -31,7 +31,9 @@ Junta tres fuentes en una hoja, sin datos personales, para que Gerardo vea cada 
 ```
 curl -sS -H "Authorization: Bearer $METRICAS_TOKEN" "https://crm-aliv.onrender.com/api/metricas?desde=FECHA&hasta=FECHA" > crm_dia.json
 curl -sS -H "Authorization: Bearer $METRICAS_TOKEN" "https://crm-aliv.onrender.com/api/metricas?desde=FECHA-6&hasta=FECHA" > crm_7d.json
+curl -sS -H "Authorization: Bearer $METRICAS_TOKEN" "https://crm-aliv.onrender.com/api/metricas?desde=LUNES_HACE_7_SEMANAS&hasta=FECHA" > crm_8s.json
 ```
+`LUNES_HACE_7_SEMANAS` = el lunes de la semana de FECHA menos 49 días (8 semanas en total, siempre desde un lunes).
 En la nube el token llega como *network secret* o variable `METRICAS_TOKEN` (ver `tareas-nube.md`). El servidor gratis puede tardar ~1 min en despertar: usa `--max-time 120` y reintenta una vez. Si responde 401 o no responde, sigue sin el CRM y anótalo en *Registro*.
 
 **4. Consolidar.**
@@ -44,10 +46,11 @@ Produce `filas.json` con filas **crudas** por pestaña. CTR, CPM, CPA real, ROAS
 - **Diario** (A:O): lee `Diario!A:A`; si FECHA ya existe, sobrescribe esa fila; si no, `append_values` en `Diario!A:O`.
 - **Anuncios** (A:L), **Pedidos** (A:I), **Salud_CRM** (A:O): si FECHA ya aparece en la columna A, **no** vuelvas a agregar (avisa "ya cargado"); si no, `append_values` con el rango exacto de columnas. Nunca escribas en las columnas de fórmulas (a la derecha).
 - **Embudo** (A:N) y **Rescate** (A:D): ventana de 7 días que termina en FECHA (salen de `crm_7d.json`). Si FECHA ya aparece en la columna A, no vuelvas a agregar; si no, `append_values` en `Embudo!A:N` y `Rescate!A:D`. Nunca escribas en `Embudo!O` ni `Rescate!E` (fórmulas). Si la hoja todavía no tiene esas pestañas, créalas una vez con `python scripts/hoja_inicial.py --agregar-embudo` (mismo procedimiento que "Primera vez").
+- **Operacion** (A:M, matriz AG / CE / TOTAL por semana y producto): las semanas recientes cambian a diario porque los pedidos avanzan de estado, así que se **reemplazan**. Lee `Operacion!A2:A`; la primera fila cuya semana sea ≥ `filas.json["operacion_desde"]` es el punto de corte (si no hay ninguna, la primera fila vacía). Borra `Operacion!A{corte}:M` (`batch_clear_values`) y escribe `filas.json["Operacion"]` desde `Operacion!A{corte}` con `update_values`. Nunca toques N:W (fórmulas). Si la pestaña no existe, créala con `python scripts/hoja_inicial.py --agregar-operacion`.
 - **Decisiones_pago**: `filas.json["Decisiones_pago"]` trae 4 filas `[valor, evaluado, nota]` → escribe `D2:D5` (valor) y `H2:I5` (evaluado, nota). No toques E, F ni G.
 - **Registro**: agrega `[fecha_hora, "panel", "ok"|"parcial"|"error", avisos]`.
 
-**6. Verificar.** Lee `Resumen!A4:C18` y comprueba que el último día sea FECHA y que los números tengan sentido (gasto de Diario = suma de Anuncios del día). Reporta en 3 líneas: gasto, pedidos reales (web + chat), CPA real y avisos. Agrega una línea con `Resumen!B24:B25`: pedidos del bot sobre chats nuevos (meta 10 %) y quién cerró los pedidos de la semana.
+**6. Verificar.** Lee `Resumen!A4:C18` y comprueba que el último día sea FECHA y que los números tengan sentido (gasto de Diario = suma de Anuncios del día). Reporta en 3 líneas: gasto, pedidos reales (web + chat), CPA real y avisos. Agrega una línea con la última semana cerrada de `Operacion` (TOTAL por producto): tasa de éxito y utilidad por pedido entregado (columnas P y V), y el semáforo de AG y CE (W). Agrega una línea con `Resumen!B24:B25`: pedidos del bot sobre chats nuevos (meta 10 %) y quién cerró los pedidos de la semana.
 
 **Lunes.** `filas.json["perdidos_para_revisar"]` trae 10 chats cotizados que no compraron (id de conversación, fuente y nuestro último mensaje, sin nombres). Pásaselos a `director-crecimiento` para que proponga en *Aprobaciones* qué cambiar en el guion del bot.
 
