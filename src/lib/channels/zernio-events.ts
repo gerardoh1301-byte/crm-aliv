@@ -11,6 +11,7 @@ import { isChannel, type Channel } from "./types";
 import { resolveDefaultTenantId } from "@/lib/tenants";
 import { normalizePhone } from "@/lib/phone";
 import { inspectImageAttachment, transcribeAudioAttachment } from "@/lib/audio/transcribe";
+import { textoUbicacion, ubicacionDesdePayload } from "./ubicacion";
 import type {
   ZernioMessage,
   ZernioWebhookConversation,
@@ -169,14 +170,16 @@ async function handleMessageEvent(
   // atribucion del anuncio, que es de donde sale de que aviso vino el lead).
   if (!msg) return { status: "processed", jobIds: [] };
 
+  // Ubicación de WhatsApp: Zernio deja las coordenadas en el sobre, no en el mensaje.
+  const ubicacion = ubicacionDesdePayload(payload);
   const result = await ingestMessage({
     conversation,
     direction,
     // platformMessageId (wamid.* en WhatsApp) y no el id interno de Zernio: mantiene la
     // deduplicacion contra los mensajes que pudo haber guardado el webhook de Meta.
     externalId: msg.platformMessageId ?? msg.id ?? null,
-    body: await extractBody(msg, direction),
-    type: messageType(msg),
+    body: ubicacion ? textoUbicacion(ubicacion) : await extractBody(msg, direction),
+    type: ubicacion ? "location" : messageType(msg),
     sentAt: parseDate(msg.sentAt ?? payload.timestamp),
     status: direction === "in" && msg.isRead ? "read" : undefined,
     rawPayload: payload,
