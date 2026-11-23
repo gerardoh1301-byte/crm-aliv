@@ -6,6 +6,8 @@ import { interpretarComando, type Comando } from "./parser";
 export type TraduccionOrden =
   | { tipo: "orden"; orden: string; comando: Comando; descripcion: string }
   | { tipo: "no_soportada"; descripcion: string }
+  /** Pregunta o pedido de información que no es una orden estándar: lo contesta el asistente. */
+  | { tipo: "consulta"; descripcion: string }
   | { tipo: "no_es_orden" };
 
 /**
@@ -17,6 +19,7 @@ export function normalizarTraduccion(raw: unknown): TraduccionOrden | null {
   const r = raw as { tipo?: unknown; orden?: unknown; descripcion?: unknown };
   const descripcion = typeof r.descripcion === "string" ? r.descripcion.trim().slice(0, 200) : "";
   if (r.tipo === "no_es_orden") return { tipo: "no_es_orden" };
+  if (r.tipo === "consulta") return { tipo: "consulta", descripcion };
   if (r.tipo === "no_soportada") return { tipo: "no_soportada", descripcion: descripcion || "esa acción" };
   if (r.tipo !== "orden" || typeof r.orden !== "string") return null;
   const orden = r.orden.replace(/[`"*]/g, "").replace(/\s+/g, " ").trim();

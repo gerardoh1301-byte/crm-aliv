@@ -249,6 +249,9 @@ function conSoloPedido(tipo: TipoComando, token: string | null, valor: string | 
   };
 }
 
+/** «pedido 1160», «orden #1160», «#1160», «LEG-1066», «CHAT-0001». */
+const RE_PEDIDO_EXPLICITO = /(\b(pedido|orden|order)\s*(n[°ºo.]?\s*)?#?\s*\d{3,6}\b|#\s?\d{3,6}\b|\b(leg|chat|aliv)-\d{3,6}\b)/i;
+
 /** Órdenes de cambio en el CRM. Devuelve null si el texto no es un cambio. */
 export function interpretarCambio(texto: string, n: string): Comando | null {
   // Cancelar un pedido: «cancela el pedido 1140», «anula 1140 porque no contesta».
@@ -258,6 +261,19 @@ export function interpretarCambio(texto: string, n: string): Comando | null {
     const c = comando("cancelar_pedido", sinMotivo);
     c.valor = motivo;
     return c;
+  }
+
+  // Cancelar dicho en cualquier parte: «Angy de orden #1047 no respondió al adelanto,
+  // muévelo a cancelado». Exige un pedido explícito (#1047, orden 1047, LEG-1066) y se
+  // arma solo con él: el resto del texto es el motivo, no un nombre de cliente.
+  if (RE_CANCELAR_EN_TEXTO.test(n) && !/\bno (lo |la )?(cancel|anul)/.test(n)) {
+    const ref = (texto.match(RE_PEDIDO_EXPLICITO) ?? n.match(RE_PEDIDO_EXPLICITO))?.[0];
+    if (ref) {
+      const c = comando("cancelar_pedido", normalizarTexto(ref));
+      const motivo = texto.match(/\b(?:porque|motivo:?)\s+(.{2,})$/i)?.[1]?.trim();
+      c.valor = (motivo || texto.replace(/\s+/g, " ").trim()).slice(0, 200);
+      return c;
+    }
   }
 
   // Cambiar estado: «pasa 1140 a confirmado», «marca el pedido de Carlos como enviado».
@@ -318,6 +334,34 @@ export function interpretarCambio(texto: string, n: string): Comando | null {
   return null;
 }
 
+/** «cancela», «anula», «a cancelado» en cualquier parte del mensaje. */
+const RE_CANCELAR_EN_TEXTO =
+  /\b(cancela|cancelar|cancelalo|cancelala|cancelado|cancelada|anula|anular|anulalo|anulala|anulado|anulada)\b/;
+
+/** «no pagó», «no respondió», «no mandó el adelanto», «todavía no yapea». */
+const RE_NEGACION =
+  /\b(no|nunca|todavia no|aun no)\s+(ha\s+|han\s+|me\s+|nos\s+|le\s+|lo\s+)?(pag|respond|contest|mand|envi|yape|deposit|transfir|recog|recib|confirm|llego)/;
+
+const RE_INICIO_ORDEN =
+  /^(?:por favor |porfa |ya )?(si|no|enviar|envia|ayuda|estado|adelanto|pago|pago completo|pagado|pagó|flete|clave|guia|nueva guia|entregado|entregada|cancela|cancelar|anula|anular|pasa|pasar|mueve|mover|marca|marcar|pon|poner|cambia|cambiar|actualiza|actualizar|corrige|corregir|registra|registrar|dni|direccion|agencia|nota|anota|total|resumen|confirma|confirmar|valida|validar|verifica|verificar)\b/;
+
+/** Orden corta (hasta 10 palabras) o que empieza con la palabra de la orden. */
+export function esOrdenCorta(n: string): boolean {
+  return n.split(" ").filter(Boolean).length <= 10 || RE_INICIO_ORDEN.test(n);
+}
+
+/**
+ * ¿Lo puede leer directamente el intérprete fijo, sin pasar antes por la IA? Sí cuando es
+ * una orden corta o empieza con la palabra de la orden («SI 1047», «adelanto 1153»,
+ * «cancela 1047 porque no respondió»). Lo demás lo interpreta primero la IA, que entiende
+ * la intención del mensaje completo.
+ */
+export function esOrdenDirecta(texto: string | null | undefined): boolean {
+  if (!texto) return false;
+  const n = normalizarTexto(texto);
+  return Boolean(n) && esOrdenCorta(n);
+}
+
 export function interpretarComando(texto: string | null | undefined): Comando | null {
   if (!texto) return null;
   const n = normalizarTexto(texto);
@@ -347,21 +391,9 @@ export function interpretarComando(texto: string | null | undefined): Comando | 
     c.nombre = null;
     return c;
   }
-  // «Confirma el adelanto de Manuel orden 1153», «adelanto 1153», «valida adelanto 1153»
-  if (/\badelanto\b/.test(n) && !/\bclave\b/.test(n)) {
-    const c = comando("adelanto", n);
-    // El adelanto es fijo (S/ 20): solo cuentan los números que pueden ser pedidos.
-    c.numeros = c.numeros.filter((t) => !t.esMonto && (t.esPedido || t.texto.length >= 3));
-    return c;
-  }
+  // La clave solo se muestra o se propone enviar (pide «ENVIAR <pedido>»): vale en
+  // cualquier largo, y gana aunque el mensaje mencione el adelanto.
   if (/\bclave\b/.test(n)) return comando("clave", n);
-  if (/\bflete\b/.test(n)) return comando("flete", n);
-  if (/\b(entregado|entregada|recogio|ya recogio|lo recogio)\b/.test(n) && !/\bpag/.test(n)) {
-    return comando("entregado", n);
-  }
-  if (/\b(pago|pagado|pagada|pagaron|pagó|yapeo|transfirio|deposito|cobrado|cobre)\b/.test(n)) {
-    return comando("pago", n, /\b(completo|completa|todo|total)\b/.test(n));
-  }
   // Consulta de información: solo si pregunta por un dato del pedido y dice cuál (número,
   // guía, celular o «pedido de …»), para que las preguntas de prueba al bot de ventas
   // («qué beneficios tiene?») no se tomen como orden.
@@ -369,6 +401,25 @@ export function interpretarComando(texto: string | null | undefined): Comando | 
     const c = comando("estado", n);
     const dicePedido = c.numeros.some((t) => t.esPedido || (!t.esMonto && t.texto.length >= 3));
     if (c.guia || c.celular || dicePedido || (c.nombre && /\b(pedido|orden|guia)\b/.test(n))) return c;
+  }
+  // Las órdenes que registran plata o entregas («adelanto», «pago», «flete», «entregado») solo
+  // valen en mensajes cortos o con la palabra al inicio. En un mensaje largo la palabra
+  // puede ser solo contexto («no respondió cuando se le pidió el adelanto, cancélalo»):
+  // ese lo interpreta la IA. Una negación («no pagó», «no mandó el adelanto») nunca confirma.
+  if (!esOrdenCorta(n) || RE_NEGACION.test(n)) return null;
+  // «Confirma el adelanto de Manuel orden 1153», «adelanto 1153», «valida adelanto 1153»
+  if (/\badelanto\b/.test(n) && !/\bclave\b/.test(n)) {
+    const c = comando("adelanto", n);
+    // El adelanto es fijo (S/ 20): solo cuentan los números que pueden ser pedidos.
+    c.numeros = c.numeros.filter((t) => !t.esMonto && (t.esPedido || t.texto.length >= 3));
+    return c;
+  }
+  if (/\bflete\b/.test(n)) return comando("flete", n);
+  if (/\b(entregado|entregada|recogio|ya recogio|lo recogio)\b/.test(n) && !/\bpag/.test(n)) {
+    return comando("entregado", n);
+  }
+  if (/\b(pago|pagado|pagada|pagaron|pagó|yapeo|transfirio|deposito|cobrado|cobre)\b/.test(n)) {
+    return comando("pago", n, /\b(completo|completa|todo|total)\b/.test(n));
   }
   return null;
 }
@@ -389,8 +440,6 @@ export function esAfirmacionSuelta(texto: string | null | undefined): boolean {
   return /^(si|ok|okay|okey|dale|ya|listo|confirmo|confirmado|de acuerdo|hazlo|correcto|perfecto|va|claro|si hazlo|si dale|si confirmo|si por favor)$/.test(n);
 }
 
-/** «pedido 1160», «orden #1160», «#1160», «LEG-1066», «CHAT-0001». */
-const RE_PEDIDO_EXPLICITO = /(\b(pedido|orden|order)\s*(n[°ºo.]?\s*)?#?\s*\d{3,6}\b|#\s?\d{3,6}\b|\b(leg|chat|aliv)-\d{3,6}\b)/i;
 
 /**
  * Último recurso cuando ni el intérprete fijo ni la IA entendieron el mensaje: si nombra un

@@ -47,8 +47,12 @@ REGLAS:
 - Si da la guía Shalom, el celular o el nombre del cliente, ponlos en la orden tal cual (por ejemplo "clave 104493022" o "estado carlos huaynalaya"); NO uses el pedido del último aviso en ese caso.
 - Nunca inventes montos ni números de pedido que no estén en el mensaje o en el chat.
 - Todo cambio se le volverá a confirmar a Gerardo con "SI <pedido>": tradúcelo a la orden aunque sea un cambio.
+- Lee la INTENCIÓN del mensaje completo, no palabras sueltas. «Angy de orden #1047 no respondió cuando se le pidió el adelanto de 20 soles, muévelo a cancelado» es "cancela 1047 porque no respondió al pedido de adelanto": la palabra «adelanto» ahí es el motivo, no una confirmación de adelanto.
+- Una negación nunca es una confirmación: «no pagó», «no mandó el adelanto», «todavía no recoge» NO son "pagó", "adelanto" ni "entregado".
+- Mover a cancelado, anular, dar de baja o sacar del pipeline un pedido es "cancela <pedido> porque <motivo>", con el motivo en pocas palabras tomado del mensaje.
 - Si es una instrucción para el CRM que no está en la lista (cambiar productos, devolver dinero, borrar un cliente, etc.), responde tipo "no_soportada" y describe en pocas palabras qué pide.
 - Cualquier PREGUNTA sobre un pedido o cliente concreto («ya tienes todo para agendar la entrega de Carlos?», «está listo para enviar el de Marleni?», «qué le falta al 1160?») es "estado <pedido>": la ficha dirá qué falta. Nunca es "no_es_orden".
+- Si es una pregunta o pedido de información que no encaja en una orden o consulta general de la lista («haz un barrido y dime qué clientes faltan agendar», «cómo vamos con los anuncios del bot», «quién escribió hoy y no compró»), responde tipo "consulta" con lo que pide.
 - Si NO es una instrucción para el CRM (Gerardo está probando el bot de ventas escribiendo como un cliente, saluda, pregunta precios del producto, etc.), responde tipo "no_es_orden".
 
 ÚLTIMOS MENSAJES DEL CHAT (del más antiguo al más reciente; "CRM" son avisos y respuestas del sistema):
@@ -56,7 +60,7 @@ ${contexto.join("\n") || "(sin mensajes previos)"}
 
 MENSAJE A TRADUCIR: ${texto}
 
-Responde SOLO un JSON: {"tipo": "orden" | "no_soportada" | "no_es_orden", "orden": "<orden estándar o vacío>", "descripcion": "<qué pide, en pocas palabras>"}`;
+Responde SOLO un JSON: {"tipo": "orden" | "consulta" | "no_soportada" | "no_es_orden", "orden": "<orden estándar o vacío>", "descripcion": "<qué pide, en pocas palabras>"}`;
 
   try {
     const completion = await createChatCompletionWithFallback(

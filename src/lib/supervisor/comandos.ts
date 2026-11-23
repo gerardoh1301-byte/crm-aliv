@@ -18,6 +18,7 @@ import {
   pareceOrdenNoEntendida,
   consultaPorPedidoExplicito,
   esAfirmacionSuelta,
+  esOrdenDirecta,
   interpretarModo,
   separarPedidoYMonto,
   type Comando,
@@ -1173,7 +1174,12 @@ export async function manejarComandoSupervisor(conversationId: string, phone: st
     return true;
   }
 
-  let cmd = interpretarComando(ultimo.body);
+  // Intérprete previo: las órdenes cortas o que empiezan con la palabra de la orden
+  // («SI 1047», «adelanto 1153», «cancela 1047 porque…») las lee directo el intérprete
+  // fijo. Un mensaje largo lo interpreta primero la IA, que lee la intención completa;
+  // si la IA falla, recién entonces se usa el intérprete fijo como respaldo.
+  const directa = esOrdenDirecta(ultimo.body);
+  let cmd = directa ? interpretarComando(ultimo.body) : null;
   let entendido = "";
   if (!cmd) {
     const token = interpretarCorreccion(ultimo.body);
@@ -1205,6 +1211,9 @@ export async function manejarComandoSupervisor(conversationId: string, phone: st
     }
 
     if (await modoPruebaActivo()) {
+      // En modo prueba no se gasta IA: una orden larga la intenta el intérprete fijo.
+      const fija = directa ? null : interpretarComando(ultimo.body);
+      if (fija) return await ejecutarComando(fija, "", conversationId);
       if (pareceOrdenNoEntendida(ultimo.body)) {
         await responder(conversationId, `No entendí la orden; no cambié nada.\n\n${AYUDA}`);
         return true;
@@ -1212,22 +1221,11 @@ export async function manejarComandoSupervisor(conversationId: string, phone: st
       return false; // modo prueba: lo contesta el bot de ventas
     }
 
-    // Asistente personal: consulta el CRM con herramientas de solo lectura y deja los cambios
-    // pendientes de «SI <pedido>». Nunca le contesta el bot de ventas como a un cliente.
-    let respuesta: string | null = null;
-    try {
-      const { responderAsistente } = await import("./asistente");
-      respuesta = await responderAsistente(ultimo.body || "", conversationId);
-    } catch (err) {
-      console.error("[supervisor-comandos] el asistente falló:", err);
-    }
-    if (respuesta) {
-      await responder(conversationId, respuesta);
-      return true;
-    }
-
-    // Respaldo si el asistente no respondió: la IA traduce el mensaje a una orden estándar.
+    // 1) Intención: la IA traduce el mensaje a una orden estándar (que vuelve a pasar por el
+    //    intérprete fijo y por «SI <pedido>») o dice que es una consulta.
     const traduccion = await traducirConIA(ultimo.body || "", conversationId);
+    // Si la IA no respondió, el intérprete fijo (con sus reglas estrictas) es el respaldo.
+    if (!traduccion && !directa) cmd = interpretarComando(ultimo.body);
     if (traduccion?.tipo === "no_soportada") {
       await responder(
         conversationId,
@@ -1253,6 +1251,23 @@ export async function manejarComandoSupervisor(conversationId: string, phone: st
       cmd = traduccion.comando;
       entendido = `🤖 Entendí: *${traduccion.orden}*\n\n`;
     }
+
+    // 2) Consultas y todo lo demás: el asistente personal lee el CRM con herramientas de
+    //    solo lectura y deja los cambios pendientes de «SI <pedido>». Nunca le contesta el
+    //    bot de ventas como a un cliente.
+    if (!cmd) {
+      let respuesta: string | null = null;
+      try {
+        const { responderAsistente } = await import("./asistente");
+        respuesta = await responderAsistente(ultimo.body || "", conversationId);
+      } catch (err) {
+        console.error("[supervisor-comandos] el asistente falló:", err);
+      }
+      if (respuesta) {
+        await responder(conversationId, respuesta);
+        return true;
+      }
+    }
     if (!cmd) cmd = consultaPorPedidoExplicito(ultimo.body);
   }
 
@@ -1267,6 +1282,11 @@ export async function manejarComandoSupervisor(conversationId: string, phone: st
     return true;
   }
 
+  return await ejecutarComando(cmd, entendido, conversationId);
+}
+
+/** Responde una orden ya interpretada: consulta, propuesta o confirmación de lo pendiente. */
+async function ejecutarComando(cmd: Comando, entendido: string, conversationId: string): Promise<boolean> {
   let texto: string;
   try {
     if (cmd.tipo === "ayuda") texto = AYUDA;
