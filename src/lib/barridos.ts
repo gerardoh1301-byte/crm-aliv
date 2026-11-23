@@ -31,7 +31,7 @@ const ENDPOINTS = [
   // Toque en caliente: una vez a los 12-45 min si el bot pidió adelanto/datos o dio el precio
   "/api/agent/toque-caliente",
   // Pedidos web de las últimas semanas: AG/CE según cobertura AliClik (una vez por pedido)
-  "/api/pedidos/reclasificar-web",
+  "/api/agent/reclasificar-pedidos-web",
   // Posventa y recompra: incorpora los entregados (backfill idempotente, últimos 30 días)
   // y envía los mensajes del día 1-3, 7 y 25 en horario permitido.
   "/api/agent/postventa?backfill=true",

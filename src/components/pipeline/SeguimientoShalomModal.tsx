@@ -28,6 +28,7 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 import { useRouter } from "next/navigation";
+import { GuiaPdfDrive } from "./GuiaPdfDrive";
 
 export interface SeguimientoShalomData {
   pedidoId?: string | null;
@@ -599,6 +600,17 @@ Recuerda acudir con tu DNI físico original para el retiro. ¡Que disfrutes tus 
           <p className="text-[10px] text-muted-foreground leading-tight">
             ℹ️ Ambos datos figuran en el rótulo de Shalom y son requeridos para consultar en <strong className="text-red-600">shalom.com.pe/rastrea</strong>.
           </p>
+
+          {data.pedidoId && (
+            <GuiaPdfDrive
+              pedidoId={data.pedidoId}
+              antesDeSubir={async () => {
+                if (!numeroGuia.trim()) return;
+                await guardarEnBaseDeDatos();
+                onUpdated?.(numeroGuia.trim(), codigoRastreo.trim(), claveRecojo.trim(), agenciaDestino.trim(), totalSoles);
+              }}
+            />
+          )}
 
           {/* Campo editable: Agencia Shalom / Destino de Entrega */}
           <div className="space-y-1 pt-0.5">

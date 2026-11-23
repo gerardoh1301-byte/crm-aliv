@@ -22,7 +22,7 @@ const nextConfig: NextConfig = {
   // embebido del modo local y tiene que quedar fuera del bundle si o si: resuelve sus
   // extensiones a partir de la ruta de su propio archivo, y el compilador la reescribe
   // a un marcador (`file:///ROOT/...`) con el que no encuentra nada.
-  serverExternalPackages: ["postgres", "@electric-sql/pglite"],
+  serverExternalPackages: ["postgres", "@electric-sql/pglite", "mupdf"],
   turbopack: {
     root: path.resolve("."),
   },

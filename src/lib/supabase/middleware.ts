@@ -18,6 +18,8 @@ const PUBLIC_API_PREFIXES = [
   "/api/alertas",
   "/api/shalom/verificar-envios",
   "/api/shalom-pro",
+  // Imagen de la guía para WhatsApp: solo con token aleatorio por pedido.
+  "/api/publico/guia/",
 ];
 
 export async function updateSession(request: NextRequest) {
