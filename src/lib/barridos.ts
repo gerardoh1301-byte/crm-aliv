@@ -16,6 +16,8 @@ const ENDPOINTS = [
   "/api/automations/process",
   // Avisa a los admins de chats sin respuesta (sistema integrado).
   "/api/alertas",
+  // Ventana de 24 h de los supervisores por cerrar: los avisos internos van sin plantilla.
+  "/api/supervisor/ventana",
   // Auditoría automática de chats abandonados para rescate de ventas caídas
   "/api/agent/rescate",
   // Rastreo automático de envíos Shalom y avisos de llegada/recordatorio

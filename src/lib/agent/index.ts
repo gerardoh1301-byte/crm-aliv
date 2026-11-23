@@ -95,6 +95,11 @@ async function executeAgentTurn(
   // los interruptores del bot: funcionan aunque el bot este apagado en ese chat. Si el
   // mensaje no es una orden, sigue al bot como chat de prueba.
   if (conversation.channel === "whatsapp") {
+    // «ok» / «👍» de un supervisor solo renueva su ventana de 24 h: se confirma sin IA.
+    if (esNumeroEntrenador(contact.phone)) {
+      const { manejarRenovacionVentana } = await import("@/lib/alerts/ventana-supervisor-servidor");
+      if (await manejarRenovacionVentana(conversation.id)) return { ok: true, reason: "renovacion_ventana" };
+    }
     const { esSupervisorPagos, manejarComandoSupervisor } = await import("@/lib/supervisor/comandos");
     if (esSupervisorPagos(contact.phone) && (await manejarComandoSupervisor(conversation.id, contact.phone))) {
       return { ok: true, reason: "comando_supervisor" };
