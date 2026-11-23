@@ -88,6 +88,11 @@ export function telefonoAliclik(phone: string | null | undefined): string | null
   return nueve && nueve.startsWith("9") ? `51${nueve}` : null;
 }
 
+/** Nombre completo tal cual lo tiene el CRM (AliClik lo guarda en un solo campo «Nombres y Apellidos»). */
+export function nombreParaAliclik(nombre: string | null | undefined): string {
+  return (nombre || "").trim().replace(/\s+/g, " ");
+}
+
 export function separarNombre(nombre: string | null | undefined): { name: string; lastName: string } {
   const partes = (nombre || "").trim().split(/\s+/).filter(Boolean);
   if (partes.length <= 1) return { name: partes[0] || "", lastName: "" };

@@ -8,6 +8,7 @@ import {
   ordenAliclikRegistrada,
   pedidoParaRegistroAliclik,
   productosParaAliclik,
+  nombreParaAliclik,
   separarNombre,
   separarReferencia,
   telefonoAliclik,
@@ -77,6 +78,7 @@ describe("datos del pedido para AliClik", () => {
     expect(telefonoAliclik("01 4567890")).toBeNull();
     expect(separarNombre("Juan Pérez Soto")).toEqual({ name: "Juan", lastName: "Pérez Soto" });
     expect(separarNombre("Juan")).toEqual({ name: "Juan", lastName: "" });
+    expect(nombreParaAliclik("  Juan  Carlos Rodriguez ")).toBe("Juan Carlos Rodriguez");
   });
 
   it("usa el EAN de AliClik y reparte el total del pack", () => {

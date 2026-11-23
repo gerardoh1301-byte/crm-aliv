@@ -17,7 +17,7 @@ import {
   ordenAliclikRegistrada,
   pedidoParaRegistroAliclik,
   productosParaAliclik,
-  separarNombre,
+  nombreParaAliclik,
   separarReferencia,
   telefonoAliclik,
   type Coordenadas,
@@ -1540,8 +1540,9 @@ export async function proponerRegistroAliclik(ref: string, conversationId: strin
     ? await db.select({ name: contacts.name, phone: contacts.phone }).from(contacts).where(eq(contacts.id, p.contactId)).limit(1)
     : [];
   const falta: string[] = [];
-  const nombre = separarNombre(ct?.name || p.contactName);
-  if (!nombre.name) falta.push("nombre del cliente");
+  // AliClik muestra solo `name` en «Nombres y Apellidos» e ignora `lastName`: va el nombre completo.
+  const nombreCompleto = nombreParaAliclik(ct?.name || p.contactName);
+  if (!nombreCompleto) falta.push("nombre del cliente");
   const telefono = telefonoAliclik(ct?.phone);
   if (!telefono) falta.push("celular válido (9 dígitos)");
   const { direccion, referencia } = separarReferencia(p.direccionEnvio);
@@ -1589,7 +1590,7 @@ export async function proponerRegistroAliclik(ref: string, conversationId: strin
     note: `CRM ${p.numeroOrden}`,
     channel: "WHATSAPP",
     delivery,
-    customer: { name: nombre.name, lastName: nombre.lastName || undefined, phone: telefono, address: direccion },
+    customer: { name: nombreCompleto, phone: telefono, address: direccion },
     shipping: {
       address1: direccion,
       address2: p.distrito || "",
@@ -1609,7 +1610,7 @@ export async function proponerRegistroAliclik(ref: string, conversationId: strin
   const c = envio.courier;
   return [
     `🛵 *Registrar en AliClik: ${encabezado(p)}*`,
-    `• Cliente: ${[nombre.name, nombre.lastName].filter(Boolean).join(" ")} · ${telefono}`,
+    `• Cliente: ${nombreCompleto} · ${telefono}`,
     `• Dirección: ${direccion}${p.distrito ? ` (${p.distrito})` : ""}`,
     referencia ? `• Referencia: ${referencia}` : null,
     `• Ubicación: ${coord.fuente === "ubicacion_whatsapp" ? "la que mandó el cliente por WhatsApp ✅" : `Google Maps${aproximada ? " ⚠️ aproximada, revisa el punto" : ""}`} https://maps.google.com/?q=${coord.lat.toFixed(6)},${coord.lng.toFixed(6)}`,
