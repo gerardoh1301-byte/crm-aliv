@@ -18,6 +18,7 @@ export type EscenarioToqueCaliente = "adelanto" | "datos" | "cotizacion";
 
 const TAGS_EXCLUYENTES = [
   "no-reactivar",
+  "postulante",
   "cancelado",
   "compra exitosa",
   "orden en camino",

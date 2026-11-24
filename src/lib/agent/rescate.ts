@@ -199,6 +199,7 @@ function determinarEscenarioBase(
   // 1. Validar etiquetas excluyentes (clientes ya atendidos, pagados, en logística o cerrados)
   const tagsExcluyentes = [
     "no-reactivar",
+    "postulante",
     "cancelado",
     "compra exitosa",
     "orden en camino",

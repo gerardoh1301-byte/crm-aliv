@@ -19,6 +19,8 @@ import { getAgentConfig } from "./config";
 import { renderContextoDetallado, renderSystemPrompt } from "./prompt";
 import { exigirDatosEnvio, type RequisitosShalom } from "./datos-envio";
 import { esSaludoAutomatico, productoDelAnuncio, renderOrigenAnuncio } from "./origen-anuncio";
+import { BLOQUE_POSTULANTE, esPostulante, TAG_POSTULANTE } from "./postulante";
+import { aplicarEtiquetaAContacto } from "./etiquetado";
 import { asegurarPreguntaDeAvance, renderGuionVenta } from "./guion-venta";
 import { detectarSenalesPrompt } from "./prompt-bloques";
 import { MARCA_COD_PROVINCIA } from "@/lib/aliclik/cobertura-cod";
@@ -215,9 +217,19 @@ async function executeAgentTurn(
     contraEntregaProvincia: contexto.includes(MARCA_COD_PROVINCIA),
   });
 
+  // Postulante al puesto de asesor comercial (aviso de empleo): explica el puesto, no vende.
+  // La etiqueta lo saca del rescate y del toque en caliente.
+  const yaEtiquetadoPostulante = (contact.tags ?? []).some((t) => t.toLowerCase().trim() === TAG_POSTULANTE);
+  const postulante = yaEtiquetadoPostulante || esPostulante(collapsed);
+  if (postulante && !yaEtiquetadoPostulante) {
+    await aplicarEtiquetaAContacto({ contactId: contact.id, etiqueta: TAG_POSTULANTE, accion: "agregar", motivo: "Escribió por el puesto de asesor comercial" }).catch((err) =>
+      console.warn("[agent] no se pudo etiquetar al postulante:", err instanceof Error ? err.message : err)
+    );
+  }
+
   // Seguimiento con hora: si el cliente promete volver ("en 20 min te paso los datos"),
   // queda un recordatorio que el barrido envía una sola vez si no vuelve.
-  if (!tienePedidoReciente) {
+  if (!tienePedidoReciente && !postulante) {
     const ultimoUsuario = [...collapsed].reverse().find((m) => m.role === "user");
     const textoUltimo = typeof ultimoUsuario?.content === "string" ? ultimoUsuario.content : "";
     if (!esNumeroEntrenador(contact.phone)) await registrarPromesaSiAplica(contact.id, conversation.id, textoUltimo).catch((err) =>
@@ -243,12 +255,12 @@ async function executeAgentTurn(
       content:
         renderSystemPrompt(config.systemPrompt, { channel: conversation.provider === "simulador" ? "simulador" : channel, senales: senalesPrompt }) +
         contexto +
-        renderOrigenAnuncio(conversation.metadata, yaRespondio, guion.variante === "B") +
+        (postulante ? "" : renderOrigenAnuncio(conversation.metadata, yaRespondio, guion.variante === "B")) +
         (yaRespondio
           ? "\n\n# ESTADO DEL CHAT: CONVERSACIÓN EN CURSO (PROHIBIDO SALUDAR DE NUEVO Y PROHIBIDO REPETIR TABLA DE PRECIOS)\nYa has saludado al cliente en mensajes anteriores de este chat. ESTÁ ESTRICTAMENTE PROHIBIDO volver a decir '¡Hola', 'Hola [nombre]' o saludar de nuevo. Si ya enviaste los precios en un turno anterior, NO vuelvas a pegar la lista de precios (• 1 frasco... • 2 frascos...). Responde DIRECTAMENTE a lo que dijo o preguntó el cliente en 2 a 3 líneas cortas y naturales, como un vendedor humano por WhatsApp."
           : "") +
         equipo +
-        guion.bloque,
+        (postulante ? BLOQUE_POSTULANTE : guion.bloque),
     },
     ...collapsed,
   ];
@@ -393,7 +405,7 @@ async function executeAgentTurn(
         }).catch((err) => console.warn("[agent] aviso a supervisores falló:", err));
       }
 
-      reply = conPreguntaDeAvance(reply, guion, executedTools, checkOrden.bloqueado);
+      reply = conPreguntaDeAvance(reply, guion, executedTools, checkOrden.bloqueado || postulante);
 
       const convMeta = (conversation.metadata as Record<string, unknown> | null) ?? {};
       if (convMeta.copilotMode === true) {
@@ -471,7 +483,7 @@ async function executeAgentTurn(
           db.update(conversations).set({ needsHuman: true, updatedAt: new Date() }).where(eq(conversations.id, conversation.id)),
         ]);
       }
-      textoFinal = conPreguntaDeAvance(textoFinal, guion, executedTools, checkFinal.bloqueado);
+      textoFinal = conPreguntaDeAvance(textoFinal, guion, executedTools, checkFinal.bloqueado || postulante);
       const convMetaFinal = (conversation.metadata as Record<string, unknown> | null) ?? {};
       if (convMetaFinal.copilotMode === true) {
         const updatedMeta = {
