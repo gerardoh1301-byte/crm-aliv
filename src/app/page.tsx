@@ -12,6 +12,8 @@ import { PageHeader } from "@/components/layout/PageHeader";
 import { CargarDemo } from "@/components/dashboard/CargarDemo";
 import { AtencionHoy } from "@/components/dashboard/AtencionHoy";
 import { calcularAtencionHoy } from "@/lib/dashboard/atencion";
+import { pedidosCentroControl } from "@/lib/dashboard/centro-control";
+import { CentroControlEcommerce } from "@/components/dashboard/CentroControlEcommerce";
 import type { DashboardStats } from "@/types";
 
 export const dynamic = "force-dynamic";
@@ -70,7 +72,11 @@ export default async function DashboardPage() {
       color: stage.color,
     }));
 
-  const [contactos7d, atencion] = await Promise.all([serieContactos(member, 7), calcularAtencionHoy(soloMios)]);
+  const [contactos7d, atencion, pedidosCentro] = await Promise.all([
+    serieContactos(member, 7),
+    calcularAtencionHoy(soloMios),
+    pedidosCentroControl(soloMios),
+  ]);
 
   const recentActivities = await db
     .select({
@@ -131,6 +137,8 @@ export default async function DashboardPage() {
       <NotificationBanner />
 
       <AtencionHoy datos={atencion} />
+
+      <CentroControlEcommerce pedidos={pedidosCentro} />
 
       <KPICards stats={stats} contactos={contactos7d} />
 

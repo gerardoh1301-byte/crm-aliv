@@ -3,6 +3,8 @@ import { PageHeader } from "@/components/layout/PageHeader";
 import { Reportes } from "@/components/reportes/Reportes";
 import { getCurrentMember } from "@/lib/team";
 import { generarReporte, RANGOS, type RangoDias } from "@/lib/reportes";
+import { pedidosReporteOperacion } from "@/lib/reportes-operacion";
+import { ReporteOperacion } from "@/components/reportes/ReporteOperacion";
 
 export const dynamic = "force-dynamic";
 
@@ -21,7 +23,7 @@ export default async function ReportesPage({
   const { dias: param } = await searchParams;
   const dias: RangoDias = (RANGOS as readonly number[]).includes(Number(param)) ? (Number(param) as RangoDias) : 30;
 
-  const reporte = await generarReporte(member, dias);
+  const [reporte, pedidosOperacion] = await Promise.all([generarReporte(member, dias), pedidosReporteOperacion(member)]);
 
   return (
     <div>
@@ -34,6 +36,7 @@ export default async function ReportesPage({
         }
       />
       <Reportes reporte={reporte} />
+      <ReporteOperacion pedidos={pedidosOperacion} />
     </div>
   );
 }
