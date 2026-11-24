@@ -6,6 +6,7 @@ import Link from "next/link";
 import {
   DropdownMenu,
   DropdownMenuContent,
+  DropdownMenuGroup,
   DropdownMenuItem,
   DropdownMenuLabel,
   DropdownMenuSeparator,
@@ -111,10 +112,13 @@ export function UserMenu() {
         <ChevronsUpDown className="h-3.5 w-3.5 text-sidebar-foreground/50 shrink-0" />
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end" side="top" className="w-60">
-        <DropdownMenuLabel className="font-normal">
-          <p className="text-sm font-medium truncate">{displayName}</p>
-          <p className="text-xs text-muted-foreground truncate">{user.email}</p>
-        </DropdownMenuLabel>
+        {/* Base UI exige que la etiqueta vaya dentro de un grupo; sin él, abrir el menú rompe la página. */}
+        <DropdownMenuGroup>
+          <DropdownMenuLabel className="font-normal">
+            <p className="text-sm font-medium truncate">{displayName}</p>
+            <p className="text-xs text-muted-foreground truncate">{user.email}</p>
+          </DropdownMenuLabel>
+        </DropdownMenuGroup>
         <DropdownMenuSeparator />
         {user.role === "admin" && (
           <>
