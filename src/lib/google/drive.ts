@@ -136,9 +136,9 @@ async function api(path: string, init: RequestInit = {}): Promise<Response> {
   return fetch(`https://www.googleapis.com${path}`, { ...init, headers, signal: AbortSignal.timeout(20_000) });
 }
 
-/** Carpeta «Guías Shalom (CRM)» (la crea el CRM la primera vez). */
-export async function carpetaGuias(): Promise<string> {
-  const guardada = await leer(CLAVE_CARPETA);
+/** Carpeta del CRM en Drive: la crea la primera vez y guarda su id en crm_settings. */
+async function carpetaPropia(nombre: string, clave: string): Promise<string> {
+  const guardada = await leer(clave);
   if (guardada) {
     const r = await api(`/drive/v3/files/${guardada}?fields=id,trashed`);
     const j = r.ok ? ((await r.json()) as { trashed?: boolean }) : null;
@@ -147,12 +147,42 @@ export async function carpetaGuias(): Promise<string> {
   const r = await api("/drive/v3/files?fields=id", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ name: NOMBRE_CARPETA_GUIAS, mimeType: "application/vnd.google-apps.folder" }),
+    body: JSON.stringify({ name: nombre, mimeType: "application/vnd.google-apps.folder" }),
   });
   if (!r.ok) throw new Error(`No se pudo crear la carpeta en Drive (${r.status})`);
   const { id } = (await r.json()) as { id: string };
-  await guardar(CLAVE_CARPETA, id);
+  await guardar(clave, id);
   return id;
+}
+
+/** Carpeta «Guías Shalom (CRM)» (la crea el CRM la primera vez). */
+export async function carpetaGuias(): Promise<string> {
+  return carpetaPropia(NOMBRE_CARPETA_GUIAS, CLAVE_CARPETA);
+}
+
+export const NOMBRE_CARPETA_RESPALDO_CHATS = "Respaldo chats (CRM)";
+
+/** Carpeta «Respaldo chats (CRM)», donde va la copia diaria de los chats. */
+export async function carpetaRespaldoChats(): Promise<string> {
+  return carpetaPropia(NOMBRE_CARPETA_RESPALDO_CHATS, "google_drive_carpeta_respaldo_chats");
+}
+
+/** Archivos (no en la papelera) de una carpeta creada por el CRM. */
+export async function listarArchivos(carpetaId: string): Promise<{ id: string; name: string }[]> {
+  const q = encodeURIComponent(`'${carpetaId}' in parents and trashed = false`);
+  const r = await api(`/drive/v3/files?q=${q}&fields=files(id,name)&pageSize=1000`);
+  if (!r.ok) throw new Error(`Drive no listó la carpeta (${r.status})`);
+  return ((await r.json()) as { files?: { id: string; name: string }[] }).files ?? [];
+}
+
+/** Manda a la papelera de Drive (se puede recuperar 30 días), no borra para siempre. */
+export async function enviarAPapelera(id: string): Promise<void> {
+  const r = await api(`/drive/v3/files/${encodeURIComponent(id)}`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ trashed: true }),
+  });
+  if (!r.ok) throw new Error(`Drive no movió el archivo a la papelera (${r.status})`);
 }
 
 export interface ArchivoDrive {

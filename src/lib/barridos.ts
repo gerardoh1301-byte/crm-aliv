@@ -37,6 +37,8 @@ const ENDPOINTS = [
   // Posventa y recompra: incorpora los entregados (backfill idempotente, últimos 30 días)
   // y envía los mensajes del día 1-3, 7 y 25 en horario permitido.
   "/api/agent/postventa?backfill=true",
+  // Copia de los chats en Drive, una vez por día de Lima (las otras vueltas salen al toque).
+  "/api/respaldo/chats",
 ];
 
 import { iniciarMantenerDespierto } from "./mantener-despierto";

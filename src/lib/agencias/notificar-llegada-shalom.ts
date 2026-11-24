@@ -559,7 +559,7 @@ ${marca}` : marca;
         {
           text: mensajeAviso,
           template: {
-            name: "aliv_pedido_en_agencia",
+            name: "aliv_aviso_agencia_shalom",
             language: "es",
             params: [
               nombreLimpio,
