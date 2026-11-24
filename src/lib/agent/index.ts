@@ -220,9 +220,9 @@ async function executeAgentTurn(
   // Postulante al puesto de asesor comercial (aviso de empleo): explica el puesto, no vende.
   // La etiqueta lo saca del rescate y del toque en caliente.
   const yaEtiquetadoPostulante = (contact.tags ?? []).some((t) => t.toLowerCase().trim() === TAG_POSTULANTE);
-  const postulante = yaEtiquetadoPostulante || esPostulante(collapsed);
+  const postulante = yaEtiquetadoPostulante || esPostulante(collapsed, conversation.metadata);
   if (postulante && !yaEtiquetadoPostulante) {
-    await aplicarEtiquetaAContacto({ contactId: contact.id, etiqueta: TAG_POSTULANTE, accion: "agregar", motivo: "Escribió por el puesto de asesor comercial" }).catch((err) =>
+    await aplicarEtiquetaAContacto({ contactId: contact.id, etiqueta: TAG_POSTULANTE, accion: "agregar", motivo: "Escribió por el aviso de empleo (asesor de confirmaciones)" }).catch((err) =>
       console.warn("[agent] no se pudo etiquetar al postulante:", err instanceof Error ? err.message : err)
     );
   }

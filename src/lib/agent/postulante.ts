@@ -13,18 +13,56 @@ type MensajeHistorial = { role: string; content: unknown };
 /** Etiqueta del contacto: lo excluye del rescate y del toque en caliente. */
 export const TAG_POSTULANTE = "postulante";
 
-const PATRON_POSTULANTE = /asesor(?:a|\(a\))?\s+comercial/i;
+/**
+ * Frases del CLIENTE que solo usa alguien que viene por el aviso de empleo. El 24/11 el
+ * primer mensaje del aviso llegó como "[Unsupported message]" (error 131060 de Meta, sin
+ * texto ni anuncio) y la persona siguió con «vengo por lo del trabajo remoto» y «decía
+ * asesor de confirmaciones»: con solo "asesor comercial" el bot le dijo que no había empleo.
+ * "trabajo" suelto no cuenta ("estoy en el trabajo" lo dice cualquier cliente).
+ */
+const PATRONES_POSTULANTE: RegExp[] = [
+  /asesor(?:a|\(a\))?\s+(?:comercial|de\s+confirmaci)/i,
+  /\bpostul/i,
+  /\bconvocatoria\b/i,
+  /\bvacante/i,
+  /\b(?:trabajo|empleo|chamba)\s+(?:remot|remor|virtual|desde\s+casa|home)/i,
+  /\b(?:oferta|aviso|anuncio|puesto|propuesta)\s+de\s+(?:trabajo|empleo)/i,
+  /\b(?:busco|buscan|buscando|necesitan|necesito)\s+(?:un\s+)?(?:trabajo|empleo|personal)\b/i,
+  /\bpor\s+(?:lo\s+)?del?\s+(?:trabajo|empleo|puesto)\b/i,
+  /\bempleo\b/i,
+];
 
-/** true si el cliente mencionó "asesor comercial" en cualquiera de sus mensajes. */
-export function esPostulante(historial: MensajeHistorial[]): boolean {
+/** Texto del anuncio de empleo (Click to WhatsApp): «Empleo: Asesor(a) de confirmaciones». */
+const PATRON_ANUNCIO_EMPLEO =
+  /\bempleo\b|asesor(?:a|\(a\))?\s+(?:comercial|de\s+confirmaci)|estamos\s+contratando|convocatoria|\bpostul/i;
+
+function textoPlano(v: unknown): string {
+  return typeof v === "string" ? v : "";
+}
+
+/** true si el chat vino del anuncio de empleo (los datos del anuncio están en conversation.metadata). */
+export function vieneDeAnuncioEmpleo(metadata: unknown): boolean {
+  if (!metadata || typeof metadata !== "object") return false;
+  const md = metadata as Record<string, unknown>;
+  const contenido = [md.ctwa_headline, md.ctwa_body, md.meta_ad_title].map(textoPlano).join(" \n ");
+  return contenido.trim() !== "" && PATRON_ANUNCIO_EMPLEO.test(contenido);
+}
+
+/**
+ * true si el cliente escribe por el aviso de empleo: lo dice en cualquiera de sus mensajes
+ * o el chat vino del anuncio de empleo.
+ */
+export function esPostulante(historial: MensajeHistorial[], metadata?: unknown): boolean {
+  if (vieneDeAnuncioEmpleo(metadata)) return true;
   return historial.some(
-    (m) => m.role === "user" && typeof m.content === "string" && PATRON_POSTULANTE.test(m.content)
+    (m) => m.role === "user" && typeof m.content === "string" && PATRONES_POSTULANTE.some((p) => p.test(m.content as string))
   );
 }
 
 export const BLOQUE_POSTULANTE = [
   "\n\n# MODO POSTULANTE (ESTO MANDA SOBRE TODO LO ANTERIOR)",
-  "Esta persona NO es cliente: escribe para postular al puesto de *Asesor(a) comercial* de Aliv Perú.",
+  "Esta persona NO es cliente: escribe por el aviso de empleo de Aliv Perú, para postular al puesto de *Asesor(a) de confirmaciones* (también lo llamamos asesor comercial). Sí estamos contratando: nunca le digas que no hay empleo ni que Aliv Perú no contrata.",
+  "Si antes en este chat se le habló de productos o se le dijo que no había empleo, discúlpate en una frase por la confusión y explica el puesto.",
   "NO le ofrezcas productos, NO le des precios de NAC600 ni Termix, NO uses el guion de venta y NO registres pedidos ni datos de envío.",
   "",
   "En tu primera respuesta explica el puesto en un solo mensaje corto y fácil de leer en el celular:",

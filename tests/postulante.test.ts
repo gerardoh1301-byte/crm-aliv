@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { BLOQUE_POSTULANTE, esPostulante } from "@/lib/agent/postulante";
+import { BLOQUE_POSTULANTE, esPostulante, vieneDeAnuncioEmpleo } from "@/lib/agent/postulante";
 
 describe("esPostulante", () => {
   it("detecta el mensaje del aviso de empleo", () => {
@@ -8,6 +8,27 @@ describe("esPostulante", () => {
   it("acepta asesora y asesor(a) en cualquier mensaje del cliente", () => {
     expect(esPostulante([{ role: "user", content: "hola" }, { role: "user", content: "es por lo de asesora comercial" }])).toBe(true);
     expect(esPostulante([{ role: "user", content: "vi el aviso de ASESOR(A) COMERCIAL" }])).toBe(true);
+  });
+  it("caso 955 424 136 (24/11): el primer mensaje llegó vacío y siguió con trabajo remoto", () => {
+    const u = (content: string) => ({ role: "user", content });
+    expect(esPostulante([u("[Unsupported message]")])).toBe(false);
+    expect(esPostulante([u("[Unsupported message]"), u("Vengo por lo del trabajo remoro")])).toBe(true);
+    expect(esPostulante([u('En su anuncio decía "asesor de confirmaciones"')])).toBe(true);
+    expect(esPostulante([u("Hola, vi la convocatoria")])).toBe(true);
+    expect(esPostulante([u("quiero postular")])).toBe(true);
+    expect(esPostulante([u("hay vacante todavía?")])).toBe(true);
+  });
+  it("detecta el anuncio de empleo aunque el cliente no escriba nada de empleo", () => {
+    const md = { ctwa_headline: "Empleo: Asesor(a) de confirmaciones", ctwa_body: "¡Estamos contratando en Aliv Perú!" };
+    expect(vieneDeAnuncioEmpleo(md)).toBe(true);
+    expect(esPostulante([{ role: "user", content: "Hola" }], md)).toBe(true);
+    expect(vieneDeAnuncioEmpleo({ ctwa_headline: "NAC600 + NAD+ envío gratis" })).toBe(false);
+    expect(vieneDeAnuncioEmpleo(null)).toBe(false);
+  });
+  it("los clientes que hablan de su trabajo no son postulantes", () => {
+    for (const t of ["estoy en el trabajo, luego te escribo", "trabajo hasta las 6, mándalo a mi casa", "me lo envían a mi trabajo en Miraflores", "para mi esposo que trabaja de pie"]) {
+      expect(esPostulante([{ role: "user", content: t }])).toBe(false);
+    }
   });
   it("no se activa con clientes normales ni con textos del bot", () => {
     expect(esPostulante([{ role: "user", content: "Quiero más información del NAC600" }])).toBe(false);
@@ -21,5 +42,7 @@ describe("BLOQUE_POSTULANTE", () => {
     expect(BLOQUE_POSTULANTE).toContain("S/600 mensuales fijos + 2%");
     expect(BLOQUE_POSTULANTE).toContain("30 órdenes al día");
     expect(BLOQUE_POSTULANTE).toContain("NO pidas CV");
+    expect(BLOQUE_POSTULANTE).toContain("Asesor(a) de confirmaciones");
+    expect(BLOQUE_POSTULANTE).toContain("nunca le digas que no hay empleo");
   });
 });
