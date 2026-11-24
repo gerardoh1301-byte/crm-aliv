@@ -46,3 +46,12 @@ describe("BLOQUE_POSTULANTE", () => {
     expect(BLOQUE_POSTULANTE).toContain("nunca le digas que no hay empleo");
   });
 });
+
+describe("reglas del modo postulante (revisión 24/11)", () => {
+  it("no descarta por provincia, no pide datos extra y responde part-time", () => {
+    expect(BLOQUE_POSTULANTE).toContain("NUNCA descartes ni desanimes");
+    expect(BLOQUE_POSTULANTE).toContain("provincia");
+    expect(BLOQUE_POSTULANTE).toContain("No pidas datos que no estén aquí");
+    expect(BLOQUE_POSTULANTE).toMatch(/part-time/);
+  });
+});

@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { normalizarNombreEtiqueta } from "@/lib/agent/etiquetado";
+import { esContactoPostulante, esEtiquetaDeVenta, normalizarNombreEtiqueta } from "@/lib/agent/etiquetado";
 import { nombresDeTools } from "@/lib/agent/tools";
 
 describe("Capacidad del Bot para analizar y colocar etiquetas", () => {
@@ -32,5 +32,17 @@ describe("Capacidad del Bot para analizar y colocar etiquetas", () => {
     expect(normalizarNombreEtiqueta("interes:nac600")).toBe("interes:nac600");
     expect(normalizarNombreEtiqueta("nac600")).toBe("interes:nac600");
     expect(normalizarNombreEtiqueta("termix")).toBe("interes:termix");
+  });
+});
+
+describe("postulantes sin etiquetas de venta", () => {
+  it("reconoce al postulante y las etapas de venta que no le tocan", () => {
+    expect(esContactoPostulante(["postulante"])).toBe(true);
+    expect(esContactoPostulante(["interes:nac600"])).toBe(false);
+    expect(esEtiquetaDeVenta("Agendar entrega")).toBe(true);
+    expect(esEtiquetaDeVenta("Informativo")).toBe(true);
+    expect(esEtiquetaDeVenta("Cancelado")).toBe(true);
+    expect(esEtiquetaDeVenta("Pendiente de adelanto")).toBe(true);
+    expect(esEtiquetaDeVenta("esperando respuesta")).toBe(false);
   });
 });

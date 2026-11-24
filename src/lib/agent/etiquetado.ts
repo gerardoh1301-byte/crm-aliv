@@ -5,6 +5,7 @@ import { desc, eq } from "drizzle-orm";
 import { cleanStr, esEtiquetaDeEtapa, etiquetaRetrocede, obtenerEtiquetaDeEtapa, TODAS_LAS_ETIQUETAS } from "@/lib/tags";
 import { pedidosOrdenes } from "../../../modules/pedidos/tabla";
 import { adelantoRegistrado, esPedidoDeProvincia } from "@/lib/pedidos/adelanto";
+import { TAG_POSTULANTE } from "./postulante";
 
 /**
  * Normaliza cualquier string de etiqueta al formato oficial del CRM
@@ -85,6 +86,17 @@ async function etiquetaDeEtapaDelContacto(contactId: string): Promise<string | n
   return venta ? obtenerEtiquetaDeEtapa(venta) : null;
 }
 
+/** true si el contacto escribió por el aviso de empleo (etiqueta "postulante"). */
+export function esContactoPostulante(tags: string[] | null | undefined): boolean {
+  return (tags ?? []).some((t) => cleanStr(t) === cleanStr(TAG_POSTULANTE));
+}
+
+/** Etiquetas del embudo de venta (etapas, adelanto, cancelado) que no aplican a un postulante. */
+export function esEtiquetaDeVenta(etiqueta: string): boolean {
+  const c = cleanStr(etiqueta);
+  return esEtiquetaDeEtapa(etiqueta) || c === "cancelado" || c === "adelanto por verificar" || c === "pendiente de adelanto";
+}
+
 /**
  * Aplica una etiqueta a un contacto de forma segura y consistente.
  */
@@ -110,6 +122,12 @@ export async function aplicarEtiquetaAContacto(params: {
 
   const tagsActuales: string[] = contacto.tags ?? [];
   let nuevosTags: string[] = [...tagsActuales];
+
+  // Un postulante al aviso de empleo no es cliente: no recibe etapas de venta (24/11 el 955
+  // 424 136 quedó con "Agendar entrega"). Las etiquetas secundarias y "quitar" sí pasan.
+  if (accion !== "quitar" && esContactoPostulante(tagsActuales) && esEtiquetaDeVenta(etiquetaNorm)) {
+    return { ok: true, tags: tagsActuales, etiquetaNormalizada: etiquetaNorm };
+  }
 
   if (accion === "quitar") {
     nuevosTags = tagsActuales.filter((t) => cleanStr(t) !== cleanStr(etiquetaNorm));
@@ -189,7 +207,7 @@ export async function autoClasificarYEtiquetarConversacion(params: {
   if (!contacto) return { analizado: false };
 
   const tagsActuales: string[] = contacto.tags ?? [];
-  if (tagsActuales.includes("no-reactivar")) {
+  if (tagsActuales.includes("no-reactivar") || esContactoPostulante(tagsActuales)) {
     return { analizado: false };
   }
 
