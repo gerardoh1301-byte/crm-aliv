@@ -3,6 +3,7 @@ import { db } from "@/db";
 import { activities, agentJobs, contacts, conversations, messages } from "@/db/schema";
 import { and, desc, eq, gte, inArray, or, sql } from "drizzle-orm";
 import { decidirReintento, esMensajeCortesia, MENSAJE_CORTESIA, VENTANA_FALLAS_MS } from "./reintento";
+import { mensajeRespaldoTrasHerramientas, type HerramientaEjecutada } from "./respaldo-sin-ia";
 import { enqueueAgentJob } from "./queue";
 import { corregirImagenSaliente } from "./etiqueta-imagen";
 import { pausaPorHumano } from "./toques";
@@ -261,6 +262,9 @@ async function executeAgentTurn(
   const origenUso = conversation.provider === "simulador" ? "agente_simulador" : "agente";
   let toolCalls = 0;
   const executedTools: string[] = [];
+  // Para contarle al cliente lo que se hizo si la IA cae después de ejecutar herramientas.
+  const herramientasRespaldo: HerramientaEjecutada[] = [];
+  let textoParcialRespaldo = "";
   let pedidoTextoExplicito = false;
 
   try {
@@ -294,6 +298,7 @@ async function executeAgentTurn(
         );
 
       if (choice.finish_reason === "tool_calls" && assistantMsg.tool_calls?.length) {
+        if (textoJuntoAHerramientas) textoParcialRespaldo = textoJuntoAHerramientas;
         llmMessages.push(assistantMsg);
         let detenido = false;
         let algunaFallo = false;
@@ -313,6 +318,7 @@ async function executeAgentTurn(
           }
 
           const result = await executeTool(tc.function.name, args, ctx);
+          herramientasRespaldo.push({ nombre: tc.function.name, args, ok: result.ok });
           if (!result.ok) algunaFallo = true;
           if (result.ok && result.stop) {
             detenido = true;
@@ -542,6 +548,35 @@ async function executeAgentTurn(
       await new Promise((r) => setTimeout(r, REINTENTO_MS));
       // Si el segundo intento tambien falla, el mismo envia el mensaje de cortesia y avisa.
       return executeAgentTurn(conversationId, { reintento: false });
+    }
+
+    // Si la IA cayó después de hacer algo (p. ej. agendar la entrega), se le cuenta al cliente
+    // con un texto fijo en vez de «Disculpa la demora» (pedido #1175, 23/11).
+    if (toolCalls > 0) {
+      const respaldo = mensajeRespaldoTrasHerramientas({
+        nombre: contact.name,
+        herramientas: herramientasRespaldo,
+        textoParcial: textoParcialRespaldo,
+      });
+      if (respaldo) {
+        try {
+          const texto = limpiarFormatoWhatsApp(await aplicarFiltroSalud(respaldo, contact.id));
+          const entrega = await deliverMessage(conversation.id, { text: texto }, "agent");
+          if (entrega.ok) {
+            await db
+              .insert(activities)
+              .values({
+                type: "note",
+                description: `[BOT RESPALDO] La IA falló al cerrar el turno (${categoriaError}); se envió la confirmación sin IA: "${texto.slice(0, 200)}"`,
+                contactId: contact.id,
+              })
+              .catch(() => {});
+            return { ok: true, reply: texto, toolCalls };
+          }
+        } catch (respErr) {
+          console.warn("[agent] No se pudo enviar la respuesta de respaldo:", respErr);
+        }
+      }
     }
 
     // R9b: si tampoco hubo suerte, cortesia + nota + aviso.
