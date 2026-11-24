@@ -536,6 +536,12 @@ export async function renderContextoDetallado(
     );
   }
 
+  // Cupón de recompra de S/ 15 (mejora 6): el bot lo menciona; crear_pedido_chat lo descuenta.
+  {
+    const { cuponVigente, bloqueCuponParaBot } = await import("@/lib/pedidos/cupon-recompra");
+    const cupon = cuponVigente(contact.customFields);
+    if (cupon) partes.push(bloqueCuponParaBot(cupon));
+  }
   if (llamadasTxt) partes.push(llamadasTxt);
   if (pedidosTxt) partes.push(pedidosTxt);
 

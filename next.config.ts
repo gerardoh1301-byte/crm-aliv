@@ -49,7 +49,8 @@ const nextConfig: NextConfig = {
   env: {
     // Version congelada al construir; commit solo si el build lo recibio (SOURCE_COMMIT).
     NEXT_PUBLIC_APP_VERSION: pkg.version,
-    NEXT_PUBLIC_BUILD_COMMIT: process.env.SOURCE_COMMIT ?? "",
+    // Render expone RENDER_GIT_COMMIT en el build: así /api/health dice qué commit corre.
+    NEXT_PUBLIC_BUILD_COMMIT: process.env.SOURCE_COMMIT ?? process.env.RENDER_GIT_COMMIT ?? "",
   },
 };
 

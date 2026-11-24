@@ -783,7 +783,7 @@ const tools: ToolModulo[] = [
         return { ok: false, error: "No se encontraron productos validos" };
       }
 
-      const totalSoles = subtotales.reduce((acc, s) => acc + s, 0);
+      let totalSoles = subtotales.reduce((acc, s) => acc + s, 0);
       const ciudad = String(args.ciudad ?? "Lima").trim();
       const distrito = args.distrito ? String(args.distrito).trim() : null;
       let direccionEnvio = String(args.direccion_envio ?? "").trim();
@@ -823,6 +823,21 @@ const tools: ToolModulo[] = [
       }
 
       const numeroOrden = await generarNumeroOrden();
+      // Cupón de recompra de S/ 15 (se otorga al enviar la clave de retiro, 30 días, un uso).
+      const [fichaCupon] = await db
+        .select({ cf: contacts.customFields })
+        .from(contacts)
+        .where(eq(contacts.id, ctx.contactId))
+        .limit(1);
+      const { cuponVigente, aplicarCupon, marcarUsado, CAMPO_CUPON } = await import("@/lib/pedidos/cupon-recompra");
+      const cupon = cuponVigente(fichaCupon?.cf);
+      const conCupon = aplicarCupon(totalSoles, cupon);
+      const descuentoCupon = conCupon.descuento;
+      if (descuentoCupon > 0) totalSoles = conCupon.total;
+      const notasPedido =
+        descuentoCupon > 0
+          ? `${notas ? `${notas}\n` : ""}[CUPON_RECOMPRA] Descuento de S/ ${descuentoCupon.toFixed(2)} por recompra${cupon?.pedido_origen ? ` (cupón de ${cupon.pedido_origen})` : ""}.`
+          : notas;
       // Provincia (adelanto por Yape): el pedido queda "por confirmar" hasta que una PERSONA
       // verifique el adelanto con el boton "Adelanto confirmado". El bot nunca da por
       // recibido un pago (antes lo marcaba confirmado por una imagen que no podia ver).
@@ -882,7 +897,7 @@ const tools: ToolModulo[] = [
           ciudad,
           distrito,
           direccionEnvio,
-          notas,
+          notas: notasPedido,
         })
         .returning();
 
@@ -903,6 +918,7 @@ const tools: ToolModulo[] = [
           ...(distrito ? { distrito } : {}),
           direccion_envio: direccionEnvio,
           ...(dniCliente ? { dni_ruc: dniCliente } : {}),
+          ...(descuentoCupon > 0 && cupon ? { [CAMPO_CUPON]: marcarUsado(cupon, numeroOrden) } : {}),
         };
         await db
           .update(contacts)
@@ -948,6 +964,9 @@ const tools: ToolModulo[] = [
           estado: "Pedido Confirmado",
           items: itemsFinales,
           total_soles: `S/ ${totalSoles.toFixed(2)}`,
+          ...(descuentoCupon > 0
+            ? { cupon_aplicado: `Descuento de recompra de S/ ${descuentoCupon.toFixed(2)} ya incluido en el total` }
+            : {}),
           modalidad_pago: modalidadPago,
           destino: `${direccionEnvio}${distrito ? ` (${distrito} - ${ciudad})` : ` (${ciudad})`}`,
         },

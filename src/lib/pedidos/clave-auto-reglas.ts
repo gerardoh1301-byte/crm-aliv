@@ -49,6 +49,4 @@ export function motivoParaNoEnviar(p: PedidoClaveAuto, mensajesSalientes: (strin
   return null;
 }
 
-/** Cierre del mensaje de la clave: invita a volver a comprar (sin descuento inventado). */
-export const LINEA_RECOMPRA =
-  "Cuando quieras repetir tu pedido o probar otro producto, escríbenos por aquí y te lo separamos 🛍️";
+// El cierre del mensaje de la clave (cupón de S/ 15 para la recompra) está en cupon-recompra.ts.

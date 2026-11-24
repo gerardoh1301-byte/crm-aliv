@@ -2,7 +2,6 @@ import { describe, expect, it } from "vitest";
 import fs from "node:fs";
 import path from "node:path";
 import {
-  LINEA_RECOMPRA,
   claveYaEnviada,
   esEtapaEntregado,
   motivoParaNoEnviar,
@@ -36,10 +35,9 @@ describe("clave al arrastrar a Entregado (mejora 6)", () => {
     expect(esEtapaEntregado({ key: "en_reparto", name: "En reparto" })).toBe(false);
   });
 
-  it("el mensaje de la clave cierra con la invitación a recomprar, sin descuento inventado", () => {
+  it("el mensaje de la clave cierra con el cupón de recompra", () => {
     const src = leer("src/lib/supervisor/comandos.ts");
-    expect(src).toContain("LINEA_RECOMPRA,");
-    expect(LINEA_RECOMPRA).not.toMatch(/S\/|%|descuento|cup[oó]n/i);
+    expect(src).toContain("lineaCupon(cupon),");
   });
 
   it("solo el arrastre y la edición del deal disparan el envío", () => {

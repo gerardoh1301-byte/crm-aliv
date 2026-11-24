@@ -26,7 +26,8 @@ import {
   type OrdenAliclik,
 } from "@/lib/aliclik/registrar-orden";
 import { adelantoRegistrado, esPedidoDeProvincia, quienVerificoAdelanto } from "@/lib/pedidos/adelanto";
-import { LINEA_RECOMPRA, TAG_CLAVE_ENVIADA, motivoParaNoEnviar } from "@/lib/pedidos/clave-auto-reglas";
+import { TAG_CLAVE_ENVIADA, motivoParaNoEnviar } from "@/lib/pedidos/clave-auto-reglas";
+import { CAMPO_CUPON, crearCupon, cuponParaOtorgar, cuponVigente, lineaCupon, type CuponRecompra } from "@/lib/pedidos/cupon-recompra";
 import {
   digitosPedido,
   interpretarComando,
@@ -607,7 +608,7 @@ function fichaPedido(p: Pedido, c: CuentasPedido, celular: string | null, chat: 
     .join("\n");
 }
 
-function textoClaveCliente(p: Pedido, c: CuentasPedido): string {
+function textoClaveCliente(p: Pedido, c: CuentasPedido, cupon: CuponRecompra = crearCupon(p.numeroOrden)): string {
   const destino = [p.direccionEnvio, p.ciudad].filter(Boolean).join(", ") || "tu agencia Shalom";
   return [
     `¡Pago del saldo de ${soles(c.saldoCobrado ?? c.saldoPendiente)} confirmado! 🙌`,
@@ -618,7 +619,7 @@ function textoClaveCliente(p: Pedido, c: CuentasPedido): string {
     "",
     "Acércate con tu DNI físico para el retiro. ¡Gracias por confiar en Aliv! 💚",
     "",
-    LINEA_RECOMPRA,
+    lineaCupon(cupon),
   ]
     .filter((l) => l !== null)
     .join("\n");
@@ -633,7 +634,14 @@ type EnvioClave = { ok: true; texto: string } | { ok: false; error: string; text
  * devuelve el texto para reenviarlo a mano.
  */
 async function enviarClaveAlCliente(p: Pedido, autor: string): Promise<EnvioClave> {
-  const texto = textoClaveCliente(p, cuentasDelPedido(p));
+  // Cupón de recompra de S/ 15 (30 días): el mensaje lo anuncia y se guarda en el contacto
+  // solo si WhatsApp entregó el mensaje. Si ya tiene uno vigente se le recuerda ese.
+  const cf = p.contactId
+    ? ((await db.select({ cf: contacts.customFields }).from(contacts).where(eq(contacts.id, p.contactId)).limit(1))[0]?.cf ?? {})
+    : {};
+  const cuponNuevo = cuponParaOtorgar(cf, p.numeroOrden);
+  const cupon = cuponNuevo ?? cuponVigente(cf) ?? crearCupon(p.numeroOrden);
+  const texto = textoClaveCliente(p, cuentasDelPedido(p), cupon);
   if (!p.contactId) return { ok: false, error: "sin_chat", texto };
   const [conv] = await db
     .select({ id: conversations.id })
@@ -651,8 +659,20 @@ async function enviarClaveAlCliente(p: Pedido, autor: string): Promise<EnvioClav
     .update(pedidosOrdenes)
     .set({ notas: `${p.notas ? `${p.notas}\n` : ""}[${TAG_CLAVE_ENVIADA}:${new Date().toISOString()}]`, updatedAt: new Date() })
     .where(eq(pedidosOrdenes.id, p.id));
+  if (cuponNuevo) await guardarCupon(p.contactId, cuponNuevo);
   await nota(p, `[CLAVE ENVIADA] Clave de retiro enviada al cliente por orden de ${autor}.`);
   return { ok: true, texto };
+}
+
+/** Guarda el cupón de recompra en la ficha (customFields.cupon_recompra). */
+async function guardarCupon(contactId: string, cupon: CuponRecompra): Promise<void> {
+  await db
+    .update(contacts)
+    .set({
+      customFields: sql`coalesce(${contacts.customFields}, '{}'::jsonb) || ${JSON.stringify({ [CAMPO_CUPON]: cupon })}::jsonb`,
+      updatedAt: new Date(),
+    })
+    .where(eq(contacts.id, contactId));
 }
 
 function motivoFallo(error: string): string {
@@ -757,6 +777,12 @@ export async function registrarClaveEntregada(
   if (!(p.notas || "").includes(`[${TAG_CLAVE_ENVIADA}`)) {
     p.notas = `${p.notas ? `${p.notas}\n` : ""}[${TAG_CLAVE_ENVIADA}:${new Date().toISOString()}]`;
     await db.update(pedidosOrdenes).set({ notas: p.notas, updatedAt: new Date() }).where(eq(pedidosOrdenes.id, p.id));
+  }
+  // El texto de la clave (también el copiado para WhatsApp Web) anuncia el cupón de S/ 15.
+  if (p.contactId) {
+    const [ct] = await db.select({ cf: contacts.customFields }).from(contacts).where(eq(contacts.id, p.contactId)).limit(1);
+    const cupon = cuponParaOtorgar(ct?.cf ?? {}, p.numeroOrden);
+    if (cupon) await guardarCupon(p.contactId, cupon);
   }
   const c = cuentasDelPedido(p);
   let saldoRegistrado: number | null = null;

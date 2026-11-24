@@ -431,6 +431,12 @@ export async function procesarSeguimientosPostventaAutomaticos(opts?: {
       mensajeAEnviar = esTermix
         ? `¡Hola, ${nombre}! 🌿 Te saluda Aliv Perú. Esperamos que sigas recuperando tu movilidad y estabilidad con tu Tobillera Termix. Si deseas un par adicional para el otro pie o un familiar, te mantenemos el precio de promoción especial con envío gratis. ¿Te gustaría aprovecharlo? ✨`
         : buildMensajeDia25(nombre);
+      // Cupón de recompra de S/ 15 (se dio con la clave Shalom): se le recuerda antes de que venza.
+      const { cuponVigente, fechaCorta } = await import("@/lib/pedidos/cupon-recompra");
+      const cupon = cuponVigente(contact.customFields);
+      if (cupon) {
+        mensajeAEnviar += ` 🎁 Además, recuerda que tienes S/ ${cupon.monto} de descuento en tu próxima compra hasta el ${fechaCorta(cupon.vence)}.`;
+      }
       plantillaPostventa = {
         name: "aliv_postventa_recompra",
         language: "es",
