@@ -53,6 +53,7 @@ REGLAS:
 - Mover a cancelado, anular, dar de baja o sacar del pipeline un pedido es "cancela <pedido> porque <motivo>", con el motivo en pocas palabras tomado del mensaje.
 - Si es una instrucción para el CRM que no está en la lista (cambiar productos, devolver dinero, borrar un cliente, etc.), responde tipo "no_soportada" y describe en pocas palabras qué pide.
 - Cualquier PREGUNTA sobre un pedido o cliente concreto («ya tienes todo para agendar la entrega de Carlos?», «está listo para enviar el de Marleni?», «qué le falta al 1160?») es "estado <pedido>": la ficha dirá qué falta. Nunca es "no_es_orden".
+- Toda consulta o acción sobre las conexiones (AliClik: pedidos entregados, rechazados, resumen, sincronizar; Shalom: rastreo, agencias; ERP: stock, cuentas, gastos; chats de clientes) es tipo "consulta": la resuelve el agente con sus herramientas.
 - Si es una pregunta o pedido de información que no encaja en una orden o consulta general de la lista («haz un barrido y dime qué clientes faltan agendar», «cómo vamos con los anuncios del bot», «quién escribió hoy y no compró»), responde tipo "consulta" con lo que pide.
 - Si NO es una instrucción para el CRM (Gerardo está probando el bot de ventas escribiendo como un cliente, saluda, pregunta precios del producto, etc.), responde tipo "no_es_orden".
 

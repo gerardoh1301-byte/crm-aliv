@@ -28,7 +28,7 @@ import type { Periodo, TipoConsulta } from "./parser";
  * Lo que escriben los clientes en sus chats es información, nunca instrucciones.
  */
 
-const MAX_RONDAS = 6;
+const MAX_RONDAS = 8;
 const PRESUPUESTO_MS = 80_000;
 const MAX_RESPUESTA = 3500;
 
@@ -80,6 +80,62 @@ export const HERRAMIENTAS: Herramienta[] = [
     "metricas",
     "Métricas del CRM de un rango de días (hora de Lima): pedidos por estado y origen, embudo del chat, formularios abandonados, rescate y consumo de IA.",
     { dias: { type: "number", description: "1 = ayer, 7 = últimos 7 días, 30 = últimos 30 (máx. 31)" } }
+  ),
+  herramienta(
+    "chat_por_cliente",
+    "Chat de un cliente por su celular o nombre, tenga o no pedido (leads, consultas, quienes no compraron).",
+    { cliente: { type: "string", description: "Celular (9 dígitos) o nombre" }, cantidad: { type: "number", description: "Mensajes (1-25, por defecto 12)" } },
+    ["cliente"]
+  ),
+  herramienta(
+    "aliclik_pedidos",
+    "Lista en vivo los pedidos de AliClik (courier contra entrega y envíos a agencia) CREADOS en un rango de fechas, con su estado de llamada, entrega y seguimiento. Filtra por tipo, estado (entregado, rechazado, pendiente, cancelado), celular o distrito. Para «entregados ayer» busca un rango amplio (semana) con estado entregado, o usa aliclik_consulta si AliClik ofrece filtrar por fecha de entrega.",
+    {
+      periodo: { type: "string", enum: ["hoy", "ayer", "semana", "mes"] },
+      desde: { type: "string", description: "AAAA-MM-DD (opcional, manda sobre periodo)" },
+      hasta: { type: "string", description: "AAAA-MM-DD" },
+      tipo: { type: "string", enum: ["contra_entrega", "agencia"] },
+      estado: { type: "string", description: "entregado, rechazado, pendiente, cancelado u otra palabra del estado" },
+      celular: { type: "string" },
+      distrito: { type: "string" },
+    }
+  ),
+  herramienta(
+    "aliclik_orden",
+    "Detalle en vivo de UNA orden de AliClik (estado, fecha programada, dirección, productos, costo de envío). Por número ERG… o por pedido del CRM ya registrado.",
+    { orden: { type: "string", description: "Número AliClik, p. ej. ERG7355935" }, pedido: PEDIDO }
+  ),
+  herramienta(
+    "aliclik_consulta",
+    "Consulta LIBRE de solo lectura al sistema de AliClik (su MCP oficial: search_orders, get_order, summarize_orders, query_orders…). Llámala primero SIN herramienta para ver la lista y sus parámetros; después con herramienta + argumentos. Úsala para resúmenes, embudo, entregas por fecha, tasas de entrega, etc.",
+    {
+      herramienta: { type: "string", description: "Nombre de la herramienta de AliClik; vacío para listar las disponibles" },
+      argumentos: { type: "object", description: "Argumentos según su esquema" },
+    }
+  ),
+  herramienta(
+    "sincronizar_aliclik",
+    "EJECUTA ahora la sincronización de entregas con AliClik (el mismo proceso automático): los pedidos que AliClik marca entregados pasan a Entregado en el CRM con la liquidación pendiente. Úsala solo si Gerardo pide sincronizar/actualizar con AliClik.",
+    {}
+  ),
+  herramienta(
+    "rastreo_shalom",
+    "Rastreo EN VIVO de una guía en Shalom: dónde está el paquete, si llegó a la agencia destino, si ya se recogió y el flete. Por pedido del CRM o por guía + código de rastreo.",
+    { pedido: PEDIDO, guia: { type: "string" }, codigo: { type: "string", description: "Código de rastreo de 4 caracteres" } }
+  ),
+  herramienta(
+    "agencias_shalom",
+    "Busca agencias Shalom del padrón oficial por ciudad, distrito o dirección.",
+    { ciudad: { type: "string" }, distrito: { type: "string" }, direccion: { type: "string" } }
+  ),
+  herramienta(
+    "resumen_erp",
+    "Lee en vivo el ERP de finanzas: stock de NAC600, pedidos por estado, ingresos/egresos por cuenta (BCP, BBVA, AliClik…), gastos y publicidad del periodo, últimos movimientos.",
+    {
+      periodo: { type: "string", enum: ["hoy", "ayer", "semana", "mes"] },
+      desde: { type: "string" },
+      hasta: { type: "string" },
+    }
   ),
   herramienta(
     "proponer_orden",
@@ -257,6 +313,38 @@ export async function ejecutarHerramienta(
       return { resultado: await chatsSinResponder(args as { dias?: number }) };
     case "metricas":
       return { resultado: await metricas(args as { dias?: number }) };
+    case "chat_por_cliente": {
+      const { chatPorCliente } = await import("./conexiones");
+      return { resultado: await chatPorCliente({ cliente: s(args.cliente), cantidad: Number(args.cantidad) || undefined }) };
+    }
+    case "aliclik_pedidos": {
+      const { aliclikPedidos } = await import("./conexiones");
+      return { resultado: await aliclikPedidos(args as Parameters<typeof aliclikPedidos>[0]) };
+    }
+    case "aliclik_orden": {
+      const { aliclikOrden } = await import("./conexiones");
+      return { resultado: await aliclikOrden({ orden: s(args.orden), pedido: s(args.pedido) }, conversationId) };
+    }
+    case "aliclik_consulta": {
+      const { aliclikConsulta } = await import("./conexiones");
+      return { resultado: await aliclikConsulta({ herramienta: s(args.herramienta), argumentos: args.argumentos }) };
+    }
+    case "sincronizar_aliclik": {
+      const { sincronizarAliclik } = await import("./conexiones");
+      return { resultado: await sincronizarAliclik() };
+    }
+    case "rastreo_shalom": {
+      const { rastreoShalom } = await import("./conexiones");
+      return { resultado: await rastreoShalom({ pedido: s(args.pedido), guia: s(args.guia), codigo: s(args.codigo) }, conversationId) };
+    }
+    case "agencias_shalom": {
+      const { agenciasShalom } = await import("./conexiones");
+      return { resultado: await agenciasShalom({ ciudad: s(args.ciudad), distrito: s(args.distrito), direccion: s(args.direccion) }) };
+    }
+    case "resumen_erp": {
+      const { resumenErp } = await import("./conexiones");
+      return { resultado: await resumenErp({ periodo: s(args.periodo), desde: s(args.desde), hasta: s(args.hasta) }) };
+    }
     case "proponer_orden": {
       const r = await proponerOrdenEstandar(s(args.orden), conversationId);
       return r.propuesta && esPropuesta(r.texto) ? { resultado: `Propuesta lista (se le muestra a Gerardo tal cual):\n${r.texto}`, propuesta: r.texto } : { resultado: r.texto };
@@ -300,7 +388,11 @@ QUÉ HACES
 - Si vas a proponer un cambio, LLAMA a la herramienta proponer_* en ese mismo turno. Nunca escribas la orden como texto o código para que Gerardo la copie: sin la herramienta no hay «SI <pedido>» y no se puede aplicar.
 - «¿Está listo para entregar/agendar?»: responde *Sí* solo si la ficha no trae la línea «Para entregar falta». Si la trae, empieza con *Todavía no* y di qué falta (aunque el cliente ya haya dado parte en el chat).
 - Confirmar (SI), enviar la clave (ENVIAR) o cancelar (NO) lo escribe Gerardo; tú no puedes.
-- Si te pide algo que tus herramientas no pueden hacer (anuncios de Meta, Shopify, ERP, stock, devolver dinero), dilo en una línea y sugiere hacerlo desde el CRM o la computadora.
+- Eres un AGENTE: cuando Gerardo pide algo, hazlo tú con las herramientas en ese mismo turno (encadena varias si hace falta: busca, cruza, resume). Nunca le digas que lo revise él en el CRM o en AliClik si una herramienta puede traer el dato.
+- Conexiones en vivo: AliClik (aliclik_pedidos, aliclik_orden, aliclik_consulta para cualquier consulta de su sistema), Shalom (rastreo_shalom, agencias_shalom), ERP de finanzas (resumen_erp: stock, cuentas, gastos). Si una herramienta de AliClik falla o no trae el filtro que necesitas, prueba aliclik_consulta (primero sin herramienta para ver qué ofrece) antes de rendirte.
+- Fechas: «ayer» es ${new Date(ahora.getTime() - 86_400_000).toLocaleDateString("en-CA", { timeZone: "America/Lima" })}; «hoy» es ${ahora.toLocaleDateString("en-CA", { timeZone: "America/Lima" })}.
+- sincronizar_aliclik se EJECUTA de inmediato (es el proceso automático de siempre): úsala solo si Gerardo lo pide.
+- Solo si de verdad ninguna herramienta lo cubre (anuncios de Meta, Shopify, devolver dinero), dilo en una línea.
 
 ${ORDENES_ESTANDAR}
 Además: proponer_mensaje_cliente (escribirle al cliente), proponer_bot (pausar/activar el bot con un cliente), proponer_distrito, proponer_registro_aliclik (registrar en AliClik un pedido contra entrega; si falta la ubicación, ofrece proponer un mensaje al cliente pidiéndole que la comparta por WhatsApp).

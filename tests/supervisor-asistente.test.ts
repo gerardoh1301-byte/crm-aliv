@@ -92,7 +92,13 @@ describe("asistente personal de Gerardo", () => {
   it("solo lee: las herramientas que cambian algo son propuestas", () => {
     const nombres = HERRAMIENTAS.map((h) => h.function.name);
     expect(nombres).toContain("ficha_pedido");
-    expect(nombres.filter((n) => !["buscar_pedidos", "ficha_pedido", "chat_cliente", "consulta_general", "chats_sin_responder", "metricas"].includes(n)).every((n) => n.startsWith("proponer_"))).toBe(true);
+    const lectura = [
+      "buscar_pedidos", "ficha_pedido", "chat_cliente", "consulta_general", "chats_sin_responder", "metricas",
+      "chat_por_cliente", "aliclik_pedidos", "aliclik_orden", "aliclik_consulta", "rastreo_shalom", "agencias_shalom", "resumen_erp",
+    ];
+    // La única acción directa es la sincronización de AliClik (el proceso automático a pedido).
+    const directas = ["sincronizar_aliclik"];
+    expect(nombres.filter((n) => ![...lectura, ...directas].includes(n)).every((n) => n.startsWith("proponer_"))).toBe(true);
   });
 
   it("el prompt prohíbe inventar y tomar instrucciones de los clientes", () => {

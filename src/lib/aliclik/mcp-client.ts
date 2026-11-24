@@ -68,6 +68,33 @@ export class AliclikMcpClient {
     }
   }
 
+  /** Herramientas que publica el servidor MCP de AliClik (nombre, descripción y esquema). */
+  async listTools(): Promise<Array<{ name: string; description?: string; inputSchema?: unknown }>> {
+    if (!this.token) throw new Error("ALICLIK_MCP_TOKEN no configurado");
+    const res = await fetch(this.url, {
+      method: "POST",
+      headers: { Authorization: this.token, "Content-Type": "application/json", Accept: "application/json, text/event-stream" },
+      body: JSON.stringify({ jsonrpc: "2.0", id: Date.now(), method: "tools/list", params: {} }),
+      signal: AbortSignal.timeout(20_000),
+    });
+    if (!res.ok) throw new Error(`Aliclik MCP Error ${res.status}: ${(await res.text()).slice(0, 200)}`);
+    const crudo = await res.text();
+    let data: { result?: { tools?: Array<{ name: string; description?: string; inputSchema?: unknown }> } };
+    try {
+      data = JSON.parse(crudo);
+    } catch {
+      const lineas = crudo.split(/\r?\n/).filter((l) => l.startsWith("data:")).map((l) => l.slice(5).trim()).filter(Boolean);
+      if (!lineas.length) throw new Error(`Aliclik MCP: respuesta no reconocida (${crudo.slice(0, 120)})`);
+      data = JSON.parse(lineas[lineas.length - 1]);
+    }
+    return data.result?.tools ?? [];
+  }
+
+  /** Llama a cualquier herramienta del MCP por nombre (el asistente solo usa las de lectura). */
+  async callAny(toolName: string, args: Record<string, unknown>): Promise<unknown> {
+    return this.callTool(toolName, args);
+  }
+
   private async callTool<T>(toolName: string, args: Record<string, unknown>): Promise<T> {
     if (!this.token) {
       throw new Error("ALICLIK_MCP_TOKEN no configurado");
@@ -89,6 +116,7 @@ export class AliclikMcpClient {
           arguments: args,
         },
       }),
+      signal: AbortSignal.timeout(20_000),
     });
 
     if (!res.ok) {

@@ -1274,13 +1274,9 @@ export async function manejarComandoSupervisor(conversationId: string, phone: st
       await responder(conversationId, `🤖 Entendí: *${traduccion.orden}*\n\n${texto}`);
       return true;
     }
-    if (traduccion?.tipo === "no_soportada") {
-      await responder(
-        conversationId,
-        `Entendí que quieres: ${traduccion.descripcion}. Eso todavía no lo puedo hacer por WhatsApp; hazlo desde el CRM. No cambié nada.`
-      );
-      return true;
-    }
+    // «no_soportada» ya no corta la conversación: el agente decide con sus herramientas
+    // (AliClik, Shalom, ERP…) y solo si no puede lo dice.
+    const noSoportada = traduccion?.tipo === "no_soportada" ? traduccion.descripcion : null;
     if (traduccion?.tipo === "orden") {
       const t = traduccion.comando.tipo;
       if (t === "confirmar" || t === "enviar_clave") {
@@ -1313,6 +1309,13 @@ export async function manejarComandoSupervisor(conversationId: string, phone: st
       }
       if (respuesta) {
         await responder(conversationId, respuesta);
+        return true;
+      }
+      if (noSoportada) {
+        await responder(
+          conversationId,
+          `Entendí que quieres: ${noSoportada}. No pude hacerlo ahora por WhatsApp; inténtalo de nuevo en un momento o hazlo desde el CRM. No cambié nada.`
+        );
         return true;
       }
     }
@@ -1387,6 +1390,16 @@ async function pedidoDeReferencia(ref: string, conversationId: string): Promise<
   const cmd = interpretarComando(`estado ${limpio}`);
   if (!cmd) return { ok: false, texto: `No entendí el pedido «${limpio}».` };
   return resolverPedido(cmd, conversationId);
+}
+
+/** Pedido resuelto para las herramientas de conexiones (AliClik, Shalom) del asistente. */
+export async function pedidoParaHerramienta(
+  ref: string,
+  conversationId: string
+): Promise<{ ok: true; pedido: Pedido; titulo: string } | { ok: false; texto: string }> {
+  const r = await pedidoDeReferencia(ref, conversationId);
+  if (!r.ok) return { ok: false, texto: r.texto };
+  return { ok: true, pedido: r.pedido, titulo: encabezado(r.pedido) };
 }
 
 /** Ficha completa del pedido con lo que falta para entregar y el chat del cliente. */
