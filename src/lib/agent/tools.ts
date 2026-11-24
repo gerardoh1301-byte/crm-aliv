@@ -106,7 +106,7 @@ async function moverEtapa(args: { etapa?: string; motivo?: string }, ctx: ToolCo
   if (stage.key === "en_reparto" || stage.key === "entregado") {
     return { ok: false, error: `La etapa "${stage.name}" la mueve una persona del equipo. Usa avisar_asesor si hace falta.` };
   }
-  if (stage.key === "por_confirmar_cod") {
+  if (stage.key === "por_validar" || stage.key === "por_confirmar_cod") {
     // "Por confirmar COD" significa que hay un pedido registrado. Sin pedido, la operacion
     // aparecia en esa columna sin orden detras (paso en simulaciones antes de tener la direccion).
     const [conOrden] = await db
@@ -121,6 +121,15 @@ async function moverEtapa(args: { etapa?: string; motivo?: string }, ctx: ToolCo
           'Todavia no hay pedido registrado. Usa "carrito_armado" mientras faltan datos y crear_pedido_chat cuando los tengas; no le digas al cliente que su pedido quedo registrado.',
       };
     }
+  }
+  // Mejora 3: "Pedido confirmado (por despachar)" la pone una persona con «Validar y confirmar»
+  // (o «Adelanto confirmado»). Lo que registra el bot espera en "Confirmado por bot (por validar)".
+  if (stage.key === "agendar_entrega") {
+    return {
+      ok: false,
+      error:
+        'La etapa "Pedido confirmado (por despachar)" la pone una persona al validar el pedido. Si ya registraste el pedido con crear_pedido_chat, queda en "por_validar"; no muevas la etapa y dile al cliente que el equipo está validando sus datos.',
+    };
   }
   if (stage.key === "pedido_confirmado") {
     // Solo si ya existe un pedido confirmado (Lima registrado en el chat, pedido web
@@ -166,7 +175,7 @@ async function moverEtapa(args: { etapa?: string; motivo?: string }, ctx: ToolCo
     // de Lima recien registrado a "Por confirmar COD", o uno de provincia a "Intencion de
     // compra", y el pedido desaparecia de la vista del equipo). Cancelar va hacia adelante.
     const actual = stages.find((s) => s.id === abierta.stageId);
-    const conPedido = stages.find((s) => s.key === "por_confirmar_cod");
+    const conPedido = stages.find((s) => s.key === "por_validar" || s.key === "por_confirmar_cod");
     if (actual && conPedido && actual.order >= conPedido.order && stage.order < actual.order) {
       return {
         ok: true,

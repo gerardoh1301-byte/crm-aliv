@@ -18,6 +18,9 @@ export function googleDriveCdnUrl(idOrUrl: string): string {
   return `https://lh3.googleusercontent.com/d/${fileId}`;
 }
 
+/** Video de confianza de despachos (mejora 2b, 24/11): servido desde public/videos del CRM. */
+export const VIDEO_DESPACHOS_SHALOM = "https://crm-aliv.onrender.com/videos/shalom-almacen.mp4";
+
 export const IMAGENES_REFERENCIA: ImagenReferencia[] = [
   // =========================================================================
   // --- 1. NAC600 + NAD+ (Carpeta Oficial Google Drive) ---
@@ -155,6 +158,16 @@ export const IMAGENES_REFERENCIA: ImagenReferencia[] = [
     descripcion: "Comprobante y datos oficiales para adelantos de provincia: Yape / Plin al 951365418 a nombre de Gerardo Huaynalaya.",
     url: "https://crm-aliv.onrender.com/marca/logo.png",
     categoria: "pago",
+  },
+  {
+    id: "shalom_almacen_video",
+    alias: ["video_despachos", "despachos_shalom", "video_shalom", "video_confianza", "almacen_shalom"],
+    titulo: "Video real: así salen nuestros pedidos a Shalom (14 s)",
+    descripcion:
+      "Video vertical de 14 s con fotos reales de la mesa de despachos y paquetes rotulados por Shalom (Cajamarca, Arequipa). Cierra con el adelanto de S/20 por Yape y el saldo al recoger en la agencia. Para dar confianza al cliente de provincia que duda en pagar el adelanto.",
+    url: VIDEO_DESPACHOS_SHALOM,
+    categoria: "pago",
+    tipo: "video",
   },
 ];
 

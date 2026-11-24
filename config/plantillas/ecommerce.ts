@@ -32,7 +32,10 @@ export const plantillaEcommerce: ConfigClienteEntrada = {
       // Segunda a propósito: varias rutas usan la etapa de orden 0 como "nuevo lead".
       { clave: "formulario_abandonado", nombre: "Formulario abandonado", color: "#f59e0b" },
       { clave: "carrito_armado", nombre: "Intencion de compra", color: "#2563eb" },
-      { clave: "agendar_entrega", nombre: "Agendar entrega", color: "#8b5cf6" },
+      // Mejora 3 (24/11): lo que registra el bot espera aquí a que una persona valide el Yape
+      // (AG) o la dirección y la referencia (CE) antes de pasar a despacho.
+      { clave: "por_validar", nombre: "Confirmado por bot (por validar)", color: "#f59e0b" },
+      { clave: "agendar_entrega", nombre: "Pedido confirmado (por despachar)", color: "#8b5cf6" },
       { clave: "adelanto_pagado", nombre: "Adelanto pagado", color: "#10b981" },
       { clave: "en_reparto", nombre: "En camino / Despachado", color: "#0ea5e9" },
       { clave: "entregado", nombre: "Entregado y Cobrado", color: "#16a34a", ganada: true },

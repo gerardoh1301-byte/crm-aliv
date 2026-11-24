@@ -38,6 +38,7 @@ import { AsignarVendedorModal } from "./AsignarVendedorModal";
 import { DespacharAliclikModal, type DespacharAliclikModalData } from "./DespacharAliclikModal";
 import { LiquidarAliclikModal, type LiquidacionAliclikData } from "./LiquidarAliclikModal";
 import { FinanzasShalomModal } from "./FinanzasShalomModal";
+import { etiquetaValidacion, tipoValidacion } from "@/lib/pedidos/validar-reglas";
 import { saldoPorClaveEntregada, type FinanzasShalom } from "@/lib/finanzas/tags-shalom";
 import {
   DropdownMenu,
@@ -123,6 +124,7 @@ export function DealCard({
   const [assignOpen, setAssignOpen] = useState(false);
   const [aliclikModalOpen, setAliclikModalOpen] = useState(false);
   const [liquidarOpen, setLiquidarOpen] = useState(false);
+  const [validando, setValidando] = useState(false);
   const [currentLiquidacion, setCurrentLiquidacion] = useState<LiquidacionAliclikData | null>(
     liquidacionAliclik ?? null
   );
@@ -269,15 +271,18 @@ export function DealCard({
   const saldoShalomVisible: number | null =
     currentFinanzas?.saldoMonto ?? (esEntregado ? saldoPorClaveEntregada(value / 100, currentFinanzas) : null);
   const soles = (n: number) => (Number.isInteger(n) ? String(n) : n.toFixed(2));
+  // Mejora 3: lo que registró el bot espera validación humana; aún no es despacho.
+  const porValidar = stageKeyLower === "por_validar";
   const esConfirmadoODespacho =
-    stageKeyLower.includes("confirmad") ||
+    !porValidar &&
+    (stageKeyLower.includes("confirmad") ||
     stageKeyLower.includes("reparto") ||
     stageKeyLower.includes("enviad") ||
     stageKeyLower.includes("preparand") ||
     stageNameLower.includes("confirmad") ||
     stageNameLower.includes("reparto") ||
     stageNameLower.includes("camino") ||
-    stageNameLower.includes("despachad");
+    stageNameLower.includes("despachad"));
 
   const tieneDatosEnvio = Boolean(direccion || ciudad || distrito || numeroOrden);
 
@@ -423,7 +428,7 @@ export function DealCard({
   const etapaTemprana =
     !pedidoId &&
     (/consulta|carrito|intenci/.test(stageKeyLower) || /consulta|intenci/.test(stageNameLower));
-  const accionPrincipal: "shalom" | "motorizado" | null = etapaTemprana
+  const accionPrincipal: "shalom" | "motorizado" | null = etapaTemprana || porValidar
     ? null
     : mostrarBotonShalom && !esLima
       ? "shalom"
@@ -523,6 +528,46 @@ export function DealCard({
             <Clock className="h-2.5 w-2.5" aria-hidden />
             Pendiente de courier
           </span>
+        )}
+
+        {/* Mejora 3: «Confirmado por bot (por validar)» -> una persona valida y pasa a despacho */}
+        {porValidar && pedidoId && (
+          <div className="space-y-1.5">
+            <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-semibold bg-amber-500/15 text-amber-800 dark:text-amber-300 border border-amber-500/35">
+              {etiquetaValidacion(tipoValidacion({ estado: estadoPedido ?? null, modalidadPago: ordenModalidadPago ?? null }))}
+            </span>
+            <Button
+              type="button"
+              size="sm"
+              variant="outline"
+              disabled={validando}
+              {...pararArrastre}
+              onClick={async (e) => {
+                e.stopPropagation();
+                setValidando(true);
+                try {
+                  const r = await fetch("/api/pedidos/validar", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ pedidoId }),
+                  });
+                  const d = await r.json().catch(() => ({}));
+                  if (!r.ok) throw new Error(d.error || "No se pudo validar");
+                  if (d.mensajeEnviado) toast.success("✅ Pedido validado y cliente avisado");
+                  else toast.warning("Pedido validado, pero el mensaje al cliente no salió (revisa el chat)");
+                  router.refresh();
+                } catch (err) {
+                  toast.error(err instanceof Error ? err.message : "No se pudo validar");
+                } finally {
+                  setValidando(false);
+                }
+              }}
+              className="w-full h-7 text-[11px] font-semibold gap-1.5 shadow-none cursor-pointer bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-700 dark:text-emerald-400 border-emerald-500/30"
+            >
+              <CheckCircle2 className="h-3.5 w-3.5 shrink-0" aria-hidden />
+              {validando ? "Validando…" : "Validar y confirmar"}
+            </Button>
+          </div>
         )}
 
         {/* Accion principal segun la etapa */}

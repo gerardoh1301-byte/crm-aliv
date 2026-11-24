@@ -163,6 +163,7 @@ export async function sincronizarPipeline(opts?: { borrarSobrantes?: boolean }) 
           dealStage?.isWon ||
           dealStage?.isLost ||
           dealStage?.key === "adelanto_pagado" ||
+          dealStage?.key === "por_validar" ||
           dealStage?.key === "en_reparto" ||
           dealStage?.key === "entregado" ||
           dealStage?.key === "cancelado_rechazado"

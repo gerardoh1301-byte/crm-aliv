@@ -46,6 +46,8 @@ const MAPA_ESTADO_A_ETAPA: Record<EstadoPedido, string> = {
   cancelado: "cancelado_rechazado",
 };
 
+export const ETAPA_POR_VALIDAR = "por_validar";
+
 // Los pedidos que nacen en el CRM (bot o asesor) usan la serie CHAT-0001: la serie "#1148"
 // es de Shopify y compartirla hacía que un pedido web se diera por repetido.
 async function generarNumeroOrden(): Promise<string> {
@@ -58,10 +60,12 @@ export async function sincronizarEtapaPipeline(
   tituloOrden: string,
   montoSoles: number,
   pedidoId?: string,
-  dealId?: string | null
+  dealId?: string | null,
+  /** Etapa explícita (p. ej. "por_validar" para lo que registra el bot) en lugar del mapa por estado. */
+  etapaForzada?: string
 ): Promise<string | null> {
   try {
-    const claveEtapa = MAPA_ESTADO_A_ETAPA[estado];
+    const claveEtapa = etapaForzada ?? MAPA_ESTADO_A_ETAPA[estado];
     if (!claveEtapa) return null;
 
     const [pipeline] = await db
@@ -76,7 +80,10 @@ export async function sincronizarEtapaPipeline(
       .from(pipelineStages)
       .where(eq(pipelineStages.pipelineId, pipeline.id));
 
-    const stage = stages.find((s) => s.key === claveEtapa) ?? stages[0];
+    const stage =
+      stages.find((s) => s.key === claveEtapa) ??
+      stages.find((s) => s.key === MAPA_ESTADO_A_ETAPA[estado]) ??
+      stages[0];
     if (!stage) return null;
 
     let abierta: { id: string; stageId: string } | null = null;
@@ -875,11 +882,16 @@ const tools: ToolModulo[] = [
         direccionEnvio = textoAgenciaOficial(r.agencia);
       }
       const estadoInicial = esProvinciaChat ? "por_confirmar_cod" : "confirmado";
+      // Mejora 3: lo que registra el bot (Yape por verificar en AG, dirección y referencia en
+      // CE) queda en «Confirmado por bot (por validar)» hasta que una persona lo valida.
       const dealId = await sincronizarEtapaPipeline(
         ctx.contactId,
         estadoInicial,
         `${numeroOrden} · ${itemsFinales[0].titulo}`,
-        totalSoles
+        totalSoles,
+        undefined,
+        undefined,
+        ETAPA_POR_VALIDAR
       );
 
       const [orden] = await db

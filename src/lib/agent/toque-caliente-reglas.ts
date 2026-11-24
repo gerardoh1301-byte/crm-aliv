@@ -114,7 +114,7 @@ export function mensajeToqueCaliente(escenario: EscenarioToqueCaliente, nombre: 
   const n = nombreParaSaludo(nombre);
   const cuerpo = {
     adelanto:
-      "tu pedido sigue separado 📦 Apenas nos envíes la captura del adelanto lo registramos para el próximo despacho a Shalom, y el resto lo pagas al recogerlo en tu agencia. ¿Te ayudo con algo para completarlo? 🙌",
+      "así salen nuestros pedidos a Shalom 📦 El tuyo sigue separado: apenas nos envíes la captura del adelanto entra en el próximo despacho; si llega después, sale en el siguiente. El resto lo pagas al recogerlo en tu agencia. ¿Te ayudo a completarlo? 🙌",
     datos: "solo me faltan esos datos para dejar tu pedido registrado 📝 ¿Me los pasas por aquí? Así lo incluimos en el próximo despacho.",
     cotizacion: "¿te lo separo? 😊 Dime para qué distrito o ciudad es y te confirmo cómo te llega y cuándo.",
   }[escenario];

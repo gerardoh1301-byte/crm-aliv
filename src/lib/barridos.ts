@@ -30,6 +30,8 @@ const ENDPOINTS = [
   "/api/agent/seguimientos",
   // Toque en caliente: una vez a los 12-45 min si el bot pidió adelanto/datos o dio el precio
   "/api/agent/toque-caliente",
+  // Contra entrega: recordatorio de ubicación y referencia a los 10 min; sin pin, punto de Google
+  "/api/agent/ubicacion-ce",
   // Pedidos web de las últimas semanas: AG/CE según cobertura AliClik (una vez por pedido)
   "/api/agent/reclasificar-pedidos-web",
   // Posventa y recompra: incorpora los entregados (backfill idempotente, últimos 30 días)

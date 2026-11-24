@@ -2,6 +2,7 @@ import "server-only";
 import { db } from "@/db";
 import { activities, contacts, conversations, messages } from "@/db/schema";
 import { and, desc, eq, gte, isNull, like, lte } from "drizzle-orm";
+import { VIDEO_DESPACHOS_SHALOM } from "./imagenes-referencia";
 import { deliverMessage } from "@/lib/channels/deliver";
 import { esNumeroEntrenador } from "@/lib/alerts/supervisor-alerts";
 import { pedidosOrdenes } from "../../../modules/pedidos/tabla";
@@ -40,6 +41,14 @@ export interface ResultadoToqueCaliente {
   revisados: number;
   enviados: number;
   detalles: Array<{ contactId: string; escenario?: EscenarioToqueCaliente; accion: string; motivo?: string; mensaje?: string }>;
+}
+
+/** URL del video del toque de adelanto, o "" si está apagado. */
+export function videoToqueCaliente(): string {
+  const env = (process.env.TOQUE_CALIENTE_VIDEO_URL ?? "").trim();
+  if (env.toLowerCase() === "off") return "";
+  if (/^https:\/\//.test(env)) return env;
+  return VIDEO_DESPACHOS_SHALOM;
 }
 
 export async function procesarToquesCalientes(opts: { ahora?: Date; limite?: number } = {}): Promise<ResultadoToqueCaliente> {
@@ -173,8 +182,9 @@ export async function procesarToquesCalientes(opts: { ahora?: Date; limite?: num
       continue;
     }
 
-    // Video real de despachos (opcional): solo si Gerardo cargó uno en TOQUE_CALIENTE_VIDEO_URL.
-    const video = (process.env.TOQUE_CALIENTE_VIDEO_URL ?? "").trim();
+    // Video real de despachos (mejora 2b): el de la mesa de envíos Shalom, salvo que
+    // TOQUE_CALIENTE_VIDEO_URL traiga otro (https) o "off" para mandar solo el texto.
+    const video = videoToqueCaliente();
     const entrega = await deliverMessage(
       c.convId,
       decision.escenario === "adelanto" && /^https:\/\//.test(video)

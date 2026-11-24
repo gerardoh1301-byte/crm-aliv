@@ -99,6 +99,13 @@ export const ETIQUETAS_SECUNDARIAS: EtiquetaConfig[] = [
     dot: "bg-indigo-500",
   },
   {
+    id: "por-validar",
+    nombre: "Por validar",
+    color: "bg-amber-500/15 text-amber-800 dark:text-amber-300 border-amber-500/40 hover:bg-amber-500/25",
+    badge: "bg-amber-50 text-amber-800 dark:bg-amber-950/60 dark:text-amber-300 border-amber-300/80 dark:border-amber-700 font-semibold",
+    dot: "bg-amber-500",
+  },
+  {
     id: "adelanto-por-verificar",
     nombre: "adelanto por verificar",
     color: "bg-amber-500/15 text-amber-800 dark:text-amber-300 border-amber-500/40 hover:bg-amber-500/25",
@@ -146,6 +153,7 @@ export const ETIQUETAS_DE_ETAPA: string[] = [
   "Compra exitosa",
   "Orden en camino",
   "Pendiente de adelanto",
+  "Por validar",
   "Adelanto pagado",
   "adelanto pagado",
   "Agendar entrega",
@@ -202,6 +210,11 @@ export function obtenerEtiquetaDeEtapa(stage: {
     n.includes("adelanto pagado")
   ) {
     return "adelanto pagado";
+  }
+
+  // 2.7. Confirmado por bot, falta que una persona valide (va antes que "confirmado")
+  if (k === "por_validar" || n.includes("por validar")) {
+    return "Por validar";
   }
 
   // 3. Agendar entrega / Pedido confirmado
@@ -269,6 +282,9 @@ export function obtenerClaveEtapaDeEtiqueta(tag: string): string | null {
   }
   if (n === "adelanto pagado") {
     return "adelanto_pagado";
+  }
+  if (n === "por validar") {
+    return "por_validar";
   }
   if (n === "agendar entrega" || n.includes("confirmado")) {
     return "agendar_entrega";
