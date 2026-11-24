@@ -18,6 +18,8 @@ const PUBLIC_API_PREFIXES = [
   "/api/alertas",
   "/api/shalom/verificar-envios",
   "/api/shalom-pro",
+  // Copia diaria de los chats en Drive: la llama barridos.ts con AGENT_WORKER_SECRET.
+  "/api/respaldo/chats",
   // Imagen de la guía para WhatsApp: solo con token aleatorio por pedido.
   "/api/publico/guia/",
 ];
