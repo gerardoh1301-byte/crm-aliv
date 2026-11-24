@@ -83,6 +83,9 @@ export function TeamSettings() {
   const [autoAssignMemberId, setAutoAssignMemberId] = useState<string>("");
   const [autoAssignMode, setAutoAssignMode] = useState<"all_inbound" | "unassigned_only">("all_inbound");
   const [savingAutoAssign, setSavingAutoAssign] = useState(false);
+  // Mejora 10: reparto por turnos con pesos (round-robin) además del asesor fijo.
+  const [autoAssignStrategy, setAutoAssignStrategy] = useState<"fixed" | "round_robin">("fixed");
+  const [autoAssignWeights, setAutoAssignWeights] = useState<Record<string, number>>({});
 
   const load = useCallback(async () => {
     const [list, current, autoAssignRes] = await Promise.all([
@@ -97,6 +100,8 @@ export function TeamSettings() {
         enabled: boolean;
         memberId: string | null;
         mode: "all_inbound" | "unassigned_only";
+        strategy?: "fixed" | "round_robin";
+        weights?: Record<string, number>;
       } | null,
     };
   }, []);
@@ -109,6 +114,8 @@ export function TeamSettings() {
         enabled: boolean;
         memberId: string | null;
         mode: "all_inbound" | "unassigned_only";
+        strategy?: "fixed" | "round_robin";
+        weights?: Record<string, number>;
       } | null;
     }) => {
       setMembers(data.list);
@@ -125,6 +132,8 @@ export function TeamSettings() {
         if (data.autoAssign.mode) {
           setAutoAssignMode(data.autoAssign.mode);
         }
+        setAutoAssignStrategy(data.autoAssign.strategy === "round_robin" ? "round_robin" : "fixed");
+        setAutoAssignWeights(data.autoAssign.weights ?? {});
       } else if (data.list.length > 0 && !autoAssignMemberId) {
         const primerVendedor =
           data.list.find((m) => m.role === "asesor" && m.active) || data.list[0];
@@ -244,9 +253,16 @@ export function TeamSettings() {
   const handleToggleAutoAssign = async (
     newEnabled: boolean,
     targetMemberId = autoAssignMemberId,
-    targetMode = autoAssignMode
+    targetMode = autoAssignMode,
+    targetStrategy = autoAssignStrategy,
+    targetWeights = autoAssignWeights
   ) => {
-    if (newEnabled && !targetMemberId) {
+    const porTurnos = targetStrategy === "round_robin";
+    if (newEnabled && porTurnos && !Object.values(targetWeights).some((w) => w > 0)) {
+      toast.error("Dale peso a al menos un asesor para repartir por turnos");
+      return;
+    }
+    if (newEnabled && !porTurnos && !targetMemberId) {
       toast.error("Selecciona un asesor de venta antes de activar la asignación automática");
       return;
     }
@@ -259,6 +275,8 @@ export function TeamSettings() {
           enabled: newEnabled,
           memberId: targetMemberId || null,
           mode: targetMode,
+          strategy: targetStrategy,
+          weights: targetWeights,
         }),
       });
       const data = await res.json().catch(() => ({}));
@@ -267,7 +285,9 @@ export function TeamSettings() {
         return;
       }
       setAutoAssignEnabled(newEnabled);
-      if (newEnabled) {
+      if (newEnabled && porTurnos) {
+        toast.success("Asignación automática por turnos activada");
+      } else if (newEnabled) {
         const asesorNombre =
           members.find((m) => m.id === targetMemberId)?.name ||
           members.find((m) => m.id === targetMemberId)?.email ||
@@ -435,7 +455,7 @@ export function TeamSettings() {
                 <Button
                   type="button"
                   size="sm"
-                  disabled={savingAutoAssign || !autoAssignMemberId}
+                  disabled={savingAutoAssign || (autoAssignStrategy === "fixed" && !autoAssignMemberId)}
                   onClick={() => handleToggleAutoAssign(true)}
                   className="bg-emerald-600 hover:bg-emerald-700 text-white cursor-pointer font-medium text-xs h-9 px-3.5 shadow-sm"
                 >
@@ -446,9 +466,75 @@ export function TeamSettings() {
             </div>
           </div>
 
+          {/* Forma de repartir: asesor fijo o por turnos con pesos (mejora 10) */}
+          <div className="space-y-2 pt-2 border-t border-border/60">
+            <Label className="text-xs font-semibold text-foreground/90">Forma de repartir:</Label>
+            <div className="flex flex-wrap gap-2">
+              {(
+                [
+                  ["fixed", "Todo a un asesor"],
+                  ["round_robin", "Por turnos con pesos"],
+                ] as const
+              ).map(([valor, texto]) => (
+                <Button
+                  key={valor}
+                  type="button"
+                  size="sm"
+                  variant={autoAssignStrategy === valor ? "default" : "outline"}
+                  className="h-8 text-xs cursor-pointer"
+                  disabled={savingAutoAssign}
+                  onClick={() => {
+                    setAutoAssignStrategy(valor);
+                    if (autoAssignEnabled) handleToggleAutoAssign(true, autoAssignMemberId, autoAssignMode, valor);
+                  }}
+                >
+                  {texto}
+                </Button>
+              ))}
+            </div>
+            {autoAssignStrategy === "round_robin" && (
+              <div className="rounded-lg border bg-background p-3 space-y-2">
+                <p className="text-[11px] text-muted-foreground">
+                  Peso de 0 a 10 por asesor: con 2 y 1, el primero recibe dos chats nuevos por cada uno del segundo. 0 = fuera
+                  de la rueda. Un cliente que ya tiene asesor de la rueda se queda con él.
+                </p>
+                {members
+                  .filter((m) => m.active)
+                  .map((m) => (
+                    <div key={m.id} className="flex items-center gap-3">
+                      <span className="text-xs flex-1 min-w-0 truncate">
+                        {label(m)} <span className="text-muted-foreground">({m.role === "admin" ? "Admin" : "Vendedor"})</span>
+                      </span>
+                      <Input
+                        type="number"
+                        min={0}
+                        max={10}
+                        className="h-8 w-20 text-xs"
+                        value={autoAssignWeights[m.id] ?? 0}
+                        onChange={(e) => {
+                          const n = Math.max(0, Math.min(10, Math.round(Number(e.target.value) || 0)));
+                          setAutoAssignWeights((prev) => ({ ...prev, [m.id]: n }));
+                        }}
+                      />
+                    </div>
+                  ))}
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="outline"
+                  className="h-8 text-xs cursor-pointer"
+                  disabled={savingAutoAssign}
+                  onClick={() => handleToggleAutoAssign(autoAssignEnabled)}
+                >
+                  Guardar pesos
+                </Button>
+              </div>
+            )}
+          </div>
+
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5 pt-2 border-t border-border/60">
             {/* Selector de Asesor de Venta */}
-            <div className="space-y-1.5">
+            <div className={cn("space-y-1.5", autoAssignStrategy === "round_robin" && "hidden")}>
               <Label className="text-xs font-semibold text-foreground/90">
                 Asesor de venta a quien asignar las conversaciones:
               </Label>
@@ -512,6 +598,10 @@ export function TeamSettings() {
             <div className="rounded-lg bg-emerald-500/10 border border-emerald-500/25 p-2.5 text-xs text-emerald-800 dark:text-emerald-300 flex items-center gap-2">
               <Check className="h-4 w-4 shrink-0 text-emerald-600" />
               <span>
+                {autoAssignStrategy === "round_robin" ? (
+                  <>Asignación activa por turnos entre los asesores con peso.</>
+                ) : (
+                  <>
                 Asignación activa: Desde este momento, toda conversación o mensaje entrante se asigna a{" "}
                 <strong>
                   {members.find((m) => m.id === autoAssignMemberId)?.name ||
@@ -519,6 +609,8 @@ export function TeamSettings() {
                     "el asesor seleccionado"}
                 </strong>
                 .
+                  </>
+                )}
               </span>
             </div>
           )}

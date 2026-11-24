@@ -54,6 +54,9 @@ export function ConversationsList({ conversations, selectedId }: Props) {
     return searchParams.get("q") || "";
   });
 
+  // Filtro rápido por etapa del pipeline (mejora 10 del informe).
+  const [etapa, setEtapa] = useState<string>(() => searchParams.get("etapa") || "all");
+
   const [soloAtencion, setSoloAtencion] = useState<boolean>(() => {
     return searchParams.get("filtro") === "atencion";
   });
@@ -218,8 +221,25 @@ export function ConversationsList({ conversations, selectedId }: Props) {
     return acc;
   }, [conversations]);
 
+  const etapas = useMemo(() => {
+    const m = new Map<string, { color: string | null; n: number }>();
+    for (const c of conversations) {
+      if (!c.stageName) continue;
+      const e = m.get(c.stageName) ?? { color: c.stageColor ?? null, n: 0 };
+      e.n++;
+      m.set(c.stageName, e);
+    }
+    return [...m.entries()].sort((a, b) => b[1].n - a[1].n);
+  }, [conversations]);
+
   const filtered = useMemo(() => {
-    const base = soloAtencion ? conversations.filter(requiereAtencion) : conversations;
+    const atencion = soloAtencion ? conversations.filter(requiereAtencion) : conversations;
+    const base =
+      etapa === "all"
+        ? atencion
+        : etapa === "sin_etapa"
+          ? atencion.filter((c) => !c.stageName)
+          : atencion.filter((c) => c.stageName === etapa);
     const byChannel =
       channel === "all"
         ? base
@@ -249,7 +269,7 @@ export function ConversationsList({ conversations, selectedId }: Props) {
       return false;
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [conversations, search, channel, tagFilter, soloAtencion]);
+  }, [conversations, search, channel, tagFilter, soloAtencion, etapa]);
 
   return (
     <aside
@@ -331,6 +351,41 @@ export function ConversationsList({ conversations, selectedId }: Props) {
       </div>
 
       <ChannelFilter value={channel} onChange={handleChannelChange} counts={counts} />
+
+      {etapas.length > 0 && (
+        <div className="flex items-center gap-2 px-3 py-1.5 border-b border-border/50">
+          <label htmlFor="filtro-etapa" className="text-[11px] text-muted-foreground shrink-0">
+            Etapa
+          </label>
+          <select
+            id="filtro-etapa"
+            value={etapa}
+            onChange={(e) => setEtapa(e.target.value)}
+            className={cn(
+              "flex-1 min-w-0 h-7 rounded-md border bg-background px-2 text-xs cursor-pointer",
+              etapa !== "all" && "border-primary text-primary font-medium"
+            )}
+          >
+            <option value="all">Todas las etapas ({conversations.length})</option>
+            {etapas.map(([nombre, e]) => (
+              <option key={nombre} value={nombre}>
+                {nombre} ({e.n})
+              </option>
+            ))}
+            <option value="sin_etapa">Sin deal</option>
+          </select>
+          {etapa !== "all" && (
+            <button
+              type="button"
+              aria-label="Quitar filtro de etapa"
+              onClick={() => setEtapa("all")}
+              className="text-muted-foreground hover:text-foreground cursor-pointer"
+            >
+              <X className="h-3.5 w-3.5" />
+            </button>
+          )}
+        </div>
+      )}
 
       {/* Filtro rápido por Etiquetas Principales con barra de desplazamiento visible y flechas */}
       <div className="relative border-b border-border/50 bg-muted/20">

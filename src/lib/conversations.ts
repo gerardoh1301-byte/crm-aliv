@@ -33,6 +33,9 @@ export interface ConversationListItem {
   aiEnabled: boolean;
   needsHuman: boolean;
   needsHumanReason: string | null;
+  /** Etapa del pipeline del último deal del contacto (filtro rápido de la bandeja, mejora 10). */
+  stageName?: string | null;
+  stageColor?: string | null;
 }
 
 export interface ConversationMessage {
@@ -110,6 +113,14 @@ export async function listConversations(filter?: {
       contactAiEnabled: contacts.aiEnabled,
       contactNeedsHuman: contacts.needsHuman,
       contactNeedsHumanReason: contacts.needsHumanReason,
+      // Etapa del deal más reciente del contacto: "nombre|color".
+      stage: sql<string | null>`(
+        select ps.name || '|' || ps.color
+        from deals d join pipeline_stages ps on ps.id = d.stage_id
+        where d.contact_id = ${conversations.contactId}
+        order by d.updated_at desc
+        limit 1
+      )`,
     })
     .from(conversations)
     .leftJoin(contacts, eq(contacts.id, conversations.contactId))
@@ -163,6 +174,8 @@ export async function listConversations(filter?: {
     aiEnabled: (r.contactAiEnabled ?? true) && r.convAiEnabled,
     needsHuman: (r.contactNeedsHuman ?? false) || r.convNeedsHuman,
     needsHumanReason: r.convNeedsHumanReason ?? r.contactNeedsHumanReason ?? null,
+    stageName: r.stage ? r.stage.split("|")[0] : null,
+    stageColor: r.stage ? r.stage.split("|")[1] ?? null : null,
   }));
 }
 

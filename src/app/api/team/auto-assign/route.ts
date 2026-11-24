@@ -32,9 +32,19 @@ export async function PUT(request: NextRequest) {
       enabled: boolean;
       memberId?: string | null;
       mode?: "all_inbound" | "unassigned_only";
+      strategy?: "fixed" | "round_robin";
+      weights?: Record<string, number>;
     };
+    const porTurnos = body.strategy === "round_robin";
+    const pesosValidos = Object.values(body.weights ?? {}).some((w) => Number(w) > 0);
 
-    if (body.enabled && !body.memberId) {
+    if (porTurnos && body.enabled && !pesosValidos) {
+      return NextResponse.json(
+        { error: "Para repartir por turnos, dale peso a al menos un asesor." },
+        { status: 400 }
+      );
+    }
+    if (!porTurnos && body.enabled && !body.memberId) {
       return NextResponse.json(
         { error: "Debes seleccionar un asesor de venta para activar la asignación automática." },
         { status: 400 }
@@ -45,6 +55,8 @@ export async function PUT(request: NextRequest) {
       enabled: Boolean(body.enabled),
       memberId: body.memberId ?? null,
       mode: body.mode ?? "all_inbound",
+      ...(body.strategy ? { strategy: body.strategy } : {}),
+      ...(body.weights ? { weights: body.weights } : {}),
     });
 
     return NextResponse.json({ ok: true, config: updated });
