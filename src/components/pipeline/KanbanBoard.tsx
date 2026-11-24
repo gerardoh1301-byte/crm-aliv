@@ -15,6 +15,24 @@ import {
 import { KanbanColumn } from "./KanbanColumn";
 import { DealCard } from "./DealCard";
 import { toast } from "sonner";
+
+/** Resultado del envío automático de la clave Shalom al soltar la tarjeta en «Entregado». */
+function avisarClaveAuto(data: unknown) {
+  const c = (data as { claveAuto?: { estado: string; cliente?: string; motivo?: string; texto?: string } | null } | null)?.claveAuto;
+  if (!c) return;
+  if (c.estado === "enviada") {
+    toast.success(`🔑 Clave de retiro enviada a ${c.cliente} por WhatsApp.`);
+  } else if (c.estado === "no_enviada") {
+    const texto = c.texto || "";
+    toast.warning(`No pude enviar la clave a ${c.cliente}: ${c.motivo}.`, {
+      description: "Cópiala y mándala tú por WhatsApp.",
+      duration: 15000,
+      action: texto
+        ? { label: "Copiar texto", onClick: () => navigator.clipboard?.writeText(texto).catch(() => {}) }
+        : undefined,
+    });
+  }
+}
 import type { PipelineColumn } from "@/types";
 import type { PipelineFilters, PipelineSort } from "./types";
 import { applyFilters, applySort } from "./filterSort";
@@ -139,6 +157,7 @@ export function KanbanBoard({ initialColumns, filters, sort }: KanbanBoardProps)
         if (typeof window !== "undefined") {
           window.dispatchEvent(new Event("conversations:refresh"));
         }
+        avisarClaveAuto(await res.json().catch(() => null));
       } catch {
         setColumns(columnsSnapshot.current);
         toast.error("Error al mover el deal. Se revirtio el cambio.");

@@ -10,6 +10,7 @@ import { sincronizarDealEnSheets } from "@/lib/sheets/envios-sync";
 import { notificarCambioDealAlErp } from "@/lib/finanzas/notificar-erp";
 import { crearOActualizarDealPostventa, cancelarDealPostventa } from "@/lib/postventa/engine";
 import { aplicarReglaClaveEntregada } from "@/lib/finanzas/regla-clave-entregada";
+import { esEtapaEntregado } from "@/lib/pedidos/clave-auto-reglas";
 
 /**
  * Mueve una operacion de etapa y emite `deal.stage_changed`.
@@ -24,7 +25,7 @@ export async function setDealStage(input: {
   stageId: string;
   /** Solo para la creacion: la fila ya tiene la etapa, no hay que actualizarla. */
   justCreated?: boolean;
-}): Promise<{ ok: boolean; error?: string; changed: boolean }> {
+}): Promise<{ ok: boolean; error?: string; changed: boolean; entregado?: boolean }> {
   const [deal] = await db
     .select({
       id: deals.id,
@@ -93,9 +94,7 @@ export async function setDealStage(input: {
     }
 
     // Regla: tarjeta Shalom en "Entregado y Cobrado" = clave entregada = saldo ya depositado (ese día)
-    const nombreEtapa = (stage.name || "").toLowerCase();
-    const etapaEntregado = stageKey === "entregado" || nuevoEstado === "entregado" ||
-      nombreEtapa.includes("entregado") || nombreEtapa.includes("cobrado");
+    const etapaEntregado = esEtapaEntregado(stage);
     try {
       await aplicarReglaClaveEntregada(deal.id, etapaEntregado);
     } catch (reglaErr) {
@@ -185,5 +184,5 @@ export async function setDealStage(input: {
     console.error("[setDealStage] Error notificando cambio al ERP:", err)
   );
 
-  return { ok: true, changed: true };
+  return { ok: true, changed: true, entregado: esEtapaEntregado(stage) };
 }

@@ -26,6 +26,7 @@ import {
   type OrdenAliclik,
 } from "@/lib/aliclik/registrar-orden";
 import { adelantoRegistrado, esPedidoDeProvincia, quienVerificoAdelanto } from "@/lib/pedidos/adelanto";
+import { LINEA_RECOMPRA, TAG_CLAVE_ENVIADA, motivoParaNoEnviar } from "@/lib/pedidos/clave-auto-reglas";
 import {
   digitosPedido,
   interpretarComando,
@@ -616,9 +617,87 @@ function textoClaveCliente(p: Pedido, c: CuentasPedido): string {
     `📍 Destino: ${destino}`,
     "",
     "Acércate con tu DNI físico para el retiro. ¡Gracias por confiar en Aliv! 💚",
+    "",
+    LINEA_RECOMPRA,
   ]
     .filter((l) => l !== null)
     .join("\n");
+}
+
+type EnvioClave = { ok: true; texto: string } | { ok: false; error: string; texto: string };
+
+/**
+ * Manda la clave de retiro al cliente por su último chat y deja la marca
+ * [CLAVE_ENVIADA_WHATSAPP:...] en el pedido (así no se vuelve a mandar).
+ * Si WhatsApp no la entrega (ventana de 24 h cerrada o sin chat) deja una nota y
+ * devuelve el texto para reenviarlo a mano.
+ */
+async function enviarClaveAlCliente(p: Pedido, autor: string): Promise<EnvioClave> {
+  const texto = textoClaveCliente(p, cuentasDelPedido(p));
+  if (!p.contactId) return { ok: false, error: "sin_chat", texto };
+  const [conv] = await db
+    .select({ id: conversations.id })
+    .from(conversations)
+    .where(eq(conversations.contactId, p.contactId))
+    .orderBy(desc(conversations.lastMessageAt))
+    .limit(1);
+  const res = conv ? await deliverMessage(conv.id, { text: texto }, "human") : { ok: false, error: "sin_chat" };
+  if (!res.ok) {
+    const error = res.error || "error";
+    await nota(p, `[CLAVE NO ENVIADA] ${autor} pidió enviar la clave pero WhatsApp no la entregó (${error}).`);
+    return { ok: false, error, texto };
+  }
+  await db
+    .update(pedidosOrdenes)
+    .set({ notas: `${p.notas ? `${p.notas}\n` : ""}[${TAG_CLAVE_ENVIADA}:${new Date().toISOString()}]`, updatedAt: new Date() })
+    .where(eq(pedidosOrdenes.id, p.id));
+  await nota(p, `[CLAVE ENVIADA] Clave de retiro enviada al cliente por orden de ${autor}.`);
+  return { ok: true, texto };
+}
+
+function motivoFallo(error: string): string {
+  return error === "sin_chat"
+    ? "no tiene chat en el CRM"
+    : "WhatsApp la rechazó; quizá pasaron más de 24 h desde su último mensaje";
+}
+
+export type ClaveAlArrastrar =
+  | { estado: "enviada"; cliente: string }
+  | { estado: "no_enviada"; cliente: string; motivo: string; texto: string }
+  | { estado: "omitida"; motivo: string };
+
+/**
+ * Tarjeta arrastrada a «Entregado y Cobrado» (mejora 6 del informe, 24/11): si es un
+ * pedido Shalom con clave y la clave nunca salió (ni marca en el pedido ni mensaje del
+ * chat que la contenga), se la manda al cliente. El saldo ya lo registró la regla de
+ * setDealStage, así que aquí solo se envía.
+ */
+export async function enviarClaveAlArrastrar(dealId: string, autor: string): Promise<ClaveAlArrastrar> {
+  const [fila] = await db
+    .select({ id: pedidosOrdenes.id })
+    .from(pedidosOrdenes)
+    .where(eq(pedidosOrdenes.dealId, dealId))
+    .orderBy(desc(pedidosOrdenes.createdAt))
+    .limit(1);
+  const p = fila ? await pedidoPorId(fila.id) : null;
+  if (!p) return { estado: "omitida", motivo: "sin_pedido" };
+
+  let salientes: (string | null)[] = [];
+  if (p.contactId && p.claveRecojo) {
+    const rows = await db
+      .select({ body: messages.body })
+      .from(messages)
+      .where(and(eq(messages.contactId, p.contactId), eq(messages.direction, "out"), ilike(messages.body, `%${p.claveRecojo.trim()}%`)))
+      .limit(20);
+    salientes = rows.map((r) => r.body);
+  }
+  const motivo = motivoParaNoEnviar(p, salientes);
+  if (motivo) return { estado: "omitida", motivo };
+
+  const cliente = (p.contactName || "el cliente").split(" ")[0];
+  const envio = await enviarClaveAlCliente(p, autor);
+  if (envio.ok) return { estado: "enviada", cliente };
+  return { estado: "no_enviada", cliente, motivo: motivoFallo(envio.error), texto: envio.texto };
 }
 
 function mensajeClaveParaSupervisor(p: Pedido, c: CuentasPedido): string {
@@ -673,6 +752,12 @@ export async function registrarClaveEntregada(
 ): Promise<{ ok: boolean; saldoRegistrado: number | null; entregado: boolean; texto: string }> {
   const p = await pedidoPorId(pedidoId);
   if (!p) return { ok: false, saldoRegistrado: null, entregado: false, texto: "No encontré el pedido." };
+  // Clave entregada (también por WhatsApp Web desde el botón): marca para que arrastrar
+  // la tarjeta después no la mande otra vez.
+  if (!(p.notas || "").includes(`[${TAG_CLAVE_ENVIADA}`)) {
+    p.notas = `${p.notas ? `${p.notas}\n` : ""}[${TAG_CLAVE_ENVIADA}:${new Date().toISOString()}]`;
+    await db.update(pedidosOrdenes).set({ notas: p.notas, updatedAt: new Date() }).where(eq(pedidosOrdenes.id, p.id));
+  }
   const c = cuentasDelPedido(p);
   let saldoRegistrado: number | null = null;
   if (!c.saldoCubierto && c.saldoPendiente > 0) {
@@ -1133,27 +1218,13 @@ async function ejecutarPendiente(cmd: Comando, conversationId: string): Promise<
   }
 
   if (pend.accion === "enviar_clave") {
-    const c = cuentasDelPedido(p);
     if (!p.claveRecojo) return `🔒 ${encabezado(p)}: el pedido ya no tiene clave de retiro registrada.`;
     if (!p.contactId) return "El pedido no tiene contacto asociado.";
-    const [conv] = await db
-      .select({ id: conversations.id })
-      .from(conversations)
-      .where(eq(conversations.contactId, p.contactId))
-      .orderBy(desc(conversations.lastMessageAt))
-      .limit(1);
-    const texto = textoClaveCliente(p, c);
     const nombre = (p.contactName || "el cliente").split(" ")[0];
-    const res = conv ? await deliverMessage(conv.id, { text: texto }, "human") : { ok: false, error: "sin_chat" };
-    if (!res.ok) {
-      await nota(p, `[CLAVE NO ENVIADA] ${AUTOR} pidió enviar la clave pero WhatsApp no la entregó (${res.error}).`);
-      return `⚠️ No pude enviársela a ${nombre} (${res.error === "sin_chat" ? "no tiene chat en el CRM" : "WhatsApp la rechazó; quizá pasaron más de 24 h desde su último mensaje"}). Reenvíale tú este texto:\n\n${texto}`;
+    const envio = await enviarClaveAlCliente(p, AUTOR);
+    if (!envio.ok) {
+      return `⚠️ No pude enviársela a ${nombre} (${motivoFallo(envio.error)}). Reenvíale tú este texto:\n\n${envio.texto}`;
     }
-    await db
-      .update(pedidosOrdenes)
-      .set({ notas: `${p.notas ? `${p.notas}\n` : ""}[CLAVE_ENVIADA_WHATSAPP:${new Date().toISOString()}]`, updatedAt: new Date() })
-      .where(eq(pedidosOrdenes.id, p.id));
-    await nota(p, `[CLAVE ENVIADA] Clave de retiro enviada al cliente por orden de ${AUTOR}.`);
     const cierre = await registrarClaveEntregada(p.id, AUTOR);
     return `✅ Clave enviada a ${nombre} por WhatsApp.\n${cierre.texto}`;
   }

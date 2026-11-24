@@ -5,7 +5,8 @@ import { pipelineStages, pipelines, deals, contacts, teamMembers } from "@/db/sc
 import { pedidosOrdenes } from "../../../../modules/pedidos/tabla";
 import { eq, asc } from "drizzle-orm";
 import { requireMember } from "@/lib/api-auth";
-import { ownerFilter, canAccessContactId } from "@/lib/team";
+import { ownerFilter, canAccessContactId, displayName } from "@/lib/team";
+import { enviarClaveAlArrastrar } from "@/lib/supervisor/comandos";
 import { countDocumentsByContact } from "@/lib/documents";
 import { extraerLiquidacionAliclik } from "@/app/api/pedidos/liquidar-aliclik/route";
 import { extraerFinanzasShalom } from "@/lib/finanzas/tags-shalom";
@@ -164,6 +165,14 @@ export async function PUT(request: NextRequest) {
       .where(eq(deals.id, body.dealId))
       .limit(1);
 
+    // Tarjeta Shalom a «Entregado y Cobrado»: la clave sale sola si nunca se envió.
+    const claveAuto = moved.changed && moved.entregado
+      ? await enviarClaveAlArrastrar(body.dealId, `${displayName(auth.member)} (arrastre a Entregado)`).catch((err) => {
+          console.warn("[pipeline] clave al arrastrar:", err);
+          return null;
+        })
+      : null;
+
     // Notificar al ERP para que actualice los ingresos/egresos de esta etapa en tiempo real
     const erpUrl = process.env.ALIV_ERP_URL || "https://aliv-finanzas-erp.onrender.com";
     const erpPin = process.env.ALIV_FINANZAS_PIN || process.env.ALIV_PIN || "";
@@ -180,7 +189,7 @@ export async function PUT(request: NextRequest) {
       }),
     }).catch(() => {});
 
-    return NextResponse.json(result);
+    return NextResponse.json({ ...result, claveAuto });
   }
 
   // Bulk update stages (from /setup or /customize) - solo admin

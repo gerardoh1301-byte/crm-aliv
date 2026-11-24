@@ -4,7 +4,8 @@ import { db } from "@/db";
 import { activities, deals } from "@/db/schema";
 import { pedidosOrdenes } from "../../../../../modules/pedidos/tabla";
 import { eq } from "drizzle-orm";
-import { canAccessContactId } from "@/lib/team";
+import { canAccessContactId, displayName } from "@/lib/team";
+import { enviarClaveAlArrastrar, type ClaveAlArrastrar } from "@/lib/supervisor/comandos";
 import { requireMember } from "@/lib/api-auth";
 import { sincronizarDealEnSheets } from "@/lib/sheets/envios-sync";
 
@@ -60,11 +61,18 @@ export async function PUT(
   const updateData: Record<string, unknown> = { updatedAt: new Date() };
   if (body.title !== undefined) updateData.title = body.title;
   if (body.value !== undefined) updateData.value = body.value;
+  let claveAuto: ClaveAlArrastrar | null = null;
   // La etapa va por `setDealStage`, que emite el evento de la automatizacion.
   if (body.stageId !== undefined && body.stageId !== existing.stageId) {
     const moved = await setDealStage({ dealId: id, stageId: body.stageId });
     if (!moved.ok) {
       return NextResponse.json({ error: moved.error }, { status: 400 });
+    }
+    if (moved.changed && moved.entregado) {
+      claveAuto = await enviarClaveAlArrastrar(id, `${displayName(member)} (cambio a Entregado)`).catch((err) => {
+        console.warn("[PUT /api/deals] clave al pasar a Entregado:", err);
+        return null;
+      });
     }
   }
   if (body.contactId !== undefined) {
@@ -93,7 +101,7 @@ export async function PUT(
     console.error("[PUT /api/deals] Error sincronizando Sheets:", err)
   );
 
-  return NextResponse.json(result);
+  return NextResponse.json({ ...result, claveAuto });
 }
 
 export async function DELETE(
