@@ -54,10 +54,22 @@ const ORGANO_O_ENFERMEDAD =
 const VERBO_BENEFICIO =
   /\b(?:apoy|ayud|favorec|benefici|mejor|cuid|protec|proteg|limpi|regener|nutr|fortalec|equilibr|optimiz|potenci|revitaliz|restaur|sostien|sosten)\w*|\bsalud\b|\bfunci[oó]n\b|\bbueno\s+para\b/i;
 
-function infringe(frase: string, reglas: RegExp[]): boolean {
-  if (reglas === PROMESAS_SALUD && ORGANO_O_ENFERMEDAD.test(frase) && VERBO_BENEFICIO.test(frase)) return true;
-  return reglas.some((re) => re.test(frase));
+// Negar una promesa es justo lo que queremos que diga ("no cura ni controla enfermedades"):
+// el verbo negado no cuenta como promesa.
+const NEGACION =
+  /\b(?:no|ni)\s+(?:te\s+|se\s+|lo\s+|las?\s+|los\s+)?(?:cura|curan|curar|controla|controlan|controlar|trata|tratan|tratar|previene|previenen|prevenir|evita|evitan|reemplaza|sustituye|reduce|regula|baja|normaliza)\b/gi;
+
+function sinNegaciones(frase: string): string {
+  return frase.replace(NEGACION, " ");
 }
+
+function infringe(frase: string, reglas: RegExp[]): boolean {
+  const f = reglas === PROMESAS_SALUD ? sinNegaciones(frase) : frase;
+  if (reglas === PROMESAS_SALUD && ORGANO_O_ENFERMEDAD.test(f) && VERBO_BENEFICIO.test(f)) return true;
+  return reglas.some((re) => re.test(f));
+}
+
+const SEGURA = /complemento de bienestar|no (?:es )?un medicamento/i;
 
 /** Parte una línea en frases conservando la puntuación final y los emojis pegados. */
 function frasesDe(linea: string): string[] {
@@ -69,7 +81,12 @@ export function corregirFrasesSalud(texto: string): ResultadoFiltroSalud {
   if (!original.trim()) return { texto: original, corregido: false, frasesQuitadas: [] };
 
   const frasesQuitadas: string[] = [];
-  let usoFraseSegura = /complemento de bienestar|no un medicamento/i.test(original);
+  // La frase segura solo cuenta si queda en una frase que NO se va a quitar: si venía dentro de
+  // la frase borrada, el cliente se quedaba solo con «Consúltalo con tu médico» (chat del 23/11).
+  let usoFraseSegura = original
+    .split("\n")
+    .flatMap((l) => (l.trim() ? frasesDe(l) : []))
+    .some((f) => SEGURA.test(f) && !infringe(f, PROMESAS_SALUD) && !infringe(f, CALIDAD_PROHIBIDA));
 
   const lineas = original.split("\n").map((linea) => {
     if (!linea.trim()) return linea;
@@ -115,10 +132,10 @@ export function corregirFrasesSalud(texto: string): ResultadoFiltroSalud {
     .trim();
   // Una pregunta que llevaba la promesa adentro ("¿Quieres cuidar tu hígado?") se reemplaza entera.
   for (const re of PROMESAS_SALUD) {
-    if (re.test(resultado)) {
+    if (re.test(sinNegaciones(resultado))) {
       resultado = resultado
         .split("\n")
-        .filter((l) => !re.test(l))
+        .filter((l) => !re.test(sinNegaciones(l)))
         .join("\n")
         .trim();
     }

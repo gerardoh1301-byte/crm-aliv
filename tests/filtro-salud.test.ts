@@ -83,3 +83,31 @@ describe("filtro de frases de salud (respuestas reales del evaluador 20/11)", ()
     expect(r.texto).toBe("Es un complemento de bienestar, no un medicamento.");
   });
 });
+
+describe("filtro de salud: chat del 23/11 (quedaba solo «Consúltalo con tu médico»)", () => {
+  it("si la frase segura venía dentro de la frase quitada, se vuelve a poner", () => {
+    const t =
+      "NAC600 es un complemento de bienestar, no un medicamento, y apoya la salud de tu hígado; consúltalo con tu médico antes de tomarlo.\n\n¿Te gustaría que te reservemos el pack de 3 frascos por *S/199*?";
+    const r = corregirFrasesSalud(t);
+    expect(r.corregido).toBe(true);
+    expect(r.texto).not.toMatch(/h[ií]gado/);
+    expect(r.texto).toMatch(/no un medicamento/);
+    expect(r.texto).toMatch(/médico/);
+  });
+
+  it("decir que NO cura ni controla enfermedades no se borra", () => {
+    const t =
+      "No es un medicamento, así que no cura ni controla enfermedades. Es un complemento antioxidante: el NAC aporta cisteína para que tu cuerpo produzca glutatión. Si tienes alguna condición o tomas medicinas, consúltalo con tu médico.\n\n¿Lo buscas para ti o para alguien de tu familia?";
+    const r = corregirFrasesSalud(t);
+    expect(r.corregido).toBe(false);
+    expect(r.texto).toBe(t);
+  });
+
+  it("la negación no salva una promesa real en la misma frase", () => {
+    const r = corregirFrasesSalud("No cura, pero limpia tu hígado. ¿Te lo envío?");
+    expect(r.corregido).toBe(true);
+    expect(r.texto).not.toMatch(/h[ií]gado/);
+    expect(corregirFrasesSalud("Cura la gastritis. ¿Te lo envío?").corregido).toBe(true);
+    expect(corregirFrasesSalud("Te ayuda a controlar la presión. ¿Te lo envío?").corregido).toBe(true);
+  });
+});
