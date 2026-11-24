@@ -21,6 +21,20 @@ describe("consultas generales del Administrador", () => {
     expect(cmd("pedidos por confirmar")).toMatchObject({ consulta: "por_confirmar" });
   });
 
+  it("«listos para agendar» (contra entrega y Shalom) se responde sin IA", () => {
+    expect(cmd("Qué pedidos están listos para hacer agendado en Contra entrega y en Shalom")).toMatchObject({
+      tipo: "consulta",
+      consulta: "agendar",
+    });
+    expect(cmd("listos para agendar")).toMatchObject({ consulta: "agendar" });
+    expect(cmd("qué pedidos faltan agendar")).toMatchObject({ consulta: "agendar" });
+    expect(cmd("pedidos por agendar")).toMatchObject({ consulta: "agendar" });
+    expect(cmd("qué falta enviar")).toMatchObject({ consulta: "por_enviar" });
+    // Agendar UN pedido no es la lista.
+    expect(cmd("agenda la entrega de 1160 en aliclik")?.consulta).not.toBe("agendar");
+    expect(cmd("agenda la entrega de carlos en aliclik")?.consulta).not.toBe("agendar");
+  });
+
   it("si nombra un pedido, es la ficha de ese pedido y no una lista", () => {
     expect(tipo("resumen 1140")).toBe("estado");
     expect(tipo("cuánto debe el pedido 1140")).toBe("estado");

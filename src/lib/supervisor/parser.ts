@@ -32,7 +32,14 @@ export type TipoComando =
   | "total"
   | "nota";
 
-export type TipoConsulta = "resumen" | "deben" | "adelantos" | "por_enviar" | "en_camino" | "por_confirmar";
+export type TipoConsulta =
+  | "resumen"
+  | "deben"
+  | "adelantos"
+  | "agendar"
+  | "por_enviar"
+  | "en_camino"
+  | "por_confirmar";
 export type Periodo = "hoy" | "ayer" | "semana" | "mes";
 
 /** Estados a los que se pasa un pedido con «pasa 1140 a …» (entregado y cancelado tienen su propia orden). */
@@ -185,6 +192,12 @@ const PERIODOS: [Periodo, RegExp][] = [
 ];
 
 const CONSULTAS: [TipoConsulta, RegExp][] = [
+  // Antes que «por enviar»: «listos para enviar» también es esta consulta. Pide «listos»,
+  // «pedidos» o «por/sin/falta agendar» para no confundir «agenda la entrega de Carlos».
+  [
+    "agendar",
+    /\b(listos? para|por agendar|sin agendar|falta(n)? agendar|pendientes? de agendar|que (pedidos )?(se pueden |puedo |hay que )?agendar)\b|\bpedidos\b.*\b(agendar|agendad[oa]s?|programar)\b/,
+  ],
   [
     "deben",
     /\b(quien(es)?( me)? deben?|quien(es)?( me)? falta(n)? pagar|saldos? pendientes?|por cobrar|deudas?|deudores|falta(n)? cobrar|cuanto me deben)\b/,

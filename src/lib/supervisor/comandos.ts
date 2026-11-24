@@ -516,7 +516,7 @@ const AYUDA = [
   "• *estado 1140* → ficha completa: cliente, DNI, dirección, productos, saldo, guía Shalom y clave",
   "• *guia 1066 104169999 AB12* → registra la guía nueva (por ejemplo tras un cambio de destino)",
   "",
-  "*Consultas generales*: «resumen de hoy» (o ayer, semana, mes), «quién me debe», «adelantos pendientes», «por enviar», «en camino», «pedidos por confirmar».",
+  "*Consultas generales*: «resumen de hoy» (o ayer, semana, mes), «quién me debe», «adelantos pendientes», «listos para agendar», «por enviar», «en camino», «pedidos por confirmar».",
   "",
   "*Cambios en el CRM* (siempre te pido *SI* antes):",
   "• *cancela 1140 porque no contesta* → pedido cancelado",

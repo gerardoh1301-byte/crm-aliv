@@ -64,9 +64,9 @@ export const HERRAMIENTAS: Herramienta[] = [
   ),
   herramienta(
     "consulta_general",
-    "Listas y resúmenes de varios pedidos: resumen del periodo, quién debe, adelantos sin verificar, por enviar, en camino, por confirmar.",
+    "Listas y resúmenes de varios pedidos: resumen del periodo, quién debe, adelantos sin verificar, listos para agendar (contra entrega en AliClik y Shalom con adelanto), por enviar, en camino, por confirmar.",
     {
-      tipo: { type: "string", enum: ["resumen", "deben", "adelantos", "por_enviar", "en_camino", "por_confirmar"] },
+      tipo: { type: "string", enum: ["resumen", "deben", "adelantos", "agendar", "por_enviar", "en_camino", "por_confirmar"] },
       periodo: { type: "string", enum: ["hoy", "ayer", "semana", "mes"], description: "Solo para el resumen" },
     },
     ["tipo"]

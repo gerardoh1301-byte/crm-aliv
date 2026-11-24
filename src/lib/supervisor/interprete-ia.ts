@@ -31,7 +31,7 @@ export const ORDENES_ESTANDAR = `ÓRDENES ESTÁNDAR (el <pedido> puede ser el n�
 - "SI <pedido>" / "ENVIAR <pedido>" / "NO" → confirma, envía la clave o cancela lo que se le propuso
 - "ayuda"                        → pregunta qué órdenes existen
 
-CONSULTAS GENERALES (sin pedido): "resumen de hoy" (o "resumen de ayer", "resumen de la semana", "resumen del mes"), "quién me debe", "adelantos pendientes", "por enviar", "en camino", "pedidos por confirmar".`;
+CONSULTAS GENERALES (sin pedido): "resumen de hoy" (o "resumen de ayer", "resumen de la semana", "resumen del mes"), "quién me debe", "adelantos pendientes", "listos para agendar" (contra entrega por registrar en AliClik y Shalom con adelanto verificado), "por enviar", "en camino", "pedidos por confirmar".`;
 
 export async function traducirOrdenConIA(
   texto: string,

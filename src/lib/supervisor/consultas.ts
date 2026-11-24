@@ -4,6 +4,7 @@ import { contacts } from "@/db/schema";
 import { and, desc, eq, gte, inArray, lt, ne, sql } from "drizzle-orm";
 import { pedidosOrdenes } from "@modules/pedidos/tabla";
 import { adelantoRegistrado } from "@/lib/pedidos/adelanto";
+import { ordenAliclikRegistrada } from "@/lib/aliclik/registrar-orden";
 import { cuentasDelPedido } from "./comandos";
 import type { Periodo, TipoConsulta } from "./parser";
 
@@ -107,6 +108,8 @@ export async function responderConsultaGeneral(consulta: TipoConsulta, periodo: 
     );
   }
 
+  if (consulta === "agendar") return listosParaAgendar();
+
   if (consulta === "por_enviar") {
     const filas = (await pedidos(and(inArray(pedidosOrdenes.estado, ["confirmado", "preparando"]), recientes()))).filter(
       (p) => !p.numeroGuia
@@ -182,4 +185,54 @@ async function resumen(periodo: Periodo): Promise<string> {
     "",
     "Detalle: «quién me debe», «adelantos pendientes», «por enviar», «en camino», «pedidos por confirmar».",
   ].join("\n");
+}
+
+/** Pedido de provincia que va por Shalom con adelanto (no contra entrega). */
+function esShalom(p: Fila): boolean {
+  return p.modalidadPago === "adelanto_agencia" || /shalom/i.test(p.transportadora || "");
+}
+
+/**
+ * Pedidos confirmados sin guía que ya se pueden agendar: contra entrega sin registrar en
+ * AliClik y Shalom con el adelanto verificado. Los Shalom sin adelanto solo se cuentan.
+ */
+async function listosParaAgendar(): Promise<string> {
+  const filas = (await pedidos(and(inArray(pedidosOrdenes.estado, ["confirmado", "preparando"]), recientes()))).filter(
+    (p) => !p.numeroGuia
+  );
+  const cod = filas.filter((p) => !esShalom(p) && !ordenAliclikRegistrada(p.notas));
+  const enAliclik = filas.filter((p) => !esShalom(p) && ordenAliclikRegistrada(p.notas)).length;
+  const shalom = filas.filter((p) => esShalom(p) && adelantoRegistrado(p.notas));
+  const sinAdelanto = filas.filter((p) => esShalom(p) && !adelantoRegistrado(p.notas)).length;
+
+  const destino = (p: Fila) => [p.distrito, p.ciudad].filter(Boolean).join(" / ") || "sin destino";
+  const bloque = (titulo: string, grupo: Fila[], linea: (p: Fila) => string, pie: string, vacio: string) =>
+    lista(`${titulo}: ${grupo.length}*`, grupo, linea, vacio, pie);
+
+  const partes = [
+    "🗓️ *Listos para agendar*",
+    bloque(
+      "🛵 *Contra entrega (AliClik)",
+      cod,
+      (p) => `${p.numeroOrden} · ${nombre(p)} · ${destino(p)} · ${soles(Number(p.total) || 0)}`,
+      `Para registrarlo: «registra ${digitos(cod[0]?.numeroOrden) || "1175"} en aliclik».`,
+      "🛵 *Contra entrega (AliClik): 0*"
+    ),
+    bloque(
+      "📦 *Shalom con adelanto verificado",
+      shalom,
+      (p) => `${p.numeroOrden} · ${nombre(p)} · ${p.direccionEnvio || p.ciudad || "sin agencia"} · saldo ${soles(cuentasDelPedido(p).saldoPendiente)}`,
+      "Para cargar la guía: «guia 1140 104169999 AB12».",
+      "📦 *Shalom con adelanto verificado: 0*"
+    ),
+  ];
+  const notas = [
+    enAliclik ? `ℹ️ ${enAliclik} contra entrega ya registrado(s) en AliClik esperando guía.` : "",
+    sinAdelanto ? `⏳ ${sinAdelanto} pedido(s) Shalom esperan el adelanto: «adelantos pendientes».` : "",
+  ].filter(Boolean);
+  return [...partes, ...notas].join("\n\n");
+}
+
+function digitos(numeroOrden: string | undefined): string {
+  return numeroOrden?.match(/\d{3,}/)?.[0] ?? "";
 }
