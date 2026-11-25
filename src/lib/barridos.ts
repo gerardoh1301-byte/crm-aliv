@@ -39,6 +39,8 @@ const ENDPOINTS = [
   "/api/agent/postventa?backfill=true",
   // Copia de los chats en Drive, una vez por día de Lima (las otras vueltas salen al toque).
   "/api/respaldo/chats",
+  // 22:00 Lima: pendientes de cada vendedor a su WhatsApp y resumen general a Gerardo.
+  "/api/agent/resumen-diario",
 ];
 
 import { iniciarMantenerDespierto } from "./mantener-despierto";

@@ -10,6 +10,7 @@ import { esSupervisorPagos } from "@/lib/supervisor/comandos";
 
 const GERARDO = "951365418";
 const LOURDES = "945226853";
+const STEPHANO = "977126462";
 
 const tiposDe = (categoria: string) =>
   (Object.keys(CATEGORIA_AVISO) as TipoSituacionCritica[]).filter((t) => CATEGORIA_AVISO[t] === categoria);
@@ -31,13 +32,13 @@ describe("Perfiles de supervisor: a quién va cada aviso", () => {
   });
 
   it("un aviso comercial llega a Gerardo y a Lourdes", () => {
-    expect(destinatariosAviso("pedido_shopify")).toEqual([GERARDO, LOURDES]);
-    expect(destinatariosAviso("pedido_chat")).toEqual([GERARDO, LOURDES]);
+    expect(destinatariosAviso("pedido_shopify")).toEqual([GERARDO, LOURDES, STEPHANO]);
+    expect(destinatariosAviso("pedido_chat")).toEqual([GERARDO, LOURDES, STEPHANO]);
   });
 
   it("un aviso de atención al cliente llega a Gerardo y a Lourdes", () => {
     for (const tipo of ["reclamo_medico", "pide_humano_llamada", "guardrail_bloqueo", "bot_sin_respuesta"] as TipoSituacionCritica[]) {
-      expect(destinatariosAviso(tipo), tipo).toEqual([GERARDO, LOURDES]);
+      expect(destinatariosAviso(tipo), tipo).toEqual([GERARDO, LOURDES, STEPHANO]);
     }
   });
 

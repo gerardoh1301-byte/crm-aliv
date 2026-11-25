@@ -4,6 +4,7 @@ import { contacts, conversations, messages } from "@/db/schema";
 import { and, desc, eq, gt, like } from "drizzle-orm";
 import { deliverMessage } from "@/lib/channels/deliver";
 import { SUPERVISORES } from "@/lib/alerts/perfiles-supervisor";
+import { conversacionInternaDe } from "@/lib/alerts/conversacion-supervisor";
 import { VENTANA_WHATSAPP_MS } from "@/lib/channels/ventana-24h";
 import {
   MARCA_AVISO_VENTANA,
@@ -13,16 +14,7 @@ import {
   textoAvisoVentana,
 } from "@/lib/alerts/ventana-supervisor";
 
-async function conversacionDe(digitos: string): Promise<string | null> {
-  const [c] = await db.select({ id: contacts.id }).from(contacts).where(eq(contacts.phone, `+51${digitos}`)).limit(1);
-  if (!c) return null;
-  const [conv] = await db
-    .select({ id: conversations.id })
-    .from(conversations)
-    .where(and(eq(conversations.contactId, c.id), eq(conversations.channel, "whatsapp")))
-    .limit(1);
-  return conv?.id ?? null;
-}
+const conversacionDe = conversacionInternaDe;
 
 async function ultimoEntrante(conversationId: string): Promise<Date | null> {
   const [m] = await db

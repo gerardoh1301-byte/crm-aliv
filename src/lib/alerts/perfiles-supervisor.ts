@@ -3,7 +3,7 @@
  * viven los números de los supervisores: el resto del código los toma de aquí.
  *
  * - Administrador (Gerardo): recibe todo.
- * - Vendedor (Lourdes): solo lo comercial y la atención al cliente; nada de lo
+ * - Vendedor (Lourdes; Stephano desde el 25/11 en su número 977126462): solo lo comercial y la atención al cliente; nada de lo
  *   logístico ni del dinero (Shalom, guías, fletes, claves, saldos, AliClik, ERP).
  *
  * Ambos están en la lista blanca (`esNumeroEntrenador`): el bot no les crea pedidos,
@@ -22,11 +22,15 @@ export interface Supervisor {
   /** Últimos 9 dígitos (Perú). */
   digitos: string;
   perfil: PerfilSupervisor;
+  /** team_members.id: a este número le llega el resumen diario de sus clientes. */
+  miembroId?: string;
 }
 
 export const SUPERVISORES: readonly Supervisor[] = [
-  { nombre: "Gerardo", digitos: "951365418", perfil: "administrador" },
-  { nombre: "Lourdes", digitos: "945226853", perfil: "vendedor" },
+  { nombre: "Gerardo", digitos: "951365418", perfil: "administrador", miembroId: "f3e73eac-683d-4624-98c3-c8cc3eeef824" },
+  { nombre: "Lourdes", digitos: "945226853", perfil: "vendedor", miembroId: "b1480004-8861-4275-8b3b-6b5b1c74e014" },
+  // Su número de vendedor (WhatsApp Business en coexistencia): recibe los avisos del 944 ahí.
+  { nombre: "Stephano", digitos: "977126462", perfil: "vendedor", miembroId: "9ba60ead-998d-4e37-bcfa-2129fc346b20" },
 ];
 
 export const CATEGORIAS_POR_PERFIL: Record<PerfilSupervisor, readonly CategoriaAviso[]> = {

@@ -3,6 +3,7 @@ import { db } from "@/db";
 import { contacts, conversations } from "@/db/schema";
 import { eq } from "drizzle-orm";
 import { deliverMessage } from "@/lib/channels/deliver";
+import { conversacionInternaDe } from "@/lib/alerts/conversacion-supervisor";
 
 import {
   SUPERVISORES,
@@ -124,19 +125,9 @@ export async function notificarSupervisoresCritico(input: AlertaSupervisorInput)
   const destinos = destinatariosAviso(input.tipo).map((d) => `+51${d}`);
   for (const supRaw of destinos) {
     try {
-      const [supContact] = await db
-        .select({ id: contacts.id })
-        .from(contacts)
-        .where(eq(contacts.phone, supRaw))
-        .limit(1);
-
-      if (supContact) {
-        const [supConv] = await db
-          .select({ id: conversations.id })
-          .from(conversations)
-          .where(eq(conversations.contactId, supContact.id))
-          .limit(1);
-
+      const supConvId = await conversacionInternaDe(supRaw.slice(-9));
+      {
+        const supConv = supConvId ? { id: supConvId } : null;
         if (supConv) {
           const res = await deliverMessage(supConv.id, mensajeAvisoInterno(mensajeAlerta), "agent");
           if (!res.ok && res.error === "fuera_de_ventana_24h") {
