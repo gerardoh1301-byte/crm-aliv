@@ -19,7 +19,7 @@ import { getAgentConfig } from "./config";
 import { renderContextoDetallado, renderSystemPrompt } from "./prompt";
 import { exigirDatosEnvio, type RequisitosShalom } from "./datos-envio";
 import { esSaludoAutomatico, productoDelAnuncio, renderOrigenAnuncio } from "./origen-anuncio";
-import { BLOQUE_POSTULANTE, esPostulante, TAG_POSTULANTE } from "./postulante";
+import { BLOQUE_POSTULANTE, esPostulante, quitarHorarioInventado, TAG_POSTULANTE } from "./postulante";
 import { aplicarEtiquetaAContacto } from "./etiquetado";
 import { asegurarPreguntaDeAvance, renderGuionVenta } from "./guion-venta";
 import { detectarSenalesPrompt } from "./prompt-bloques";
@@ -361,6 +361,7 @@ async function executeAgentTurn(
       if (claveYaEntregada && reply) {
         reply = removerMencionClaveSiYaEntregada(reply);
       }
+      if (postulante && reply) reply = quitarHorarioInventado(reply);
       if (reply) reply = await aplicarFiltroSalud(reply, contact.id);
       if (reply) reply = await aplicarDatosEnvio(reply, await requisitosVigentes(), contact.id);
       if (!reply) {
@@ -472,6 +473,7 @@ async function executeAgentTurn(
     if (claveYaEntregada && textoFinal) {
       textoFinal = removerMencionClaveSiYaEntregada(textoFinal);
     }
+    if (postulante && textoFinal) textoFinal = quitarHorarioInventado(textoFinal);
     if (textoFinal) textoFinal = await aplicarFiltroSalud(textoFinal, contact.id);
     if (textoFinal) textoFinal = await aplicarDatosEnvio(textoFinal, await requisitosVigentes(), contact.id);
     if (textoFinal) {

@@ -83,3 +83,38 @@ export const BLOQUE_POSTULANTE = [
   "- Si pregunta algo que no está aquí (part-time, horario exacto, fecha de inicio, dirección exacta en La Molina, contrato), responde esa pregunta diciendo que el equipo se lo confirma cuando lo contacte; no la ignores. No inventes datos.",
   "- No repitas la explicación completa del puesto si ya la diste: responde directo a lo que pregunte.",
 ].join("\n");
+
+const FRASE_HORARIO = "El horario exacto te lo confirma el equipo cuando te contacte.";
+
+/** Horas («8:30 a. m.», «6 pm», «9 a 6») o días de trabajo («de lunes a sábado»). */
+const PATRON_HORARIO =
+  /\b\d{1,2}(?::\d{2})?\s*(?:a\.?\s?m\.?|p\.?\s?m\.?|hrs?\b|horas\b)|\bde\s+\d{1,2}(?::\d{2})?\s+a\s+\d{1,2}(?::\d{2})?\b|\bde\s+lunes\s+a\s+(?:viernes|s[áa]bado|domingo)\b|\bturnos?\s+(?:de|rotativ|ma[ñn]ana|tarde|noche)/i;
+
+/**
+ * 24/11: con la regla «no inventes el horario» en el prompt, el bot igual le dijo a un
+ * postulante «de lunes a sábado de 8:30 a. m. a 6:00 p. m.». Ese dato no existe en ninguna
+ * parte. En modo postulante, cada frase con horas o días de trabajo se cambia (una sola vez)
+ * por la respuesta aprobada.
+ */
+export function quitarHorarioInventado(texto: string): string {
+  // «a. m.» y «p. m.» se juntan antes de partir en frases: si no, el punto las corta.
+  const normalizado = texto.replace(/\b([ap])\.\s?m\./gi, "$1m");
+  if (!PATRON_HORARIO.test(normalizado)) return texto;
+  let reemplazada = false;
+  const parrafos = normalizado.split("\n").map((linea) => {
+    const frases = linea.split(/(?<=[.!?])\s+/);
+    const salida: string[] = [];
+    for (const f of frases) {
+      if (!PATRON_HORARIO.test(f)) {
+        salida.push(f);
+        continue;
+      }
+      if (!reemplazada) {
+        salida.push(FRASE_HORARIO);
+        reemplazada = true;
+      }
+    }
+    return salida.join(" ");
+  });
+  return parrafos.join("\n").replace(/\n{3,}/g, "\n\n").trim();
+}
