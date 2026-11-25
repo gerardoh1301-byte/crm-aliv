@@ -374,9 +374,12 @@ export async function renderContextoDetallado(
   let textoDireccionOProvincia = [ciudad, distrito, direccion].filter(Boolean).join(" ");
   let decisionEntrega: import("@/lib/aliclik/cobertura-cod").DecisionEntrega | null = null;
   // En una ciudad con contra entrega el cliente igual puede pedir recoger en Shalom.
+  // Se mira el pedido (transportadora o modalidad), no pedidosTxt: su instrucción fija dice
+  // «agencia Shalom» y con cualquier pedido en curso se saltaba la cobertura (#1181, Paita).
+  const pedidoVaPorShalom = pedidoEsShalom(pedidoReciente);
   const eligioShalom = Boolean(
     (fields.modalidad_entrega && String(fields.modalidad_entrega).toLowerCase().includes("shalom")) ||
-    (pedidosTxt && pedidosTxt.toLowerCase().includes("shalom"))
+    pedidoVaPorShalom
   );
 
   try {
@@ -451,7 +454,7 @@ export async function renderContextoDetallado(
   const esProvincia = decisionEntrega?.zona !== "provincia_cod" && Boolean(
     ciudad ||
     (fields.modalidad_entrega && String(fields.modalidad_entrega).toLowerCase().includes("shalom")) ||
-    (pedidosTxt && pedidosTxt.toLowerCase().includes("shalom")) ||
+    pedidoVaPorShalom ||
     (textoDireccionOProvincia && !/lima|callao/i.test(textoDireccionOProvincia))
   );
 
@@ -599,6 +602,12 @@ const ESTADOS_EN_CURSO = new Set(["por_confirmar_cod", "confirmado", "preparando
  * ofrecia "un nuevo pedido". Ahora se separan: los que siguen en curso se completan; solo
  * los entregados cuentan como compra previa.
  */
+/** true si el pedido va por agencia Shalom (transportadora o adelanto en agencia). */
+export function pedidoEsShalom(p: { transportadora?: string | null; modalidadPago?: string | null } | null): boolean {
+  if (!p) return false;
+  return /shalom/i.test(p.transportadora ?? "") || p.modalidadPago === "adelanto_agencia";
+}
+
 export function renderPedidosCliente(pedidos: PedidoResumen[]): string {
   if (pedidos.length === 0) return "";
   const linea = (p: PedidoResumen) => {

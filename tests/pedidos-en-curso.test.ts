@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { renderPedidosCliente, resolverNombreHumanoCliente } from "../src/lib/agent/prompt";
+import { pedidoEsShalom, renderPedidosCliente, resolverNombreHumanoCliente } from "../src/lib/agent/prompt";
 
 describe("contexto de pedidos del cliente", () => {
   it("un pedido por confirmar se retoma, no se trata como compra previa", () => {
@@ -63,5 +63,18 @@ describe("auditoría de modificación de pedidos COD", () => {
     const total = 199.0;
     expect(Number(total.toFixed(2))).toBe(199.0);
     expect(cantidad * 66.3333).toBeCloseTo(199.0, 1);
+  });
+});
+
+describe("pedidoEsShalom (#1181, Paita con contra entrega)", () => {
+  it("un pedido contra entrega no cuenta como Shalom aunque el texto del pedido diga «agencia Shalom»", () => {
+    const p = { transportadora: null, modalidadPago: "contraentrega" };
+    expect(renderPedidosCliente([{ numeroOrden: "#1181", total: "119.00", estado: "confirmado", items: [] }])).toMatch(/shalom/i);
+    expect(pedidoEsShalom(p)).toBe(false);
+  });
+  it("cuenta como Shalom por transportadora o por adelanto en agencia", () => {
+    expect(pedidoEsShalom({ transportadora: "Shalom", modalidadPago: "contraentrega" })).toBe(true);
+    expect(pedidoEsShalom({ transportadora: null, modalidadPago: "adelanto_agencia" })).toBe(true);
+    expect(pedidoEsShalom(null)).toBe(false);
   });
 });
