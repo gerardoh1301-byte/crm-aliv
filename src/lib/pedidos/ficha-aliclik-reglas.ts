@@ -50,8 +50,30 @@ export function textoFichaAliclik(p: PedidoParaFicha): string {
     `• Teléfono: ${tel || "-"}`,
     `• Productos: ${productos(p.items)} · total S/ ${Number(p.total ?? 0).toFixed(2)}`,
     `• Agencia destino: ${p.agencia ?? "-"}`,
-    `• Guía Shalom: N° ${p.numeroGuia} · código ${p.codigo}`,
-    `• Clave numérica: ${p.clave}`,
+    `• Guía Shalom: N° ${p.numeroGuia || "-"} · código ${p.codigo || "-"}`,
+    `• Clave numérica: ${p.clave || "-"}`,
     `La preguía PDF está en Drive y en la tarjeta del pipeline. Cuando la registres, paga los S/5 con la billetera de AliClik.`,
   ].join("\n");
+}
+
+/** Lo que aún falta cargar para registrar el pedido en AliClik. */
+export function faltantesFicha(p: PedidoParaFicha): string[] {
+  const falta: string[] = [];
+  if (!p.numeroGuia) falta.push("N° de orden Shalom");
+  if (!p.codigo) falta.push("código de la guía");
+  if (!/^\d{4}$/.test(String(p.clave ?? "").trim())) falta.push("clave numérica");
+  if (!p.dni) falta.push("DNI");
+  return falta;
+}
+
+/**
+ * Respuesta a «datos de <pedido> para AliClik» en un pedido Shalom (25/11, #1181: el Bot
+ * Asistente contestaba «no se registra en AliClik»). Los Shalom con guía propia sí van a AliClik
+ * («Drop Shalom y Olva»), a mano; aquí van los datos y lo que falte.
+ */
+export function respuestaFichaShalom(p: PedidoParaFicha, ordenPrevia: string | null): string {
+  if (ordenPrevia) return `Pedido ${p.numeroOrden} ya está registrado en AliClik (orden ${ordenPrevia}).`;
+  const falta = faltantesFicha(p);
+  const texto = textoFichaAliclik(p);
+  return falta.length ? `${texto}\n⚠️ Falta cargar: ${falta.join(", ")}.` : texto;
 }

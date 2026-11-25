@@ -4,16 +4,24 @@ import { db } from "@/db";
 import { contacts } from "@/db/schema";
 import { pedidosOrdenes } from "../../../modules/pedidos/tabla";
 import { notificarSupervisoresCritico } from "@/lib/alerts/supervisor-alerts";
-import { MARCA_FICHA_ALICLIK, debeAvisarFicha, textoFichaAliclik } from "./ficha-aliclik-reglas";
+import {
+  MARCA_FICHA_ALICLIK,
+  debeAvisarFicha,
+  textoFichaAliclik,
+  type PedidoParaFicha,
+} from "./ficha-aliclik-reglas";
 
-/** Manda la ficha a Gerardo si el pedido ya tiene todo para registrarlo en AliClik (una sola vez). */
-export async function avisarFichaAliclik(p: typeof pedidosOrdenes.$inferSelect): Promise<void> {
+type FilaPedido = typeof pedidosOrdenes.$inferSelect;
+
+/** Datos de la ficha AliClik de un pedido, con el nombre y celular del contacto. */
+export async function datosFichaAliclik(p: FilaPedido): Promise<PedidoParaFicha & { contacto: { name: string | null; phone: string | null } | undefined }> {
   const [c] = await db
     .select({ name: contacts.name, phone: contacts.phone })
     .from(contacts)
     .where(eq(contacts.id, p.contactId))
     .limit(1);
-  const datos = {
+  return {
+    contacto: c,
     numeroOrden: p.numeroOrden,
     transportadora: p.transportadora,
     modalidadPago: p.modalidadPago,
@@ -28,6 +36,12 @@ export async function avisarFichaAliclik(p: typeof pedidosOrdenes.$inferSelect):
     cliente: c?.name ?? null,
     telefono: c?.phone ?? null,
   };
+}
+
+/** Manda la ficha a Gerardo si el pedido ya tiene todo para registrarlo en AliClik (una sola vez). */
+export async function avisarFichaAliclik(p: FilaPedido): Promise<void> {
+  const datos = await datosFichaAliclik(p);
+  const c = datos.contacto;
   if (!debeAvisarFicha(datos)) return;
   // La marca va antes del envío: dos guardados seguidos no deben mandar dos fichas.
   await db

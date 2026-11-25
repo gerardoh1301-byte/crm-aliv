@@ -27,6 +27,7 @@ import { MARCA_COD_PROVINCIA } from "@/lib/aliclik/cobertura-cod";
 import { corregirFrasesSalud } from "./filtro-salud";
 import { registrarPromesaSiAplica } from "./seguimiento";
 import { executeTool, getEnabledToolDefinitions, type ToolContext } from "./tools";
+import { quitarPieRepetido } from "./imagenes-referencia";
 import { getOpenRouterClient, getAgentModel, hasOpenRouterKey, createChatCompletionWithFallback } from "./openrouter";
 import { autoDetectarYAgendarHorario } from "./scheduler";
 import { pedidosOrdenes } from "../../../modules/pedidos/tabla";
@@ -275,6 +276,7 @@ async function executeAgentTurn(
 
   const origenUso = conversation.provider === "simulador" ? "agente_simulador" : "agente";
   let toolCalls = 0;
+  const piesEnviados: string[] = [];
   const executedTools: string[] = [];
   // Para contarle al cliente lo que se hizo si la IA cae después de ejecutar herramientas.
   const herramientasRespaldo: HerramientaEjecutada[] = [];
@@ -332,6 +334,10 @@ async function executeAgentTurn(
           }
 
           const result = await executeTool(tc.function.name, args, ctx);
+          if (result.ok && tc.function.name === "enviar_imagen_referencia") {
+            const pie = (result.data as { pie?: string } | undefined)?.pie;
+            if (pie) piesEnviados.push(pie);
+          }
           herramientasRespaldo.push({ nombre: tc.function.name, args, ok: result.ok });
           if (!result.ok) algunaFallo = true;
           if (result.ok && result.stop) {
@@ -357,6 +363,7 @@ async function executeAgentTurn(
       }
 
       let reply = limpiarFormatoWhatsApp(assistantMsg.content?.trim() ?? "");
+      if (piesEnviados.length && reply) reply = quitarPieRepetido(reply, piesEnviados);
       if (yaRespondio && reply) {
         reply = removerSaludoRepetido(reply);
       }

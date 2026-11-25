@@ -607,6 +607,7 @@ async function enviarImagenReferencia(
   // Obtener contexto de etiquetas del contacto y últimos mensajes para evitar cruces
   let textoContexto = "";
   let interesProducto = "";
+  let ultimoCliente = "";
   try {
     const [c] = await db
       .select({ tags: contacts.tags })
@@ -618,12 +619,13 @@ async function enviarImagenReferencia(
 
     if (ctx.conversationId) {
       const ultimos = await db
-        .select({ body: messages.body })
+        .select({ body: messages.body, direction: messages.direction })
         .from(messages)
         .where(eq(messages.conversationId, ctx.conversationId))
         .orderBy(desc(messages.createdAt))
         .limit(5);
       textoContexto = ultimos.map((m) => m.body).join(" ");
+      ultimoCliente = ultimos.find((m) => m.direction === "in")?.body ?? "";
     }
   } catch (err) {
     console.warn("[enviarImagenReferencia] Error al leer contexto:", err);
@@ -634,6 +636,7 @@ async function enviarImagenReferencia(
     motivo: args.motivo,
     textoContexto,
     interesProducto,
+    ultimoCliente,
   });
 
   if (corregida) {
@@ -671,6 +674,9 @@ async function enviarImagenReferencia(
     data: {
       enviada: true,
       imagen: img.id,
+      tipo: img.tipo ?? "image",
+      pie: caption,
+      nota: "El pie ya llegó con el archivo: no lo repitas en tu respuesta.",
       titulo: img.titulo,
       url: img.url,
       corregida,

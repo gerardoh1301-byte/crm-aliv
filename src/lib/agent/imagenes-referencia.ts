@@ -193,6 +193,12 @@ export function resolverMejorImagen(params: {
   motivo?: string;
   textoContexto?: string;
   interesProducto?: string;
+  /**
+   * Último mensaje del cliente. Manda sobre el contexto para elegir foto o video: el 25/11
+   * (956230526) pidió «Foto ?» después de haber pedido video y se le reenvió el video, porque
+   * «video» seguía en los últimos mensajes; el cliente contestó «no adjuntas nada».
+   */
+  ultimoCliente?: string;
 }): {
   imagen: ImagenReferencia;
   corregida: boolean;
@@ -218,9 +224,21 @@ export function resolverMejorImagen(params: {
   const esTemaTermix = termixMatches > 0 && (termixMatches > nacMatches || motivoMencionaTermix);
   const esTemaPago =
     /\b(yape|plin|adelanto|s\/20|cuenta|transferencia|banco)\b/i.test(textoCombinado);
-  const pideVideo =
-    /\b(video|videos|grabaci[oó]n|filmaci[oó]n|filme|unboxing video)\b/i.test(textoCombinado) ||
-    claveRaw.includes("video");
+  const ultimo = (params.ultimoCliente || "").toLowerCase();
+  const RE_VIDEO = /\b(video|videos|grabaci[oó]n|filmaci[oó]n|filme|unboxing video)\b/i;
+  const RE_FOTO = /\b(foto|fotos|fotito|imagen|imagenes|imágenes|captura)\b/i;
+  const pideFotoAhora = RE_FOTO.test(ultimo) && !RE_VIDEO.test(ultimo);
+  const pideVideo = !pideFotoAhora && (RE_VIDEO.test(ultimo || textoCombinado) || claveRaw.includes("video"));
+
+  // El cliente acaba de pedir una foto: nunca se le manda un video (se ve igual que el anterior).
+  if (pideFotoAhora && claveRaw.includes("video")) {
+    const clave = claveRaw.startsWith("termix") ? "termix_foto_real" : "nac600_frasco";
+    return {
+      imagen: buscarImagenReferencia(clave) || IMAGENES_REFERENCIA[0],
+      corregida: true,
+      motivoCorreccion: `El cliente pidió foto y se solicitó '${claveRaw}'. Se envía '${clave}'.`,
+    };
+  }
 
   let claveEfectiva = claveRaw;
 
@@ -315,4 +333,21 @@ export function resolverMejorImagen(params: {
     corregida: claveEfectiva !== claveRaw,
     motivoCorreccion: claveEfectiva !== claveRaw ? `Imagen optimizada a '${encontrada.id}' según contexto.` : undefined,
   };
+}
+
+/**
+ * El pie de la foto ya llegó como caption: si la respuesta en texto trae ese mismo párrafo, se
+ * quita (25/11: «¡Aquí tienes una foto…!» salía dos veces seguidas).
+ */
+export function quitarPieRepetido(reply: string, pies: string[]): string {
+  let texto = reply.trim();
+  const norm = (t: string) => t.toLowerCase().replace(/[^\p{L}\p{N}]+/gu, " ").trim();
+  for (const pie of pies) {
+    const p = norm(pie);
+    if (p.length < 12) continue;
+    const parrafos = texto.split(/\n{2,}/);
+    const restantes = parrafos.filter((par) => norm(par) !== p);
+    if (restantes.length && restantes.length < parrafos.length) texto = restantes.join("\n\n").trim();
+  }
+  return texto;
 }

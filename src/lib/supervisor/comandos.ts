@@ -525,7 +525,7 @@ const AYUDA = [
   "• *pasa 1140 a confirmado* (o preparando, enviado, por confirmar)",
   "• *dni 1140 45678912* · *direccion 1140 Av. Lima 123* · *agencia 1140 Shalom Huancayo Real*",
   "• *registra clave 1140 1330* · *total 1140 189* · *nota 1140 llamar después de las 6*",
-  "• *registra 1171 en aliclik* → te muestro la orden contra entrega con el costo de envío; se crea en AliClik con tu *SI* (no aplica a Shalom con adelanto)",
+  "• *registra 1171 en aliclik* → te muestro la orden contra entrega con el costo de envío; se crea en AliClik con tu *SI*; si va por Shalom, te paso los datos para registrarlo a mano",
   "",
   "Solo te pido *SI 1140* si el pedido lo tomé del último aviso, para registrar en AliClik o para escribirle al cliente. Para mandar la clave al cliente: *ENVIAR 1140*. *NO* cancela.",
   "El pedido puede ir por número (1140), por guía Shalom (104493022), por celular (987654321) o por nombre («clave de Carlos Huaynalaya»).",
@@ -1678,8 +1678,8 @@ const ESTADOS_SIN_REGISTRO = new Set(["cancelado", "rechazado", "entregado", "en
 
 /**
  * Deja pendiente registrar un pedido CONTRA ENTREGA en AliClik. Muestra a Gerardo el
- * resumen con el costo de envío; la orden se crea solo con «SI <pedido>». Los pedidos por
- * agencia Shalom (adelanto) no se registran aquí.
+ * resumen con el costo de envío; la orden se crea solo con «SI <pedido>». A los pedidos por
+ * agencia Shalom se les devuelve la ficha para registrarlos a mano (no hay API).
  */
 export async function proponerRegistroAliclik(ref: string, conversationId: string): Promise<string> {
   const r = await pedidoDeReferencia(ref, conversationId);
@@ -1688,10 +1688,13 @@ export async function proponerRegistroAliclik(ref: string, conversationId: strin
   const n = digitosPedido(p.numeroOrden);
 
   const previa = ordenAliclikRegistrada(p.notas);
-  if (previa) return `${encabezado(p)} ya está registrado en AliClik (orden ${previa}). No hice nada.`;
   if (p.modalidadPago !== "contraentrega" || /shalom/i.test(p.transportadora || "")) {
-    return `${encabezado(p)} va por agencia Shalom con adelanto: se maneja como siempre, no se registra en AliClik.`;
+    // Shalom con guía propia: se registra a mano en AliClik («Drop Shalom y Olva»); van los datos.
+    const { datosFichaAliclik } = await import("@/lib/pedidos/ficha-aliclik");
+    const { respuestaFichaShalom } = await import("@/lib/pedidos/ficha-aliclik-reglas");
+    return respuestaFichaShalom(await datosFichaAliclik(p), previa);
   }
+  if (previa) return `${encabezado(p)} ya está registrado en AliClik (orden ${previa}). No hice nada.`;
   if (ESTADOS_SIN_REGISTRO.has(p.estado)) return `${encabezado(p)} está *${p.estado}*: no se registra en AliClik.`;
 
   const [ct] = p.contactId

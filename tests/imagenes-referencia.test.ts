@@ -140,3 +140,36 @@ describe("Selección de Fotos y Blindaje Anti-Cruce de Productos", () => {
     expect(res.imagen.tipo).toBe("video");
   });
 });
+
+import { quitarPieRepetido } from "../src/lib/agent/imagenes-referencia";
+
+describe("foto pedida después de un video (25/11, 956230526)", () => {
+  it("«Foto ?» con «video» en el contexto manda la foto del frasco, no el video", () => {
+    const res = resolverMejorImagen({
+      claveSolicitada: "nac600_video",
+      motivo: "¡Aquí tienes una foto de nuestro frasco de NAC600 + NAD+!",
+      textoContexto: "Foto ? ¡Aquí te comparto el video oficial de nuestro NAC600 + NAD+! Tiene un video ?",
+      ultimoCliente: "Foto ?",
+    });
+    expect(res.imagen.id).toBe("nac600_frasco");
+    expect(res.imagen.tipo ?? "image").toBe("image");
+  });
+  it("con clave de foto y «video» viejo en el contexto, no la sube a video", () => {
+    const res = resolverMejorImagen({
+      claveSolicitada: "nac600_frasco",
+      textoContexto: "Tiene un video ? ¡Aquí te comparto el video oficial!",
+      ultimoCliente: "Una foto de quien lo elabora ?",
+    });
+    expect(res.imagen.id).toBe("nac600_frasco");
+  });
+  it("si el último mensaje pide video, sigue mandando el video", () => {
+    const res = resolverMejorImagen({ claveSolicitada: "nac600_frasco", ultimoCliente: "Tiene un video ?" });
+    expect(res.imagen.id).toBe("nac600_video");
+  });
+  it("quita el párrafo que repite el pie del archivo", () => {
+    const pie = "¡Aquí tienes una foto de nuestro frasco de NAC600 + NAD+! Son 60 cápsulas por frasco para 30 días.";
+    const reply = `${pie}\n\n¿Te separo el pack de 3 frascos que es el más elegido?`;
+    expect(quitarPieRepetido(reply, [pie])).toBe("¿Te separo el pack de 3 frascos que es el más elegido?");
+    expect(quitarPieRepetido(pie, [pie])).toBe(pie);
+  });
+});

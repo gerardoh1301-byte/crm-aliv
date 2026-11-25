@@ -45,3 +45,30 @@ describe("lectura del rótulo Shalom", () => {
     expect(datosDeRotulo("no se lee")).toBeNull();
   });
 });
+
+import { respuestaFichaShalom } from "../src/lib/pedidos/ficha-aliclik-reglas";
+
+describe("respuestaFichaShalom (Bot Asistente)", () => {
+  const base = {
+    numeroOrden: "#1181", transportadora: "Shalom", modalidadPago: "adelanto_agencia",
+    numeroGuia: "105410411", codigo: "HMNJ", clave: "4321", dni: "00213048",
+    agencia: "Agencia Shalom Paita", total: "119", items: [{ cantidad: 1, titulo: "NAC600" }],
+    notas: "", cliente: "augusto Noel Urbina", telefono: "+51991794866",
+  };
+  it("da la ficha completa de un pedido Shalom en vez de «no se registra»", () => {
+    const t = respuestaFichaShalom(base, null);
+    expect(t).toContain("105410411");
+    expect(t).toContain("HMNJ");
+    expect(t).toContain("00213048");
+    expect(t).not.toMatch(/no se registra/i);
+    expect(t).not.toContain("Falta cargar");
+  });
+  it("avisa lo que falta sin imprimir null", () => {
+    const t = respuestaFichaShalom({ ...base, codigo: null, clave: null }, null);
+    expect(t).toContain("Falta cargar: código de la guía, clave numérica");
+    expect(t).not.toContain("null");
+  });
+  it("si ya tiene orden AliClik, lo dice", () => {
+    expect(respuestaFichaShalom(base, "AL-99")).toContain("ya está registrado en AliClik (orden AL-99)");
+  });
+});
