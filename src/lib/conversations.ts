@@ -222,7 +222,14 @@ export async function getConversation(conversationId: string): Promise<{
       sentAt: messages.sentAt,
       deliveredAt: messages.deliveredAt,
       readAt: messages.readAt,
-      rawPayload: messages.rawPayload,
+      // Solo lo que usa el chat (cita y adjuntos). El raw_payload entero pesa ~3 KB por
+      // mensaje y el chat abierto se pide cada 6 s: era lo que más consumía la base (25/11).
+      rawPayload: sql<unknown>`jsonb_strip_nulls(jsonb_build_object(
+        'quotedText', ${messages.rawPayload}->'quotedText',
+        'quotedSender', ${messages.rawPayload}->'quotedSender',
+        'replyTo', ${messages.rawPayload}->'replyTo',
+        'message', jsonb_strip_nulls(jsonb_build_object('attachments', ${messages.rawPayload}->'message'->'attachments'))
+      ))`,
       createdAt: messages.createdAt,
     })
     .from(messages)
@@ -270,10 +277,39 @@ export async function markConversationAsRead(
       )
     );
 
+  // Solo si había no leídos: tocar updated_at en cada vuelta invalidaría la firma de la bandeja.
   await db
     .update(conversations)
     .set({ unreadCount: 0, updatedAt: new Date() })
-    .where(eq(conversations.id, conversationId));
+    .where(and(eq(conversations.id, conversationId), ne(conversations.unreadCount, 0)));
+}
+
+/**
+ * Firmas para no reenviar lo que no cambió (25/11: el egress gratis de Supabase, 5 GB al
+ * mes, se iba en la bandeja y el chat abierto que se piden cada pocos segundos). Se
+ * calculan dentro de la base y solo viaja un md5.
+ */
+export async function firmaBandeja(ownerId?: string): Promise<string> {
+  const filas = await db.execute(sql`
+    select md5(coalesce(string_agg(
+      c.id || ':' || c.updated_at::text || ':' || coalesce(c.last_message_at::text, '') || ':' ||
+      coalesce(ct.updated_at::text, ''), ',' order by c.id), '') ||
+      coalesce((select max(updated_at)::text from deals), '')) as firma
+    from conversations c left join contacts ct on ct.id = c.contact_id
+    where c.last_message_at is not null
+    ${ownerId ? sql`and ct.owner_id = ${ownerId}` : sql``}`);
+  const fila = (Array.isArray(filas) ? filas[0] : (filas as { rows?: unknown[] }).rows?.[0]) as { firma?: string } | undefined;
+  return fila?.firma ?? "";
+}
+
+export async function firmaMensajes(conversationId: string): Promise<string> {
+  const filas = await db.execute(sql`
+    select md5(coalesce(string_agg(
+      id || ':' || status || ':' || coalesce(external_id, '') || ':' || coalesce(read_at::text, '') || ':' ||
+      coalesce(delivered_at::text, ''), ',' order by created_at, id), '')) as firma
+    from messages where conversation_id = ${conversationId}`);
+  const fila = (Array.isArray(filas) ? filas[0] : (filas as { rows?: unknown[] }).rows?.[0]) as { firma?: string } | undefined;
+  return fila?.firma ?? "";
 }
 
 /** Todos los hilos de un contacto, para el panel de detalle. */

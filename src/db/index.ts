@@ -70,7 +70,9 @@ function crearCliente() {
   const client = postgres(connectionString, {
     prepare: false,
     max: 10,
-    idle_timeout: 20,
+    // 25/11: con 20 s cada conexión nueva volvía a leer los tipos de la base (~380 filas);
+    // eran ~1.400 reconexiones al día. Una conexión ociosa de 4 min no cuesta nada.
+    idle_timeout: 240,
     connect_timeout: 10,
     // TLS obligatorio salvo que se diga lo contrario a mano.
     //

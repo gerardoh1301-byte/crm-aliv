@@ -13,6 +13,9 @@ interface Props {
 // consumía casi todo el ancho de banda gratis de Render (5 GB/mes).
 const POLL_INTERVAL_MS = 12000;
 const POLL_INTERVAL_HIDDEN_MS = 60000;
+// 25/11: se manda la firma de lo último recibido y el servidor responde 204 si nada cambió.
+// Cada 2 min se pide todo igual, por si algo cambió sin tocar la firma.
+const RECARGA_COMPLETA_MS = 120000;
 
 function rehydrate(raw: ConversationListItem): ConversationListItem {
   return {
@@ -27,6 +30,8 @@ export function ConversationsListLive({
 }: Props) {
   const [conversations, setConversations] = useState(initialConversations);
   const mountedRef = useRef(true);
+  const firmaRef = useRef<string | null>(null);
+  const completaRef = useRef(0);
 
   useEffect(() => {
     mountedRef.current = true;
@@ -34,10 +39,16 @@ export function ConversationsListLive({
 
     const refetch = async () => {
       try {
-        const res = await fetch("/api/conversations", { cache: "no-store" });
-        if (!res.ok) return;
+        const completa = Date.now() - completaRef.current > RECARGA_COMPLETA_MS;
+        const url = !completa && firmaRef.current
+          ? `/api/conversations?firma=${encodeURIComponent(firmaRef.current)}`
+          : "/api/conversations";
+        const res = await fetch(url, { cache: "no-store" });
+        if (!res.ok || res.status === 204) return;
         const data = (await res.json()) as ConversationListItem[];
         if (!mountedRef.current) return;
+        firmaRef.current = res.headers.get("x-firma");
+        completaRef.current = Date.now();
         setConversations(data.map(rehydrate));
       } catch {
         // retry on next tick

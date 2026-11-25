@@ -33,6 +33,40 @@ export function displayName(member: TeamMember | null | undefined): string {
 }
 
 /**
+ * 25/11: cada pedido de la bandeja (cada 6–12 s) llamaba a Supabase Auth `getUser()`, que
+ * consume egress de Supabase. El resultado se recuerda 60 s por cookie de sesión.
+ */
+const CACHE_USUARIO_MS = 60_000;
+const cacheUsuario = new Map<string, { hasta: number; user: { id: string; email: string | null } | null }>();
+
+async function usuarioSupabase(): Promise<{ id: string; email: string | null } | null> {
+  let clave = "";
+  try {
+    const store = await cookies();
+    clave = store
+      .getAll()
+      .filter((c) => c.name.startsWith("sb-") && c.name.includes("auth-token"))
+      .map((c) => c.value)
+      .join("|");
+  } catch {
+    // Fuera de contexto HTTP
+  }
+  const ahora = Date.now();
+  const previo = clave ? cacheUsuario.get(clave) : undefined;
+  if (previo && previo.hasta > ahora) return previo.user;
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  const resultado = user ? { id: user.id, email: user.email ?? null } : null;
+  if (clave) {
+    if (cacheUsuario.size > 200) cacheUsuario.clear();
+    cacheUsuario.set(clave, { hasta: ahora + CACHE_USUARIO_MS, user: resultado });
+  }
+  return resultado;
+}
+
+/**
  * Miembro del equipo de la sesion actual, o null si no hay sesion.
  */
 export async function getCurrentMember(): Promise<TeamMember | null> {
@@ -60,10 +94,7 @@ export async function getCurrentMember(): Promise<TeamMember | null> {
   }
 
   // 2. Verificar sesion de Supabase Auth (buscando por ID o por correo en team_members)
-  const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
+  const user = await usuarioSupabase();
   if (!user) return null;
 
   const userEmail = (user.email ?? "").trim().toLowerCase();
