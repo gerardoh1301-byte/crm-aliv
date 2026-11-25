@@ -102,10 +102,26 @@ export const BLOQUE_POSTULANTE = [
   "- NUNCA descartes ni desanimes a un postulante (por vivir en provincia o lejos de La Molina, por la edad, por su experiencia o por cualquier motivo): tú no decides quién pasa, decide el equipo. Si pone una condición o duda (no puede ir el día presencial, vive en otra ciudad, quiere solo part-time), dile que lo anotas y que el equipo lo revisa con él, y usa avisar_asesor incluyendo esa condición en el resumen.",
   "- No pidas datos que no estén aquí (edad exacta, distrito, DNI, dirección, correo). Solo pide que cuente su experiencia.",
   "- Si pregunta algo que no está aquí (part-time, horario exacto, fecha de inicio, dirección exacta en La Molina, contrato), responde esa pregunta diciendo que el equipo se lo confirma cuando lo contacte; no la ignores. No inventes datos.",
+  "- NUNCA digas que el puesto es a tiempo completo, jornada completa, medio tiempo, part-time ni full-time, ni des horas o días de trabajo: ese dato no lo tienes. Si lo pregunta, responde que la jornada y el horario se los confirma el equipo cuando lo contacte.",
   "- No repitas la explicación completa del puesto si ya la diste: responde directo a lo que pregunte.",
 ].join("\n");
 
 const FRASE_HORARIO = "El horario exacto te lo confirma el equipo cuando te contacte.";
+const FRASE_JORNADA = "La jornada y el horario exactos te los confirma el equipo cuando te contacte.";
+
+/**
+ * 25/11: a una postulante le dijo «El puesto es a tiempo completo (jornada completa)».
+ * Tampoco existe ese dato. Una frase que nombra el tipo de jornada sin decir que el equipo
+ * lo confirma es una afirmación inventada.
+ */
+const PATRON_JORNADA =
+  /\b(?:tiempo\s+completo|jornada\s+completa|medio\s+tiempo|tiempo\s+parcial|part[\s-]?time|full[\s-]?time)\b/i;
+const PATRON_CONFIRMA = /\bconfirm|\?/i;
+
+/** Se mira por partes («…tiempo completo; el horario te lo confirma el equipo» sigue inventando). */
+function jornadaInventada(frase: string): boolean {
+  return frase.split(/[;:]|\s[-–—]\s/).some((parte) => PATRON_JORNADA.test(parte) && !PATRON_CONFIRMA.test(parte));
+}
 
 /** Horas («8:30 a. m.», «6 pm», «9 a 6») o días de trabajo («de lunes a sábado»). */
 const PATRON_HORARIO =
@@ -120,18 +136,20 @@ const PATRON_HORARIO =
 export function quitarHorarioInventado(texto: string): string {
   // «a. m.» y «p. m.» se juntan antes de partir en frases: si no, el punto las corta.
   const normalizado = texto.replace(/\b([ap])\.\s?m\./gi, "$1m");
-  if (!PATRON_HORARIO.test(normalizado)) return texto;
+  const frasesTodas = normalizado.split(/(?<=[.!?])\s+|\n/);
+  if (!PATRON_HORARIO.test(normalizado) && !frasesTodas.some(jornadaInventada)) return texto;
   let reemplazada = false;
   const parrafos = normalizado.split("\n").map((linea) => {
     const frases = linea.split(/(?<=[.!?])\s+/);
     const salida: string[] = [];
     for (const f of frases) {
-      if (!PATRON_HORARIO.test(f)) {
+      const jornada = jornadaInventada(f);
+      if (!PATRON_HORARIO.test(f) && !jornada) {
         salida.push(f);
         continue;
       }
       if (!reemplazada) {
-        salida.push(FRASE_HORARIO);
+        salida.push(jornada ? FRASE_JORNADA : FRASE_HORARIO);
         reemplazada = true;
       }
     }

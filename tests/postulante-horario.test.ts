@@ -21,4 +21,23 @@ describe("postulante: no inventa el horario", () => {
     const r = quitarHorarioInventado("Entras a las 9 am. Sales a las 6 pm. ¿Te parece?");
     expect(r).toBe("El horario exacto te lo confirma el equipo cuando te contacte. ¿Te parece?");
   });
+
+  it("cambia «tiempo completo» inventado del 25/11", () => {
+    const real =
+      "El puesto es a tiempo completo (jornada completa); los detalles exactos del horario y los turnos te los confirmará el equipo de selección cuando te contacten. Cuéntame, ¿tienes experiencia previa en atención al cliente, call center o ventas?";
+    const r = quitarHorarioInventado(real);
+    expect(r).not.toMatch(/tiempo completo|jornada completa/i);
+    expect(r).toContain("La jornada y el horario exactos te los confirma el equipo cuando te contacte.");
+    expect(r).toContain("¿tienes experiencia previa");
+  });
+
+  it("dice part-time inventado", () => {
+    const r = quitarHorarioInventado("Sí, es part-time. Cuéntame tu experiencia.");
+    expect(r).toBe("La jornada y el horario exactos te los confirma el equipo cuando te contacte. Cuéntame tu experiencia.");
+  });
+
+  it("deja la respuesta correcta que remite al equipo", () => {
+    const t = "Si es part-time o tiempo completo te lo confirma el equipo cuando te contacte. ¿Me cuentas tu experiencia?";
+    expect(quitarHorarioInventado(t)).toBe(t);
+  });
 });
