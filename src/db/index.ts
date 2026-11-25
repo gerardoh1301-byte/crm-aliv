@@ -69,10 +69,12 @@ function crearCliente() {
 
   const client = postgres(connectionString, {
     prepare: false,
-    max: 10,
-    // 25/11: con 20 s cada conexión nueva volvía a leer los tipos de la base (~380 filas);
-    // eran ~1.400 reconexiones al día. Una conexión ociosa de 4 min no cuesta nada.
-    idle_timeout: 240,
+    // El pooler de Supabase en modo sesión admite 15 clientes EN TOTAL (CRM, ERP, scripts).
+    // 25/11: con max 10 e idle 240 s la instancia vieja retuvo sus conexiones y el despliegue
+    // nuevo no pudo migrar (EMAXCONNSESSION). 4 conexiones que se cierran al minuto alcanzan.
+    max: Number(process.env.DB_POOL_MAX) || 4,
+    // 20 s releía los tipos de la base en cada reconexión (~1.400 al día); 60 s es el punto medio.
+    idle_timeout: 60,
     connect_timeout: 10,
     // TLS obligatorio salvo que se diga lo contrario a mano.
     //
