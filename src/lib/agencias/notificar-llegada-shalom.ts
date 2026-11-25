@@ -544,6 +544,37 @@ ${marca}` : marca;
         continue;
       }
 
+      // 25/11: con la plantilla «en revisión» en Meta, cada barrido (cada 2 min) la reintentaba
+      // y dejaba un mensaje fallido nuevo: 100+ en un día al mismo cliente. Tras un fallo, espera 3 h.
+      if (!forzar) {
+        const [falloReciente] = await db
+          .select({ id: messages.id })
+          .from(messages)
+          .where(
+            and(
+              eq(messages.conversationId, c.convId),
+              eq(messages.templateName, "aliv_aviso_agencia_shalom"),
+              eq(messages.status, "failed"),
+              gt(messages.createdAt, sql`now() - interval '3 hours'`)
+            )
+          )
+          .limit(1);
+        if (falloReciente) {
+          detalles.push({
+            numeroOrden: c.numeroOrden,
+            cliente: c.contactName,
+            phone: c.contactPhone,
+            guia: c.numeroGuia,
+            agencia: agenciaNombre,
+            saldo: saldoSoles,
+            estadoLive: "En destino (último intento falló)",
+            notificado: false,
+            motivoNoNotificado: "El último intento falló hace menos de 3 h: se reintenta después.",
+          });
+          continue;
+        }
+      }
+
       // Redactar mensaje según el toque de la cadencia
       const mensajeAviso = mensajeToqueAgencia(toque, decisionCadencia.diasEnAgencia, {
         nombre: nombreLimpio,
