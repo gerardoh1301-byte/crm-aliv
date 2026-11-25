@@ -22,6 +22,10 @@ const ERP_BASE_URL = (
 
 let cachedErpToken: string | null = null;
 let cachedErpTokenExp = 0;
+// El ERP está en el plan gratis de Render y se duerme: el primer pedido tarda 20–50 s en
+// despertarlo. Con 12 s el aviso se perdía. Todas las llamadas son en segundo plano.
+const ERP_TIMEOUT_MS = 60_000;
+let avisoSinPin = false;
 
 async function leerErpPin(): Promise<string | null> {
   if (process.env.ALIV_FINANZAS_PIN?.trim()) {
@@ -47,16 +51,25 @@ async function obtenerTokenErp(forceRefresh = false): Promise<string | null> {
     return cachedErpToken;
   }
   const pin = await leerErpPin();
-  if (!pin) return null;
+  if (!pin) {
+    if (!avisoSinPin) {
+      avisoSinPin = true;
+      console.warn("[notificar-erp] Sin ALIV_FINANZAS_PIN ni auth.erp_pin: el ERP no recibe los cambios del CRM");
+    }
+    return null;
+  }
 
   try {
     const res = await fetch(`${ERP_BASE_URL}/api/auth/login`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ pin }),
-      signal: AbortSignal.timeout(12_000),
+      signal: AbortSignal.timeout(ERP_TIMEOUT_MS),
     });
-    if (!res.ok) return null;
+    if (!res.ok) {
+      console.warn(`[notificar-erp] El ERP rechazó el inicio de sesión (${res.status}); revisa ALIV_FINANZAS_PIN`);
+      return null;
+    }
     const data = (await res.json().catch(() => null)) as {
       ok?: boolean;
       token?: string;
@@ -171,7 +184,7 @@ export async function notificarCambioDealAlErp(
           stage: stagePayload,
           deal: dealPayload,
         }),
-        signal: AbortSignal.timeout(12_000),
+        signal: AbortSignal.timeout(ERP_TIMEOUT_MS),
       });
 
     let resp = await enviar(token);
