@@ -52,3 +52,13 @@ describe("cuenta de pedidos web (25/11: pedidos de Shopify por el 977)", () => {
     expect(atiendeVendedor({ accountId: "a-bot", aiEnabled: false }, bot, cuentas, vendedor)).toBe(false);
   });
 });
+
+describe("bot encendido en un número de vendedor (25/11: el 977 sin vendedor)", () => {
+  it("reconoce la cuenta por número, id o accountId de Zernio", async () => {
+    const { elegirCuentasConBot } = await import("@/lib/channels/numeros-reglas");
+    expect(elegirCuentasConBot(cuentas, JSON.stringify(["977126462"]))).toEqual(["a-vend"]);
+    expect(elegirCuentasConBot(cuentas, JSON.stringify(["z-977"]))).toEqual(["a-vend"]);
+    expect(elegirCuentasConBot(cuentas, null)).toEqual([]);
+    expect(elegirCuentasConBot(cuentas, "no es json")).toEqual([]);
+  });
+});

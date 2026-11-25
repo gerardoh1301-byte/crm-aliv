@@ -5,10 +5,12 @@ import { and, desc, eq, inArray, isNull, or } from "drizzle-orm";
 import {
   CLAVE_CUENTA_BOT,
   CLAVE_CUENTA_PEDIDOS_WEB,
+  CLAVE_CUENTAS_CON_BOT,
   CLAVE_NUMEROS_VENDEDOR,
   atiendeVendedor,
   elegirCuentaBot,
   elegirCuentaPedidosWeb,
+  elegirCuentasConBot,
   esNumeroDeVendedor,
   vendedorDelNumero,
   type CuentaWhatsapp,
@@ -21,6 +23,8 @@ let cache: {
   cuentas: CuentaWhatsapp[];
   bot: CuentaWhatsapp | null;
   pedidosWeb: CuentaWhatsapp | null;
+  /** Cuentas de vendedor donde por ahora atiende el bot (CLAVE_CUENTAS_CON_BOT). */
+  conBot: string[];
   mapa: string | null;
 } | null = null;
 
@@ -45,7 +49,7 @@ async function leer(): Promise<NonNullable<typeof cache>> {
   const ajustes = await db
     .select()
     .from(crmSettings)
-    .where(inArray(crmSettings.key, [CLAVE_CUENTA_BOT, CLAVE_NUMEROS_VENDEDOR, CLAVE_CUENTA_PEDIDOS_WEB]));
+    .where(inArray(crmSettings.key, [CLAVE_CUENTA_BOT, CLAVE_NUMEROS_VENDEDOR, CLAVE_CUENTA_PEDIDOS_WEB, CLAVE_CUENTAS_CON_BOT]));
   const valor = (k: string) => ajustes.find((a) => a.key === k)?.value ?? null;
   const bot = elegirCuentaBot(cuentas, valor(CLAVE_CUENTA_BOT));
   cache = {
@@ -53,6 +57,7 @@ async function leer(): Promise<NonNullable<typeof cache>> {
     cuentas,
     bot,
     pedidosWeb: elegirCuentaPedidosWeb(cuentas, valor(CLAVE_CUENTA_PEDIDOS_WEB), bot),
+    conBot: elegirCuentasConBot(cuentas, valor(CLAVE_CUENTAS_CON_BOT)),
     mapa: valor(CLAVE_NUMEROS_VENDEDOR),
   };
   return cache;
@@ -66,6 +71,7 @@ export async function cuentaBotWhatsapp(): Promise<CuentaWhatsapp | null> {
 /** true si la cuenta es el número de un vendedor (cualquier WhatsApp que no sea el del bot). */
 export async function esCuentaDeVendedor(accountId: string | null | undefined): Promise<boolean> {
   const d = await leer();
+  if (accountId && d.conBot.includes(accountId)) return false;
   return esNumeroDeVendedor(accountId, d.bot, d.cuentas);
 }
 
@@ -77,6 +83,7 @@ export async function cuentaPedidosWeb(): Promise<CuentaWhatsapp | null> {
 /** true si en esa conversación atiende una persona y no el bot (ver atiendeVendedor). */
 export async function atiendeVendedorEn(conv: { accountId: string | null | undefined; aiEnabled?: boolean | null }): Promise<boolean> {
   const d = await leer();
+  if (conv.accountId && d.conBot.includes(conv.accountId)) return false;
   return atiendeVendedor(conv, d.bot, d.cuentas, d.pedidosWeb);
 }
 

@@ -117,3 +117,34 @@ export function atiendeVendedor(
   if (!esNumeroDeVendedor(conv.accountId, cuentaBot, cuentas)) return false;
   return !(cuentaPedidosWeb && conv.accountId === cuentaPedidosWeb.id && conv.aiEnabled);
 }
+
+/**
+ * crm_settings: JSON con las cuentas de vendedor en las que, por ahora, atiende el bot
+ * (ej. ["977126462"] el 25/11, mientras no hay vendedor contratado). Se quita el número
+ * de la lista y el chat vuelve a ser del vendedor.
+ */
+export const CLAVE_CUENTAS_CON_BOT = "whatsapp.cuentas_con_bot";
+
+/** ids (channel_accounts.id) de las cuentas con el bot encendido según el ajuste. */
+export function elegirCuentasConBot(cuentas: CuentaWhatsapp[], json: string | null): string[] {
+  if (!json) return [];
+  let lista: unknown;
+  try {
+    lista = JSON.parse(json);
+  } catch {
+    return [];
+  }
+  if (!Array.isArray(lista)) return [];
+  const digitos = (v: string) => v.replace(/\D/g, "").slice(-9);
+  const ids = new Set<string>();
+  for (const ref of lista) {
+    if (typeof ref !== "string" || !ref.trim()) continue;
+    const r = ref.trim();
+    for (const c of cuentas) {
+      if (c.platform !== "whatsapp") continue;
+      const tel = c.username ? digitos(c.username) : "";
+      if (coincide(c, r) || (tel.length === 9 && digitos(r) === tel)) ids.add(c.id);
+    }
+  }
+  return [...ids];
+}
