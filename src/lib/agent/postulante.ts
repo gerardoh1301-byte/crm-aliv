@@ -59,6 +59,27 @@ export function esPostulante(historial: MensajeHistorial[], metadata?: unknown):
   );
 }
 
+/** Texto que guarda Zernio cuando Meta no entrega el mensaje (error 131060). */
+const PATRON_ILEGIBLE = /^\[Unsupported message\]/i;
+
+/**
+ * true si el PRIMER mensaje del cliente no llegó (Meta, error 131060). 24/11 y 25/11 los dos
+ * chats que empezaron así venían del aviso de empleo (con el anuncio adentro, que Meta no
+ * entrega): el bot no lo sabía y al 991420348 le ofreció NAC600 y Termix.
+ */
+export function primerMensajeIlegible(historial: MensajeHistorial[]): boolean {
+  const primero = historial.find((m) => m.role === "user");
+  return typeof primero?.content === "string" && PATRON_ILEGIBLE.test(primero.content.trim());
+}
+
+export const BLOQUE_MENSAJE_ILEGIBLE = [
+  "\n\n# PRIMER MENSAJE NO LLEGÓ (ESTO MANDA SOBRE EL GUION DE VENTA)",
+  "El primer mensaje de esta persona llegó como «[Unsupported message]»: WhatsApp no nos lo entregó. Suele pasar cuando escriben desde un anuncio, y puede ser un anuncio de producto o el aviso de empleo (Asesor(a) de confirmaciones). Todavía no sabes a qué vino.",
+  "Mientras en el chat no quede claro si busca un producto o el empleo, NO ofrezcas productos, NO des precios y NO preguntes «¿lo buscas para ti o para alguien de tu familia?».",
+  "Responde en un solo mensaje corto: saluda, di que su primer mensaje no nos llegó completo y pregúntale si nos escribe por un producto (NAC600 o Termix) o por el aviso de empleo de asesor(a) de confirmaciones.",
+  "Si ya respondió que es por un producto, sigue normal con la venta. Si su respuesta es ambigua («es para mí», «info», «hola»), vuelve a preguntarlo de forma amable en una frase.",
+].join("\n");
+
 export const BLOQUE_POSTULANTE = [
   "\n\n# MODO POSTULANTE (ESTO MANDA SOBRE TODO LO ANTERIOR)",
   "Esta persona NO es cliente: escribe por el aviso de empleo de Aliv Perú, para postular al puesto de *Asesor(a) de confirmaciones* (también lo llamamos asesor comercial). Sí estamos contratando: nunca le digas que no hay empleo ni que Aliv Perú no contrata.",

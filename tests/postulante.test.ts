@@ -55,3 +55,31 @@ describe("reglas del modo postulante (revisión 24/11)", () => {
     expect(BLOQUE_POSTULANTE).toMatch(/part-time/);
   });
 });
+
+import { BLOQUE_MENSAJE_ILEGIBLE, primerMensajeIlegible } from "@/lib/agent/postulante";
+
+describe("primer mensaje que Meta no entregó (131060)", () => {
+  it("lo detecta aunque después escriba otra cosa (caso 991420348)", () => {
+    expect(
+      primerMensajeIlegible([
+        { role: "user", content: "[Unsupported message]" },
+        { role: "assistant", content: "¡Hola!" },
+        { role: "user", content: "Hola, es para mi" },
+      ])
+    ).toBe(true);
+    expect(primerMensajeIlegible([{ role: "user", content: "[Unsupported message]\nHola" }])).toBe(true);
+  });
+
+  it("un chat normal no cambia", () => {
+    expect(primerMensajeIlegible([{ role: "user", content: "Hola, quiero info del NAC600" }])).toBe(false);
+  });
+
+  it("el bloque pide aclarar producto o empleo y prohíbe vender antes", () => {
+    expect(BLOQUE_MENSAJE_ILEGIBLE).toContain("aviso de empleo");
+    expect(BLOQUE_MENSAJE_ILEGIBLE).toContain("NO ofrezcas productos");
+  });
+
+  it("al responder «por el empleo» ya entra en modo postulante", () => {
+    expect(esPostulante([{ role: "user", content: "[Unsupported message]" }, { role: "user", content: "por el empleo" }])).toBe(true);
+  });
+});

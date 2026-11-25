@@ -19,7 +19,7 @@ import { getAgentConfig } from "./config";
 import { renderContextoDetallado, renderSystemPrompt } from "./prompt";
 import { exigirDatosEnvio, type RequisitosShalom } from "./datos-envio";
 import { esSaludoAutomatico, productoDelAnuncio, renderOrigenAnuncio } from "./origen-anuncio";
-import { BLOQUE_POSTULANTE, esPostulante, quitarHorarioInventado, TAG_POSTULANTE } from "./postulante";
+import { BLOQUE_MENSAJE_ILEGIBLE, BLOQUE_POSTULANTE, esPostulante, primerMensajeIlegible, quitarHorarioInventado, TAG_POSTULANTE } from "./postulante";
 import { aplicarEtiquetaAContacto } from "./etiquetado";
 import { asegurarPreguntaDeAvance, renderGuionVenta } from "./guion-venta";
 import { detectarSenalesPrompt } from "./prompt-bloques";
@@ -260,7 +260,9 @@ async function executeAgentTurn(
           ? "\n\n# ESTADO DEL CHAT: CONVERSACIÓN EN CURSO (PROHIBIDO SALUDAR DE NUEVO Y PROHIBIDO REPETIR TABLA DE PRECIOS)\nYa has saludado al cliente en mensajes anteriores de este chat. ESTÁ ESTRICTAMENTE PROHIBIDO volver a decir '¡Hola', 'Hola [nombre]' o saludar de nuevo. Si ya enviaste los precios en un turno anterior, NO vuelvas a pegar la lista de precios (• 1 frasco... • 2 frascos...). Responde DIRECTAMENTE a lo que dijo o preguntó el cliente en 2 a 3 líneas cortas y naturales, como un vendedor humano por WhatsApp."
           : "") +
         equipo +
-        (postulante ? BLOQUE_POSTULANTE : guion.bloque),
+        (postulante
+          ? BLOQUE_POSTULANTE
+          : guion.bloque + (!tienePedidoReciente && primerMensajeIlegible(collapsed) ? BLOQUE_MENSAJE_ILEGIBLE : "")),
     },
     ...collapsed,
   ];
@@ -795,7 +797,8 @@ async function loadHistory(conversationId: string): Promise<CollapsedHistory> {
     if (!text) continue;
     // Evitar bucle infinito cuando llegan reacciones, stickers o eventos "[Unsupported message]"
     // si ya hubo atención previa en el chat.
-    if (role === "user" && hayRespuestaPrevia && /^\[(?:Unsupported message|sticker)\]$/i.test(text)) {
+    // El primero del chat se queda: avisa que el mensaje inicial (quizá el del anuncio) no llegó.
+    if (role === "user" && hayRespuestaPrevia && collapsed.length > 0 && /^\[(?:Unsupported message|sticker)\]$/i.test(text)) {
       continue;
     }
     const last = collapsed[collapsed.length - 1];
