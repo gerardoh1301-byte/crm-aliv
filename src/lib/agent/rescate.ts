@@ -14,6 +14,7 @@ import { esPedidoDeProvincia } from "@/lib/pedidos/adelanto";
 import { createChatCompletionWithFallback, hasOpenRouterKey, getAgentModel } from "./openrouter";
 import { limpiarFormatoWhatsApp } from "./formato";
 import { abandonoEnCurso } from "@/lib/abandonos/reglas";
+import { indicaPostulante } from "./postulante";
 import { corregirImagenSaliente } from "./etiqueta-imagen";
 import {
   clasificarObjecionCliente,
@@ -39,6 +40,8 @@ export interface ContextoChatParaAuditoria {
     id: string;
     lastMessageAt: Date | string | null;
     channel: string;
+    /** Datos del anuncio (ctwa_*): el anuncio de empleo marca al postulante. */
+    metadata?: unknown;
   };
   ultimoMensaje: {
     direction: string;
@@ -216,6 +219,13 @@ function determinarEscenarioBase(
   const tieneExcluyente = tags.some((t) => tagsExcluyentes.includes(t.toLowerCase().trim()));
   if (tieneExcluyente) {
     return { esElegible: false, motivoDescarte: "Contacto con etiqueta de cierre, pagado o ya rescatado" };
+  }
+  // 25/11: un postulante sin etiqueta (el bot nunca procesó su chat) recibió un rescate de venta.
+  const historialPostulante = [ultimoMensaje, ...(historialMensajes ?? [])].some(
+    (m) => m && indicaPostulante({ direction: m.direction, body: m.body })
+  );
+  if (historialPostulante || indicaPostulante({ direction: "out", body: null, metadata: conversation.metadata })) {
+    return { esElegible: false, motivoDescarte: "Postulante al empleo: no recibe mensajes de venta" };
   }
   if (segundoToque && !tags.some((t) => t.toLowerCase().trim() === "rescate_enviado")) {
     return { esElegible: false, motivoDescarte: "Segundo toque sin primer rescate previo" };
@@ -822,6 +832,7 @@ export async function auditarChatsAbandonados(opts?: { limite?: number; forzarHo
         channel: conversations.channel,
         lastMessageAt: conversations.lastMessageAt,
         lastInboundAt: conversations.lastInboundAt,
+        convMetadata: conversations.metadata,
         contactId: contacts.id,
         contactName: contacts.name,
         contactPhone: contacts.phone,
@@ -927,6 +938,7 @@ export async function auditarChatsAbandonados(opts?: { limite?: number; forzarHo
           id: c.convId,
           lastMessageAt: c.lastMessageAt,
           channel: c.channel,
+          metadata: c.convMetadata,
         },
         ultimoMensaje: ultimoMsg ?? null,
         historialMensajes: ultimosMensajes,

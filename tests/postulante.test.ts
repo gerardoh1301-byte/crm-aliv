@@ -83,3 +83,20 @@ describe("primer mensaje que Meta no entregó (131060)", () => {
     expect(esPostulante([{ role: "user", content: "[Unsupported message]" }, { role: "user", content: "por el empleo" }])).toBe(true);
   });
 });
+
+describe("indicaPostulante (25/11: Flor, 958479456)", () => {
+  it("detecta por el anuncio, por «remoto» del cliente y por lo que escribe el equipo", async () => {
+    const { indicaPostulante } = await import("@/lib/agent/postulante");
+    expect(indicaPostulante({ direction: "in", body: "Me interesa todo Remoto" })).toBe(true);
+    expect(indicaPostulante({ direction: "out", body: "Por favor, agenda una reunión: https://calendar.app.google/4Vjx" })).toBe(true);
+    expect(indicaPostulante({ direction: "out", body: "Estamos buscando un/a Asesor(a) de confirmaciones para nuestro equipo" })).toBe(true);
+    expect(indicaPostulante({ direction: "in", body: null, metadata: { ctwa_headline: "Empleo: Asesor(a) de confirmaciones" } })).toBe(true);
+  });
+
+  it("no marca a un cliente normal", async () => {
+    const { indicaPostulante } = await import("@/lib/agent/postulante");
+    expect(indicaPostulante({ direction: "in", body: "Quiero 3 frascos de NAC600, estoy en el trabajo" })).toBe(false);
+    expect(indicaPostulante({ direction: "out", body: "¿Te gustaría empezar con 1 frasco de S/119?" })).toBe(false);
+    expect(indicaPostulante({ direction: "in", body: "hola", metadata: { ctwa_headline: "NAC600 + NAD+" } })).toBe(false);
+  });
+});

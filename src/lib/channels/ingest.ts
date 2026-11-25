@@ -429,6 +429,18 @@ export async function ingestMessage(
     sentAt,
   });
 
+  // Postulantes: la etiqueta se pone al entrar el mensaje (también los que el equipo escribe
+  // desde el celular), para que ningún seguimiento de venta les llegue.
+  if (conv.contactId && conv.channel === "whatsapp") {
+    const { marcarPostulanteSiCorresponde } = await import("@/lib/agent/postulante-servidor");
+    await marcarPostulanteSiCorresponde({
+      contactId: conv.contactId,
+      direction: input.direction,
+      body: input.body,
+      metadata: conv.metadata,
+    }).catch((err) => console.warn("[ingest] no se pudo marcar postulante:", err));
+  }
+
   if (input.direction !== "in") {
     return { duplicate: false, messageId, jobId: null };
   }

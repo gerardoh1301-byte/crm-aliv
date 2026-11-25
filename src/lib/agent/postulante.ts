@@ -59,6 +59,25 @@ export function esPostulante(historial: MensajeHistorial[], metadata?: unknown):
   );
 }
 
+/**
+ * 25/11: Flor (958479456) llegó por el anuncio de empleo, escribió «Me interesa todo Remoto»
+ * y el equipo le respondió a mano con el enlace de la reunión. El bot nunca procesó su chat,
+ * así que nadie la etiquetó y el rescate de ventas le ofreció NAC600. La etiqueta se pone al
+ * entrar cada mensaje: por el anuncio, por lo que escribe ella o por lo que le escribe el equipo.
+ */
+const PATRON_CLIENTE_REMOTO = /\b(?:100\s*%\s*)?remot[oa]s?\b/i;
+const PATRON_EQUIPO_EMPLEO =
+  /calendar\.app\.google|asesor(?:a|\(a\))?\s+de\s+confirmaciones|sumarte\s+a\s+(?:aliv|nuestro\s+equipo)|estamos\s+contratando|trabajar\s+100\s*%\s*remoto|revisamos\s+tu\s+experiencia/i;
+
+/** true si este mensaje (o el anuncio del chat) muestra que la persona viene por el empleo. */
+export function indicaPostulante(params: { direction: string; body: string | null | undefined; metadata?: unknown }): boolean {
+  if (vieneDeAnuncioEmpleo(params.metadata)) return true;
+  const texto = (params.body ?? "").trim();
+  if (!texto) return false;
+  if (params.direction === "in") return PATRONES_POSTULANTE.some((p) => p.test(texto)) || PATRON_CLIENTE_REMOTO.test(texto);
+  return PATRON_EQUIPO_EMPLEO.test(texto);
+}
+
 /** Texto que guarda Zernio cuando Meta no entrega el mensaje (error 131060). */
 const PATRON_ILEGIBLE = /^\[Unsupported message\]/i;
 
