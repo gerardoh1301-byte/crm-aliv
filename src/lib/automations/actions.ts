@@ -5,6 +5,8 @@ import { and, desc, eq, or, sql } from "drizzle-orm";
 import { notifyMember } from "@/lib/notifications";
 import { resolveConversationId } from "@/lib/conversations";
 import { deliverMessage } from "@/lib/channels/deliver";
+import { alertarEquipo } from "@/lib/agent/alertas";
+import { notificarSupervisoresCritico } from "@/lib/alerts/supervisor-alerts";
 import { displayName, getMember, listMembers } from "@/lib/team";
 import { assignContact } from "@/lib/contacts/assign";
 import { SOURCE_LABELS } from "@/lib/constants";
@@ -385,6 +387,19 @@ const sendMessage: ActionDef = {
       "agent"
     );
     if (!res.ok) {
+      // 24/11: tras la reconexión del número las plantillas no existían en la WABA nueva y la
+      // confirmación del pedido #1178 falló sin que nadie se enterara. Si no sale la
+      // confirmación de un pedido, el chat queda para una persona y se avisa al equipo.
+      if (template) {
+        await avisarConfirmacionFallida({
+          contactId: ctx.contactId,
+          conversationId,
+          pedido: String(payload.numeroOrden || payload.orderId || ""),
+          clienteNombre: contactInfo?.name ?? null,
+          clienteTelefono: contactInfo?.phone ?? null,
+          error: res.error ?? "sin detalle",
+        });
+      }
       return {
         status: "skipped",
         detail: res.error ?? "No se pudo entregar el mensaje",
@@ -578,4 +593,62 @@ export async function stageLabel(stageId: string): Promise<string> {
     .where(eq(pipelines.id, s.pipelineId))
     .limit(1);
   return p ? `${p.name} › ${s.name}` : s.name;
+}
+
+/**
+ * La confirmación de un pedido no salió (plantilla rechazada o inexistente, cuenta bloqueada
+ * por Meta, número caído): el chat queda marcado para una persona y el equipo recibe el aviso
+ * en el CRM y por WhatsApp para llamar al cliente. Nunca lanza.
+ */
+async function avisarConfirmacionFallida(input: {
+  contactId: string;
+  conversationId: string;
+  pedido: string;
+  clienteNombre: string | null;
+  clienteTelefono: string | null;
+  error: string;
+}): Promise<void> {
+  try {
+    let { clienteNombre, clienteTelefono } = input;
+    if (!clienteNombre || !clienteTelefono) {
+      const [c] = await db
+        .select({ name: contacts.name, phone: contacts.phone })
+        .from(contacts)
+        .where(eq(contacts.id, input.contactId))
+        .limit(1);
+      clienteNombre = clienteNombre ?? c?.name ?? null;
+      clienteTelefono = clienteTelefono ?? c?.phone ?? null;
+    }
+    const pedido = input.pedido ? `#${input.pedido.replace(/^#/, "")}` : "del cliente";
+    const motivo = `No salió la confirmación del pedido ${pedido} por WhatsApp: llamar al cliente`;
+    const ahora = new Date();
+    await Promise.all([
+      db
+        .update(conversations)
+        .set({ needsHuman: true, needsHumanReason: motivo, needsHumanAt: ahora, updatedAt: ahora })
+        .where(eq(conversations.id, input.conversationId)),
+      db
+        .update(contacts)
+        .set({ needsHuman: true, needsHumanReason: motivo, needsHumanAt: ahora, updatedAt: ahora })
+        .where(eq(contacts.id, input.contactId)),
+    ]);
+    const detalle = `${motivo}. Error de WhatsApp: ${input.error.slice(0, 160)}`;
+    await alertarEquipo({
+      contactId: input.contactId,
+      conversationId: input.conversationId,
+      titulo: `Confirmación no enviada · pedido ${pedido}`,
+      cuerpo: detalle,
+    });
+    await notificarSupervisoresCritico({
+      tipo: "bot_sin_respuesta",
+      titulo: `Confirmación no enviada · pedido ${pedido}`,
+      detalle,
+      clienteNombre: clienteNombre ?? undefined,
+      clienteTelefono: clienteTelefono ?? undefined,
+      contactId: input.contactId,
+      conversationId: input.conversationId,
+    });
+  } catch (err) {
+    console.warn("[automations] no se pudo avisar la confirmación fallida:", err instanceof Error ? err.message : err);
+  }
 }
