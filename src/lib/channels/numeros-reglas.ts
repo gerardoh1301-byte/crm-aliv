@@ -15,13 +15,18 @@ export interface CuentaWhatsapp {
   provider: string;
   platform: string;
   zernioAccountId: string | null;
+  /** Teléfono que muestra Zernio («+51 977 126 462»). */
+  username?: string | null;
   status: string;
   createdAt: Date | string;
 }
 
 /** crm_settings: id de la cuenta del bot (channel_accounts.id o el accountId de Zernio). */
 export const CLAVE_CUENTA_BOT = "whatsapp.cuenta_bot";
-/** crm_settings: JSON { "<channel_accounts.id o accountId de Zernio>": "<team_members.id>" }. */
+/**
+ * crm_settings: JSON { "<número, channel_accounts.id o accountId de Zernio>": "<team_members.id>" }.
+ * El número sirve para dejarlo listo antes de conectar (ej. { "977126462": "<id de Stephano>" }).
+ */
 export const CLAVE_NUMEROS_VENDEDOR = "whatsapp.numeros_vendedor";
 
 function coincide(c: CuentaWhatsapp, ref: string): boolean {
@@ -73,6 +78,9 @@ export function vendedorDelNumero(
   }
   if (!mapa || typeof mapa !== "object") return null;
   const m = mapa as Record<string, unknown>;
-  const valor = m[cuenta.id] ?? (cuenta.zernioAccountId ? m[cuenta.zernioAccountId] : undefined);
+  const digitos = (v: string) => v.replace(/\D/g, "").slice(-9);
+  const tel = cuenta.username ? digitos(cuenta.username) : "";
+  const porNumero = tel.length === 9 ? Object.entries(m).find(([k]) => digitos(k) === tel)?.[1] : undefined;
+  const valor = m[cuenta.id] ?? (cuenta.zernioAccountId ? m[cuenta.zernioAccountId] : undefined) ?? porNumero;
   return typeof valor === "string" && valor.trim() ? valor.trim() : null;
 }

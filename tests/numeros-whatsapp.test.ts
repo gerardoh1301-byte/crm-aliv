@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { elegirCuentaBot, esNumeroDeVendedor, vendedorDelNumero, type CuentaWhatsapp } from "@/lib/channels/numeros-reglas";
 
 const bot: CuentaWhatsapp = { id: "a-bot", provider: "zernio", platform: "whatsapp", zernioAccountId: "z-944", status: "active", createdAt: "2026-11-16T17:04:52Z" };
-const vendedor: CuentaWhatsapp = { id: "a-vend", provider: "zernio", platform: "whatsapp", zernioAccountId: "z-977", status: "active", createdAt: "2026-11-25T03:00:00Z" };
+const vendedor: CuentaWhatsapp = { id: "a-vend", provider: "zernio", platform: "whatsapp", zernioAccountId: "z-977", username: "+51 977 126 462", status: "active", createdAt: "2026-11-25T03:00:00Z" };
 const cuentas = [vendedor, bot];
 
 describe("varios números de WhatsApp", () => {
@@ -26,6 +26,8 @@ describe("varios números de WhatsApp", () => {
   it("el vendedor sale del mapa por id de cuenta o por accountId de Zernio", () => {
     expect(vendedorDelNumero(vendedor, JSON.stringify({ "z-977": "m-stephano" }))).toBe("m-stephano");
     expect(vendedorDelNumero(vendedor, JSON.stringify({ "a-vend": "m-1" }))).toBe("m-1");
+    expect(vendedorDelNumero(vendedor, JSON.stringify({ "977126462": "m-tel" }))).toBe("m-tel");
+    expect(vendedorDelNumero(vendedor, JSON.stringify({ "999999999": "m-otro" }))).toBeNull();
     expect(vendedorDelNumero(vendedor, "no es json")).toBeNull();
     expect(vendedorDelNumero(vendedor, null)).toBeNull();
     expect(vendedorDelNumero(bot, JSON.stringify({ "z-977": "m-stephano" }))).toBeNull();

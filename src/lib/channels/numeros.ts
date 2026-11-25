@@ -27,6 +27,7 @@ async function leer(): Promise<NonNullable<typeof cache>> {
       provider: channelAccounts.provider,
       platform: channelAccounts.platform,
       zernioAccountId: channelAccounts.zernioAccountId,
+      username: channelAccounts.username,
       status: channelAccounts.status,
       createdAt: channelAccounts.createdAt,
     })
