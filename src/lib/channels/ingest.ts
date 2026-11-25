@@ -432,10 +432,14 @@ export async function ingestMessage(
 
   // Si entra un mensaje del cliente, asegurar asignación automática al asesor configurado
   const numeroDeVendedor = conv.channel === "whatsapp" && (await esCuentaDeVendedor(conv.accountId));
+  const tooOld = Date.now() - sentAt.getTime() > MAX_AGE_FOR_AGENT_MS;
+  // Historial importado (backfill o sincronización de coexistencia): no reasigna. Al conectar
+  // el 977126462 llegaron 216 chats de clientes que ya eran de Lourdes.
+  const enVivo = (input.enqueueAgent ?? true) && !tooOld;
   if (conv.contactId) {
     if (numeroDeVendedor) {
-      // El cliente le escribió al número del vendedor: el chat es de ese vendedor.
-      await asignarAlVendedorDelNumero(conv.contactId, conv.accountId);
+      // El cliente le escribió (ahora) al número del vendedor: el chat es de ese vendedor.
+      if (enVivo) await asignarAlVendedorDelNumero(conv.contactId, conv.accountId);
     } else {
       await applyAutoAssignToContact(conv.contactId);
     }
@@ -444,8 +448,7 @@ export async function ingestMessage(
   // En el número de un vendedor el bot nunca se reactiva solo.
   if (!numeroDeVendedor) await maybeReactivateAfterInactivity(conv.id, conv.contactId);
 
-  const tooOld = Date.now() - sentAt.getTime() > MAX_AGE_FOR_AGENT_MS;
-  const shouldEnqueue = (input.enqueueAgent ?? true) && !tooOld && !numeroDeVendedor;
+  const shouldEnqueue = enVivo && !numeroDeVendedor;
   if (!shouldEnqueue || !conv.contactId) {
     return { duplicate: false, messageId, jobId: null };
   }

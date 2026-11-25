@@ -1,7 +1,7 @@
 import "server-only";
 import { db } from "@/db";
 import { channelAccounts, contacts, conversations, messages } from "@/db/schema";
-import { and, asc, desc, eq, isNull, ne, or, sql } from "drizzle-orm";
+import { and, asc, desc, eq, isNotNull, isNull, ne, or, sql } from "drizzle-orm";
 import { isChannel, type Channel } from "@/lib/channels/types";
 
 /**
@@ -150,6 +150,9 @@ export async function listConversations(filter?: {
     .where(
       and(
         soloConectadas,
+        // Chats sin ningún mensaje (al conectar un número, Zernio crea uno por cada contacto
+        // del celular): no se muestran hasta que alguien escriba.
+        isNotNull(conversations.lastMessageAt),
         filter?.channel ? eq(conversations.channel, filter.channel) : undefined,
         // Un asesor ve UNICAMENTE los hilos de los contactos que tiene asignados.
         // Los no asignados o asignados a otros asesores solo los ve el admin (maestro).
