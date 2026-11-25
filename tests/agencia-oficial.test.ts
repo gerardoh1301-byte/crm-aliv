@@ -48,3 +48,14 @@ describe("padrón de agencias que propone el bot", () => {
     expect(todas.some((d) => /km 4\.2/i.test(d))).toBe(false);
   });
 });
+
+describe("sede por nombre con Shalom mal escrito (25/11, #1181)", () => {
+  it("«En shallon PAITA» es la única sede Paita", () => {
+    const r = resolverAgenciaOficial({ texto: "En shallon PAITA", ciudad: "Piura paita" });
+    expect(r.motivo).toBe("exacta");
+    expect(r.agencia?.nombre).toBe("Shalom Paita");
+  });
+  it("solo la ciudad, sin nombrar Shalom ni agencia, no basta", () => {
+    expect(resolverAgenciaOficial({ texto: "en paita", ciudad: "Piura paita" }).motivo).not.toBe("exacta");
+  });
+});

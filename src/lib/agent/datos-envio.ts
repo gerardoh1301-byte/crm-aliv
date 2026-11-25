@@ -167,6 +167,16 @@ function pideAgencia(texto: string): boolean {
     .split(/(?<=[.!?\n])/)
     .some((o) => PIDE_AGENCIA_FRASE.test(o) && VERBO_PEDIDO.test(o));
 }
+/**
+ * El modelo ya mostró las sedes y preguntó (25/11, #1181: «¿Cuál de estas es la que te queda
+ * mejor?» sin repetir la palabra agencia): no se vuelve a pegar la misma lista debajo.
+ */
+function listaAgencias(texto: string, opciones: string[]): boolean {
+  if (!texto.includes("?") || !/(agencias?|sedes?|shalom)/i.test(texto)) return false;
+  const t = texto.toLowerCase();
+  return opciones.some((o) => t.includes(o.split("(")[0].trim().toLowerCase()));
+}
+
 /** Promesas de clave o despacho que no se pueden cumplir sin guía emitida. */
 const PROMESA_SIN_GUIA =
   /[^.!?\n]*(?:te\s+enviar[áa]n?[^.!?\n]*clave|clave\s+de\s+(?:retiro|recojo)|ya\s+(?:est[áa]\s+)?(?:listo|despachado)\s+(?:para\s+)?(?:el\s+)?despacho|avis[ée]\s+(?:al\s+equipo\s+)?para\s+despachar)[^.!?\n]*[.!?]?\s*/gi;
@@ -216,14 +226,14 @@ export function exigirDatosEnvio(
     }
   }
   const yaPideDni = !req.faltaDni || PIDE_DNI.test(texto);
-  const yaPideAgencia = !req.faltaAgencia || pideAgencia(texto);
+  const yaPideAgencia = !req.faltaAgencia || pideAgencia(texto) || listaAgencias(texto, req.opciones);
   if (yaPideDni && yaPideAgencia) return { texto, agregado: false, promesaQuitada };
 
   // Lo que falta se pide completo (aunque el modelo haya pedido una parte).
   const pedido = textoPedirDatos({
     ...req,
     faltaDni: req.faltaDni && !PIDE_DNI.test(texto),
-    faltaAgencia: req.faltaAgencia && !pideAgencia(texto),
+    faltaAgencia: req.faltaAgencia && !pideAgencia(texto) && !listaAgencias(texto, req.opciones),
   });
   // Una despedida al final ya no tiene sentido si seguimos pidiendo datos.
   texto = texto

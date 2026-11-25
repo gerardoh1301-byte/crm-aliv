@@ -115,3 +115,14 @@ describe("requisitos de envío Shalom", () => {
     expect(r.faltaDni && r.faltaAgencia).toBe(true);
   });
 });
+
+describe("no repetir la lista de agencias (25/11, #1181)", () => {
+  it("si el modelo ya listó las sedes y preguntó, no se vuelve a pegar", () => {
+    const req = { aplica: true, conPedido: true, faltaDni: false, faltaAgencia: true, ciudad: "Piura paita", numeroOrden: "#1181",
+      opciones: ["Shalom Paita (MZ. H LT. 14 URB. SOL Y MAR - PAITA)", "Shalom Ayabaca (CALLE BOLOGNESI N° 136)"] };
+    const reply = "Necesito el nombre exacto de la agencia Shalom para tu guía.\n\n• Shalom Paita (MZ. H LT. 14 URB. SOL Y MAR - PAITA)\n• Shalom Ayabaca (CALLE BOLOGNESI N° 136)\n\n¿Cuál de estas es la que te queda mejor?";
+    const r = exigirDatosEnvio(reply, req);
+    expect(r.agregado).toBe(false);
+    expect(r.texto).toBe(reply);
+  });
+});

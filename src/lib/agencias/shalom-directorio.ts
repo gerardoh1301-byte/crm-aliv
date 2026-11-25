@@ -1211,5 +1211,15 @@ export function resolverAgenciaOficial(params: {
     return { agencia: evaluadas[0].ag, opciones, motivo: "exacta" };
   }
   if (evaluadas.length > 1) return { agencia: null, opciones, motivo: "ambigua" };
+  // «En shallon PAITA» (25/11, #1181): el cliente nombra Shalom (aunque mal escrito) y una
+  // sede cuyo nombre es una sola palabra. Si en la zona hay UNA sola sede con ese nombre, es esa.
+  const textoCliente = ` ${normalizarTexto(params.texto)} `;
+  if (!kmDistinto && / (?:shal+on|shal+om|salom|chalom|agencia) /.test(textoCliente)) {
+    const porNombre = enZona.filter((ag) => {
+      const sede = normalizarTexto(ag.distrito);
+      return sede.length >= 4 && !sede.includes(" ") && textoCliente.includes(` ${sede} `);
+    });
+    if (porNombre.length === 1) return { agencia: porNombre[0], opciones: [porNombre[0]], motivo: "exacta" };
+  }
   return { agencia: null, opciones: palabrasCiudad.length ? opciones : [], motivo: kmDistinto ? "km_distinto" : "no_encontrada" };
 }
