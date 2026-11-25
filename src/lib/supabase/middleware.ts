@@ -24,6 +24,7 @@ const PUBLIC_API_PREFIXES = [
   "/api/aliclik/sincronizar-entregas",
   // Imagen de la guía para WhatsApp: solo con token aleatorio por pedido.
   "/api/publico/guia/",
+  "/api/publico/resumen/",
 ];
 
 export async function updateSession(request: NextRequest) {

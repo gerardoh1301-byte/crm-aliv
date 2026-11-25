@@ -28,17 +28,6 @@ export interface ActividadDia {
 }
 
 export const HORA_RESUMEN_LIMA = 22;
-/** Máximo de clientes listados por sección (WhatsApp corta a 4096 caracteres). */
-export const MAX_POR_SECCION = 8;
-
-const TITULOS: Record<TipoPendiente, string> = {
-  esperando: "💬 *Esperan tu respuesta*",
-  asesor: "🙋 *Pidieron hablar con una persona*",
-  por_cerrar: "🛒 *Por cerrar (intención de compra)*",
-  postulante: "👔 *Postulantes por contactar*",
-};
-const ORDEN: TipoPendiente[] = ["esperando", "asesor", "por_cerrar", "postulante"];
-
 /** Los postulantes (anuncio de empleo) no son clientes: solo los ve el administrador. */
 export function esPostulante(motivo: string | null | undefined): boolean {
   return /^postulante/i.test((motivo ?? "").trim());
@@ -60,12 +49,8 @@ export function tocaResumen(ahora: Date): boolean {
   return horaLima(ahora) >= HORA_RESUMEN_LIMA;
 }
 
-function telCorto(tel: string | null): string {
-  const d = (tel ?? "").replace(/\D/g, "").slice(-9);
-  return d ? d.replace(/(\d{3})(\d{3})(\d{3})/, "$1 $2 $3") : "sin número";
-}
-
-function hace(desde: Date | string | null, ahora: Date): string {
+/** «hace 5 h», «hace 2 días». */
+export function hace(desde: Date | string | null, ahora: Date): string {
   if (!desde) return "";
   const min = Math.max(0, Math.round((ahora.getTime() - new Date(desde).getTime()) / 60_000));
   if (min < 60) return `hace ${min} min`;
@@ -74,40 +59,44 @@ function hace(desde: Date | string | null, ahora: Date): string {
   return `hace ${Math.round(h / 24)} días`;
 }
 
-function recortar(t: string | null, n = 70): string {
-  const limpio = (t ?? "").replace(/\s+/g, " ").trim();
-  return limpio.length > n ? `${limpio.slice(0, n - 1)}…` : limpio;
+function nombreCorto(p: Pendiente): string {
+  return (p.nombre ?? "").replace(/\s+/g, " ").trim().split(" ").slice(0, 2).join(" ") || "un cliente";
 }
 
-function linea(p: Pendiente, ahora: Date): string {
-  const extra = [recortar(p.detalle), hace(p.desde, ahora)].filter(Boolean).join(" · ");
-  return `• ${p.nombre?.trim() || "Sin nombre"} (${telCorto(p.telefono)})${extra ? ` — ${extra}` : ""}`;
+/** Cuántos hay de cada tipo, en líneas cortas (solo las que tienen algo). */
+function conteos(pendientes: Pendiente[], incluirPostulantes: boolean): string[] {
+  const n = (t: TipoPendiente) => pendientes.filter((p) => p.tipo === t).length;
+  return [
+    n("esperando") ? `💬 ${n("esperando")} esperan respuesta` : "",
+    n("asesor") ? `🙋 ${n("asesor")} pidieron hablar con una persona` : "",
+    n("por_cerrar") ? `🛒 ${n("por_cerrar")} por cerrar venta` : "",
+    incluirPostulantes && n("postulante") ? `👔 ${n("postulante")} postulantes por contactar` : "",
+  ].filter(Boolean);
 }
 
-function secciones(pendientes: Pendiente[], ahora: Date): string[] {
-  const out: string[] = [];
-  for (const tipo of ORDEN) {
-    const lista = pendientes.filter((p) => p.tipo === tipo);
-    if (!lista.length) continue;
-    const lineas = lista.slice(0, MAX_POR_SECCION).map((p) => linea(p, ahora));
-    if (lista.length > MAX_POR_SECCION) lineas.push(`… y ${lista.length - MAX_POR_SECCION} más en el CRM`);
-    out.push(`${TITULOS[tipo]} (${lista.length})\n${lineas.join("\n")}`);
-  }
-  return out;
+/** El más urgente: el que espera respuesta hace más tiempo; si no, el primero que pidió persona. */
+function primero(pendientes: Pendiente[], ahora: Date): string {
+  const p = pendientes.find((x) => x.tipo === "esperando") ?? pendientes.find((x) => x.tipo === "asesor");
+  if (!p) return "";
+  const que = p.tipo === "esperando" ? "espera respuesta" : "pidió hablar con una persona";
+  return `👉 Empieza por *${nombreCorto(p)}*: ${que} ${hace(p.desde, ahora)}.`;
 }
 
-/** Texto para un vendedor; null si no tiene pendientes (no se le escribe). */
+/** Texto corto para un vendedor (el detalle va en el PDF); null si no tiene pendientes. */
 export function textoResumenVendedor(nombre: string, todos: Pendiente[], ahora: Date): string | null {
   const pendientes = todos.filter((p) => p.tipo !== "postulante");
   if (!pendientes.length) return null;
   return [
-    `📋 *Pendientes para mañana, ${nombre}*`,
-    ...secciones(pendientes, ahora),
-    "Empieza por los que esperan respuesta. Todo está en https://crm-aliv.onrender.com/conversations",
-  ].join("\n\n");
+    `📋 *${nombre}, tus pendientes para mañana*`,
+    conteos(pendientes, false).join("\n"),
+    primero(pendientes, ahora),
+    "📄 Te envío el detalle en PDF.",
+  ]
+    .filter(Boolean)
+    .join("\n\n");
 }
 
-/** Texto para el administrador: actividad del día, pendientes por vendedor y la lista completa. */
+/** Texto corto para el administrador: lo principal del día; el detalle va en el PDF. */
 export function textoResumenAdmin(input: {
   pendientes: Pendiente[];
   actividad: ActividadDia;
@@ -117,34 +106,22 @@ export function textoResumenAdmin(input: {
 }): string {
   const { pendientes, actividad, vendedores, envios, ahora } = input;
   const nombreDe = (id: string | null) => vendedores.find((v) => v.id === id)?.nombre || "Sin asignar";
-  const cuenta = (lista: Pendiente[], t: TipoPendiente) => lista.filter((p) => p.tipo === t).length;
+  const clientes = pendientes.filter((p) => p.tipo !== "postulante");
 
-  const porDueno = new Map<string, Pendiente[]>();
-  for (const p of pendientes) {
-    const k = nombreDe(p.ownerId);
-    porDueno.set(k, [...(porDueno.get(k) ?? []), p]);
-  }
-  const clientes = (l: Pendiente[]) => l.filter((p) => p.tipo !== "postulante");
-  const filasDueno = [...porDueno.entries()]
-    .map(([n, l]) => [n, clientes(l)] as const)
-    .filter(([, l]) => l.length > 0)
-    .sort((a, b) => b[1].length - a[1].length)
-    .map(([n, l]) => `• ${n}: ${cuenta(l, "esperando")} esperan · ${cuenta(l, "asesor")} piden persona · ${cuenta(l, "por_cerrar")} por cerrar`);
-
-  const etapas = actividad.etapas.filter((e) => e.n > 0).map((e) => `• ${e.nombre}: ${e.n}`);
-  const estadoEnvios = envios.map((e) =>
-    e.ok ? `• ${e.nombre}: enviado ✅` : e.sinPendientes ? `• ${e.nombre}: sin pendientes` : `• ${e.nombre}: NO enviado (${e.error ?? "error"}) ⚠️`
-  );
+  const porDueno = new Map<string, number>();
+  for (const p of clientes) porDueno.set(nombreDe(p.ownerId), (porDueno.get(nombreDe(p.ownerId)) ?? 0) + 1);
+  const reparto = [...porDueno.entries()].sort((a, b) => b[1] - a[1]).map(([n, c]) => `${n} ${c}`).join(" · ");
+  const noLlego = envios.filter((e) => !e.ok && !e.sinPendientes).map((e) => e.nombre);
+  const [d, m] = fechaLimaCorta(ahora).split("-").reverse();
 
   return [
-    `📊 *Resumen del día — ${fechaLimaCorta(ahora)}*`,
-    `*Hoy:* ${actividad.chatsNuevos} chats nuevos · ${actividad.mensajesClientes} mensajes de clientes · ${actividad.pedidosNuevos} pedidos nuevos`,
-    etapas.length ? `*Pedidos en curso*\n${etapas.join("\n")}` : "",
-    filasDueno.length ? `*Pendientes por vendedor*\n${filasDueno.join("\n")}` : "✅ *Sin chats pendientes*",
-    ...secciones(pendientes, ahora),
-    estadoEnvios.length ? `*Resúmenes a vendedores*\n${estadoEnvios.join("\n")}` : "",
+    `📊 *Resumen del día ${d}/${m}*`,
+    `Hoy: ${actividad.chatsNuevos} chats nuevos · ${actividad.pedidosNuevos} pedidos nuevos`,
+    conteos(pendientes, true).join("\n") || "✅ Sin pendientes",
+    reparto ? `Por vendedor: ${reparto}` : "",
+    noLlego.length ? `⚠️ No les llegó su resumen: ${noLlego.join(", ")} (deben escribir al 944)` : "",
+    "📄 El detalle va en el PDF.",
   ]
     .filter(Boolean)
-    .join("\n\n")
-    .slice(0, 4000);
+    .join("\n\n");
 }

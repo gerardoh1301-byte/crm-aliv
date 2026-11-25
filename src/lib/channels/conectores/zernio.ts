@@ -63,7 +63,7 @@ export const zernio: Conector = {
         ...(firstAtt?.url
           ? {
               attachmentUrl: firstAtt.url,
-              attachmentType: (firstAtt.type as "image" | "video" | "audio" | "file") || "image",
+              attachmentType: firstAtt.type === "document" ? ("file" as const) : (firstAtt.type as "image" | "video" | "audio") || "image",
               attachmentName: firstAtt.name,
             }
           : {}),

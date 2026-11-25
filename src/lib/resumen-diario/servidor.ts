@@ -5,6 +5,8 @@ import { eq, sql } from "drizzle-orm";
 import { SUPERVISORES, SUPERVISOR_ADMINISTRADOR } from "@/lib/alerts/perfiles-supervisor";
 import { enviarTextoInterno } from "@/lib/alerts/conversacion-supervisor";
 import { cuentaBotWhatsapp } from "@/lib/channels/numeros";
+import { generarPdfResumen } from "./pdf";
+import { tokenResumen } from "./token";
 import {
   esPostulante,
   fechaLimaCorta,
@@ -115,6 +117,66 @@ async function guardarEstado(hoy: string, enviados: Set<string>) {
   await db.insert(crmSettings).values({ key: CLAVE, value }).onConflictDoUpdate({ target: crmSettings.key, set: { value } });
 }
 
+/** «2026-11-25» → «25/11». */
+function diaMes(fecha: string): string {
+  const [, m, d] = fecha.split("-");
+  return `${d}/${m}`;
+}
+
+/** Destino «admin» = resumen general; si no, el team_members.id del vendedor. */
+export async function pdfResumen(destino: string, fecha: string): Promise<Uint8Array | null> {
+  const [pendientes, miembros] = await Promise.all([
+    cargarPendientes(),
+    db.select({ id: teamMembers.id, nombre: teamMembers.name }).from(teamMembers),
+  ]);
+  const nombreDueno = (id: string | null) => miembros.find((m) => m.id === id)?.nombre || "Sin asignar";
+  if (destino === "admin") {
+    const actividad = await cargarActividad();
+    const grupos = new Map<string, Pendiente[]>();
+    for (const p of pendientes.filter((x) => x.tipo !== "postulante")) {
+      const k = nombreDueno(p.ownerId);
+      grupos.set(k, [...(grupos.get(k) ?? []), p]);
+    }
+    const n = (l: Pendiente[], t: Pendiente["tipo"]) => l.filter((p) => p.tipo === t).length;
+    return generarPdfResumen({
+      titulo: `Resumen del día ${diaMes(fecha)}`,
+      subtitulo: "Todos los chats del CRM · para empezar la jornada de mañana",
+      pendientes,
+      actividad,
+      porVendedor: [...grupos.entries()].map(([nombre, l]) => ({
+        nombre,
+        esperando: n(l, "esperando"),
+        asesor: n(l, "asesor"),
+        porCerrar: n(l, "por_cerrar"),
+      })),
+      nombreDueno,
+    });
+  }
+  const miembro = miembros.find((m) => m.id === destino);
+  if (!miembro) return null;
+  return generarPdfResumen({
+    titulo: `${miembro.nombre ?? "Vendedor"}, tus pendientes del ${diaMes(fecha)}`,
+    subtitulo: "Tus clientes en el CRM · para empezar la jornada de mañana",
+    pendientes: pendientes.filter((p) => p.ownerId === destino && p.tipo !== "postulante"),
+  });
+}
+
+/** El PDF va como segundo mensaje: si falla, el texto ya llegó igual. */
+async function enviarPdf(digitos: string, destino: string, fecha: string, nombreArchivo: string) {
+  const secreto = process.env.AGENT_WORKER_SECRET;
+  if (!secreto) return { ok: false, error: "sin_secreto" };
+  const base = (process.env.NEXT_PUBLIC_APP_URL || "https://crm-aliv.onrender.com").replace(/\/+$/, "");
+  const url = `${base}/api/publico/resumen/${tokenResumen(fecha, destino, secreto)}`;
+  const r = await enviarTextoInterno(digitos, "📄 Detalle completo en PDF", {
+    type: "document",
+    url,
+    name: nombreArchivo,
+    mimeType: "application/pdf",
+  });
+  if (!r.ok) console.warn(`[resumen-diario] PDF no enviado a ${digitos}: ${r.error}`);
+  return r;
+}
+
 /**
  * Barrido: desde las 22:00 de Lima manda a cada vendedor sus pendientes y a Gerardo el resumen
  * general. Una vez por día y por persona; si a alguien no le llegó (ventana de 24 h cerrada),
@@ -151,7 +213,10 @@ export async function enviarResumenDiario(opts: { ahora?: Date; forzar?: boolean
     }
     const r = await enviarTextoInterno(sup.digitos, texto);
     envios.push({ nombre: sup.nombre, ok: r.ok, error: r.error });
-    if (r.ok) enviados.add(sup.digitos);
+    if (r.ok) {
+      enviados.add(sup.digitos);
+      await enviarPdf(sup.digitos, sup.miembroId, hoy, `Pendientes ${sup.nombre} ${hoy}.pdf`);
+    }
   }
 
   const textoAdmin = textoResumenAdmin({ pendientes, actividad, vendedores: miembros, envios, ahora });
@@ -159,8 +224,10 @@ export async function enviarResumenDiario(opts: { ahora?: Date; forzar?: boolean
   if (opts.soloVer) return { hecho: false, motivo: "solo ver", textos };
 
   const r = await enviarTextoInterno(admin, textoAdmin);
-  if (r.ok) enviados.add(admin);
-  else console.warn(`[resumen-diario] no se pudo enviar a Gerardo: ${r.error}`);
+  if (r.ok) {
+    enviados.add(admin);
+    await enviarPdf(admin, "admin", hoy, `Resumen CRM ${hoy}.pdf`);
+  } else console.warn(`[resumen-diario] no se pudo enviar a Gerardo: ${r.error}`);
   await guardarEstado(hoy, enviados);
   return { hecho: r.ok, envios: [...envios, { nombre: "Gerardo", ok: r.ok, error: r.error }], pendientes: pendientes.length };
 }

@@ -4,7 +4,6 @@ import {
   tocaResumen,
   textoResumenAdmin,
   textoResumenVendedor,
-  MAX_POR_SECCION,
   type Pendiente,
 } from "@/lib/resumen-diario/formato";
 import { SUPERVISORES, destinatariosAviso } from "@/lib/alerts/perfiles-supervisor";
@@ -32,17 +31,20 @@ describe("resumen diario de pendientes", () => {
     expect(textoResumenVendedor("Lourdes", [], ahora)).toBeNull();
   });
 
-  it("el vendedor ve sus clientes por sección, con teléfono y hace cuánto", () => {
+  it("el vendedor recibe un texto corto: cuántos hay y por quién empezar", () => {
     const t = textoResumenVendedor(
       "Lourdes",
       [p({}), p({ tipo: "asesor", nombre: "Luis", detalle: "Quiere llamada" }), p({ tipo: "por_cerrar", nombre: "Rosa", detalle: "Intencion de compra" })],
       ahora
     )!;
-    expect(t).toContain("Pendientes para mañana, Lourdes");
-    expect(t).toContain("Esperan tu respuesta* (1)");
-    expect(t).toContain("Ana (987 654 321) — ¿Cuánto cuesta? · hace 2 h");
-    expect(t).toContain("Pidieron hablar con una persona* (1)");
-    expect(t).toContain("Por cerrar");
+    expect(t).toContain("Lourdes, tus pendientes para mañana");
+    expect(t).toContain("💬 1 esperan respuesta");
+    expect(t).toContain("🙋 1 pidieron hablar con una persona");
+    expect(t).toContain("🛒 1 por cerrar venta");
+    expect(t).toContain("Empieza por *Ana*: espera respuesta hace 2 h.");
+    expect(t).toContain("PDF");
+    expect(t).not.toContain("987");
+    expect(t.length).toBeLessThan(400);
   });
 
   it("los postulantes no le llegan al vendedor, solo al administrador", () => {
@@ -55,15 +57,15 @@ describe("resumen diario de pendientes", () => {
       envios: [],
       ahora,
     });
-    expect(t).toContain("Postulantes por contactar* (1)");
-    expect(t).toContain("Sin chats pendientes");
+    expect(t).toContain("👔 1 postulantes por contactar");
+    expect(t).not.toContain("Por vendedor");
   });
 
-  it("corta las listas largas", () => {
-    const muchos = Array.from({ length: MAX_POR_SECCION + 3 }, (_, i) => p({ nombre: `C${i}` }));
+  it("con muchos pendientes el texto sigue corto (la lista va en el PDF)", () => {
+    const muchos = Array.from({ length: 80 }, (_, i) => p({ nombre: `C${i}` }));
     const t = textoResumenVendedor("Lourdes", muchos, ahora)!;
-    expect(t).toContain("… y 3 más en el CRM");
-    expect(t.length).toBeLessThanOrEqual(4000);
+    expect(t).toContain("💬 80 esperan respuesta");
+    expect(t.length).toBeLessThan(400);
   });
 
   it("el administrador ve totales por vendedor y si los resúmenes llegaron", () => {
@@ -74,13 +76,13 @@ describe("resumen diario de pendientes", () => {
       envios: [{ nombre: "Lourdes", ok: true }, { nombre: "Stephano", ok: false, error: "fuera_de_ventana_24h" }],
       ahora,
     });
-    expect(t).toContain("Resumen del día — 2026-11-25");
-    expect(t).toContain("12 chats nuevos · 80 mensajes de clientes · 3 pedidos nuevos");
-    expect(t).toContain("• Pedido confirmado: 5");
-    expect(t).not.toContain("Vacía");
-    expect(t).toContain("• Lourdes: 1 esperan");
-    expect(t).toContain("• Sin asignar: 1 esperan");
-    expect(t).toContain("Stephano: NO enviado (fuera_de_ventana_24h)");
+    expect(t).toContain("Resumen del día 25/11");
+    expect(t).toContain("Hoy: 12 chats nuevos · 3 pedidos nuevos");
+    expect(t).toContain("💬 2 esperan respuesta");
+    expect(t).toContain("Por vendedor: Lourdes 1 · Sin asignar 1");
+    expect(t).toContain("No les llegó su resumen: Stephano");
+    expect(t).not.toContain("Lourdes,");
+    expect(t.length).toBeLessThan(500);
   });
 
   it("Stephano recibe los avisos comerciales y de atención como Lourdes, no los de dinero", () => {
@@ -88,5 +90,36 @@ describe("resumen diario de pendientes", () => {
     expect(s.digitos).toBe("977126462");
     expect(destinatariosAviso("pedido_chat")).toContain("977126462");
     expect(destinatariosAviso("comprobante_pago")).not.toContain("977126462");
+  });
+});
+
+import { generarPdfResumen, textoPdf } from "@/lib/resumen-diario/pdf";
+import { leerTokenResumen, tokenResumen } from "@/lib/resumen-diario/token";
+
+describe("PDF del resumen", () => {
+  it("quita emojis pero deja tildes y ñ", () => {
+    expect(textoPdf("Rossana🛼🛼 Peña ⚽ — ¿Cuánto?")).toBe("Rossana Peña — ¿Cuánto?");
+  });
+
+  it("genera un PDF con todas las filas, aunque sean muchas y con emojis", async () => {
+    const muchos = Array.from({ length: 60 }, (_, i) => p({ nombre: `Cliente 🦇 ${i}`, detalle: "x".repeat(400) }));
+    const pdf = await generarPdfResumen({
+      titulo: "Resumen del día 2026-11-25",
+      subtitulo: "prueba",
+      pendientes: muchos,
+      actividad: { chatsNuevos: 1, mensajesClientes: 2, pedidosNuevos: 3, etapas: [{ nombre: "Por despachar", n: 4 }] },
+      porVendedor: [{ nombre: "Lourdes", esperando: 60, asesor: 0, porCerrar: 0 }],
+      nombreDueno: () => "Lourdes",
+    });
+    expect(Buffer.from(pdf.slice(0, 5)).toString()).toBe("%PDF-");
+    expect(pdf.length).toBeGreaterThan(2000);
+  });
+
+  it("el enlace del PDF va firmado y vence", () => {
+    const t = tokenResumen("2026-11-25", "admin", "secreto");
+    expect(leerTokenResumen(t, "secreto", new Date("2026-11-26T03:00:00Z"))).toEqual({ fecha: "2026-11-25", destino: "admin" });
+    expect(leerTokenResumen(t, "otro", new Date("2026-11-26T03:00:00Z"))).toBeNull();
+    expect(leerTokenResumen(t.replace("admin", "b1480004"), "secreto")).toBeNull();
+    expect(leerTokenResumen(t, "secreto", new Date("2026-12-05T03:00:00Z"))).toBeNull();
   });
 });

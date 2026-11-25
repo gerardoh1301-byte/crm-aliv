@@ -3,6 +3,7 @@ import { db } from "@/db";
 import { contacts, conversations } from "@/db/schema";
 import { and, eq, sql } from "drizzle-orm";
 import { deliverMessage } from "@/lib/channels/deliver";
+import type { OutboundAttachment } from "@/lib/channels/conector";
 import { cuentaBotWhatsapp } from "@/lib/channels/numeros";
 
 /**
@@ -30,10 +31,12 @@ export async function conversacionInternaDe(digitos: string): Promise<string | n
 /** Envía un texto interno (sin plantilla) a un supervisor por el número del bot. */
 export async function enviarTextoInterno(
   digitos: string,
-  texto: string
+  texto: string,
+  adjunto?: OutboundAttachment
 ): Promise<{ ok: boolean; error?: string }> {
   const conv = await conversacionInternaDe(digitos);
   if (!conv) return { ok: false, error: "sin_conversacion" };
-  const res = await deliverMessage(conv, { text: texto } /* aviso interno: siempre texto libre, nunca plantilla */, "agent");
+  // Aviso interno: siempre texto libre (o archivo), nunca plantilla.
+  const res = await deliverMessage(conv, { text: texto, ...(adjunto ? { attachments: [adjunto] } : {}) }, "agent");
   return res.ok ? { ok: true } : { ok: false, error: res.error ?? "error" };
 }

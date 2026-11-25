@@ -177,7 +177,9 @@ export async function sendMessage(
 ): Promise<ZernioResult<SendMessageResponse>> {
   const firstAtt = input.attachments?.[0];
   const attachmentUrl = input.attachmentUrl || firstAtt?.url;
-  const rawType = input.attachmentType || (firstAtt?.type as string | undefined);
+  // El CRM llama «document» a lo que Zernio llama «file» (PDF): sin esto salía como imagen.
+  const tipoCrm = input.attachmentType || (firstAtt?.type as string | undefined);
+  const rawType = tipoCrm === "document" ? "file" : tipoCrm;
   const attachmentType: "image" | "video" | "audio" | "file" | undefined =
     rawType === "image" || rawType === "video" || rawType === "audio" || rawType === "file"
       ? rawType
