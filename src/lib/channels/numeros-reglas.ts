@@ -84,3 +84,36 @@ export function vendedorDelNumero(
   const valor = m[cuenta.id] ?? (cuenta.zernioAccountId ? m[cuenta.zernioAccountId] : undefined) ?? porNumero;
   return typeof valor === "string" && valor.trim() ? valor.trim() : null;
 }
+
+/**
+ * crm_settings: cuenta (channel_accounts.id o accountId de Zernio) por la que sale el primer
+ * mensaje de los pedidos nuevos de Shopify (25/11: el 977126462). En los chats que el CRM abre
+ * ahí para un pedido atiende el bot; el resto de chats de ese número sigue siendo del vendedor.
+ */
+export const CLAVE_CUENTA_PEDIDOS_WEB = "whatsapp.cuenta_pedidos_web";
+
+/** Cuenta de los pedidos web: la configurada si está activa y no es la del bot. */
+export function elegirCuentaPedidosWeb(
+  cuentas: CuentaWhatsapp[],
+  configurada: string | null,
+  cuentaBot: CuentaWhatsapp | null
+): CuentaWhatsapp | null {
+  const ref = configurada?.trim();
+  if (!ref) return null;
+  const c = cuentas.find((x) => x.platform === "whatsapp" && x.status === "active" && coincide(x, ref));
+  return c && c.id !== cuentaBot?.id ? c : null;
+}
+
+/**
+ * true si en esa conversación atiende una persona (número de vendedor) y no el bot. Excepción:
+ * los chats con el bot encendido en la cuenta de pedidos web (los abre el CRM para un pedido).
+ */
+export function atiendeVendedor(
+  conv: { accountId: string | null | undefined; aiEnabled?: boolean | null },
+  cuentaBot: CuentaWhatsapp | null,
+  cuentas: CuentaWhatsapp[],
+  cuentaPedidosWeb: CuentaWhatsapp | null
+): boolean {
+  if (!esNumeroDeVendedor(conv.accountId, cuentaBot, cuentas)) return false;
+  return !(cuentaPedidosWeb && conv.accountId === cuentaPedidosWeb.id && conv.aiEnabled);
+}

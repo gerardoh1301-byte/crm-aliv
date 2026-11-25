@@ -33,3 +33,22 @@ describe("varios números de WhatsApp", () => {
     expect(vendedorDelNumero(bot, JSON.stringify({ "z-977": "m-stephano" }))).toBeNull();
   });
 });
+
+describe("cuenta de pedidos web (25/11: pedidos de Shopify por el 977)", () => {
+  it("solo vale una cuenta activa configurada que no sea la del bot", async () => {
+    const { elegirCuentaPedidosWeb } = await import("@/lib/channels/numeros-reglas");
+    expect(elegirCuentaPedidosWeb(cuentas, "z-977", bot)?.id).toBe("a-vend");
+    expect(elegirCuentaPedidosWeb(cuentas, null, bot)).toBeNull();
+    expect(elegirCuentaPedidosWeb(cuentas, "a-bot", bot)).toBeNull();
+    expect(elegirCuentaPedidosWeb([{ ...vendedor, status: "disconnected" }, bot], "a-vend", bot)).toBeNull();
+  });
+
+  it("en el 977 atiende el vendedor, salvo los chats de pedidos con el bot encendido", async () => {
+    const { atiendeVendedor } = await import("@/lib/channels/numeros-reglas");
+    expect(atiendeVendedor({ accountId: "a-vend", aiEnabled: true }, bot, cuentas, vendedor)).toBe(false);
+    expect(atiendeVendedor({ accountId: "a-vend", aiEnabled: false }, bot, cuentas, vendedor)).toBe(true);
+    // Sin cuenta de pedidos web configurada, el 977 es siempre del vendedor.
+    expect(atiendeVendedor({ accountId: "a-vend", aiEnabled: true }, bot, cuentas, null)).toBe(true);
+    expect(atiendeVendedor({ accountId: "a-bot", aiEnabled: false }, bot, cuentas, vendedor)).toBe(false);
+  });
+});

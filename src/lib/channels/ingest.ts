@@ -13,7 +13,7 @@ import { normalizePhone } from "@/lib/phone";
 import { enqueueAgentJob } from "@/lib/agent/queue";
 import { applyAutoAssignToContact } from "@/lib/team/auto-assign";
 import { assignContact } from "@/lib/contacts/assign";
-import { esCuentaDeVendedor, vendedorDeCuenta } from "./numeros";
+import { atiendeVendedorEn, cuentaPedidosWeb, esCuentaDeVendedor, vendedorDeCuenta } from "./numeros";
 import { CHANNEL_LABELS, type Channel, type Provider } from "./types";
 
 /**
@@ -243,12 +243,15 @@ export async function upsertConversation(
     .limit(1);
 
   if (provisoria) {
+    // El hilo provisorio de la cuenta de pedidos web lo abrió el CRM para un pedido: sigue con el bot.
+    const pedidosWeb = numeroDeVendedor ? await cuentaPedidosWeb() : null;
+    const apagarBot = numeroDeVendedor && !(pedidosWeb && input.accountId === pedidosWeb.id);
     const [actualizada] = await db
       .update(conversations)
       .set({
         externalId: input.externalId,
         accountId: input.accountId,
-        ...(numeroDeVendedor ? { aiEnabled: false } : {}),
+        ...(apagarBot ? { aiEnabled: false } : {}),
         participantName: input.participantName ?? undefined,
         participantHandle: input.participantHandle ?? undefined,
         participantPicture: input.participantPicture ?? undefined,
@@ -431,7 +434,7 @@ export async function ingestMessage(
   }
 
   // Si entra un mensaje del cliente, asegurar asignación automática al asesor configurado
-  const numeroDeVendedor = conv.channel === "whatsapp" && (await esCuentaDeVendedor(conv.accountId));
+  const numeroDeVendedor = conv.channel === "whatsapp" && (await atiendeVendedorEn(conv));
   const tooOld = Date.now() - sentAt.getTime() > MAX_AGE_FOR_AGENT_MS;
   // Historial importado (backfill o sincronización de coexistencia): no reasigna. Al conectar
   // el 977126462 llegaron 216 chats de clientes que ya eran de Lourdes.

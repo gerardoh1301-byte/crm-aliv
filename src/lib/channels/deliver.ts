@@ -6,7 +6,7 @@ import { getAccountById } from "./accounts";
 import { conectorParaConversacion } from "./conectores";
 import type { ConversationRow, OutboundMessage } from "./conector";
 import { touchConversation } from "./ingest";
-import { conversacionEnNumeroBot, esCuentaDeVendedor } from "./numeros";
+import { atiendeVendedorEn, conversacionEnNumeroBot } from "./numeros";
 import type { Channel } from "./types";
 import { aplicaVentana24h, fueraDeVentana24h } from "./ventana-24h";
 
@@ -66,7 +66,7 @@ export async function deliverMessage(
   // Número de un vendedor: lo automático (bot, plantillas, avisos) sale por el número del
   // bot, que es el que tiene las plantillas aprobadas. Solo lo que escribe una persona sale
   // por el número del vendedor. Ver numeros-reglas.ts.
-  if (origin !== "human" && conversation.channel === "whatsapp" && (await esCuentaDeVendedor(conversation.accountId))) {
+  if (origin !== "human" && conversation.channel === "whatsapp" && (await atiendeVendedorEn(conversation))) {
     const idBot = await conversacionEnNumeroBot(conversation);
     const enBot = idBot ? await getConversationRow(idBot) : null;
     if (!idBot || !enBot) {

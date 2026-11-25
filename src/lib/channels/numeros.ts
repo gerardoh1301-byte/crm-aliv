@@ -4,8 +4,11 @@ import { channelAccounts, conversations, contacts, crmSettings } from "@/db/sche
 import { and, desc, eq, inArray, isNull, or } from "drizzle-orm";
 import {
   CLAVE_CUENTA_BOT,
+  CLAVE_CUENTA_PEDIDOS_WEB,
   CLAVE_NUMEROS_VENDEDOR,
+  atiendeVendedor,
   elegirCuentaBot,
+  elegirCuentaPedidosWeb,
   esNumeroDeVendedor,
   vendedorDelNumero,
   type CuentaWhatsapp,
@@ -13,7 +16,13 @@ import {
 
 /** Las cuentas cambian muy poco: 1 minuto de memoria evita una consulta por mensaje. */
 const TTL_MS = 60_000;
-let cache: { en: number; cuentas: CuentaWhatsapp[]; bot: CuentaWhatsapp | null; mapa: string | null } | null = null;
+let cache: {
+  en: number;
+  cuentas: CuentaWhatsapp[];
+  bot: CuentaWhatsapp | null;
+  pedidosWeb: CuentaWhatsapp | null;
+  mapa: string | null;
+} | null = null;
 
 export function limpiarCacheNumeros(): void {
   cache = null;
@@ -36,12 +45,14 @@ async function leer(): Promise<NonNullable<typeof cache>> {
   const ajustes = await db
     .select()
     .from(crmSettings)
-    .where(inArray(crmSettings.key, [CLAVE_CUENTA_BOT, CLAVE_NUMEROS_VENDEDOR]));
+    .where(inArray(crmSettings.key, [CLAVE_CUENTA_BOT, CLAVE_NUMEROS_VENDEDOR, CLAVE_CUENTA_PEDIDOS_WEB]));
   const valor = (k: string) => ajustes.find((a) => a.key === k)?.value ?? null;
+  const bot = elegirCuentaBot(cuentas, valor(CLAVE_CUENTA_BOT));
   cache = {
     en: Date.now(),
     cuentas,
-    bot: elegirCuentaBot(cuentas, valor(CLAVE_CUENTA_BOT)),
+    bot,
+    pedidosWeb: elegirCuentaPedidosWeb(cuentas, valor(CLAVE_CUENTA_PEDIDOS_WEB), bot),
     mapa: valor(CLAVE_NUMEROS_VENDEDOR),
   };
   return cache;
@@ -56,6 +67,69 @@ export async function cuentaBotWhatsapp(): Promise<CuentaWhatsapp | null> {
 export async function esCuentaDeVendedor(accountId: string | null | undefined): Promise<boolean> {
   const d = await leer();
   return esNumeroDeVendedor(accountId, d.bot, d.cuentas);
+}
+
+/** Cuenta por la que sale el primer mensaje de los pedidos de Shopify (null = la del bot). */
+export async function cuentaPedidosWeb(): Promise<CuentaWhatsapp | null> {
+  return (await leer()).pedidosWeb;
+}
+
+/** true si en esa conversación atiende una persona y no el bot (ver atiendeVendedor). */
+export async function atiendeVendedorEn(conv: { accountId: string | null | undefined; aiEnabled?: boolean | null }): Promise<boolean> {
+  const d = await leer();
+  return atiendeVendedor(conv, d.bot, d.cuentas, d.pedidosWeb);
+}
+
+/**
+ * Chat del contacto en la cuenta de pedidos web, con el bot encendido. Si no existe, crea el
+ * hilo provisorio `zernio:<cuenta>:+51…` (el del bot es `zernio:+51…` y la clave es única).
+ */
+export async function conversacionPedidoWeb(contactId: string): Promise<string | null> {
+  const cuenta = await cuentaPedidosWeb();
+  if (!cuenta) return null;
+  const [existente] = await db
+    .select({ id: conversations.id, aiEnabled: conversations.aiEnabled })
+    .from(conversations)
+    .where(and(eq(conversations.contactId, contactId), eq(conversations.channel, "whatsapp"), eq(conversations.accountId, cuenta.id)))
+    .orderBy(desc(conversations.lastMessageAt))
+    .limit(1);
+  if (existente) {
+    // Si ya tenía chat con el vendedor, el bot lo atiende para este pedido.
+    if (!existente.aiEnabled) {
+      await db.update(conversations).set({ aiEnabled: true, updatedAt: new Date() }).where(eq(conversations.id, existente.id));
+    }
+    return existente.id;
+  }
+  const [contacto] = await db
+    .select({ phone: contacts.phone, name: contacts.name, tenantId: contacts.tenantId })
+    .from(contacts)
+    .where(eq(contacts.id, contactId))
+    .limit(1);
+  if (!contacto?.phone || !contacto.tenantId) return null;
+  const externalId = `zernio:${cuenta.id}:${contacto.phone}`;
+  const [creada] = await db
+    .insert(conversations)
+    .values({
+      tenantId: contacto.tenantId,
+      accountId: cuenta.id,
+      contactId,
+      channel: "whatsapp",
+      provider: cuenta.provider,
+      externalId,
+      participantId: contacto.phone,
+      participantName: contacto.name,
+      status: "active",
+      aiEnabled: true,
+    })
+    .onConflictDoNothing()
+    .returning({ id: conversations.id });
+  if (creada) return creada.id;
+  const [previo] = await db
+    .select({ id: conversations.id })
+    .from(conversations)
+    .where(and(eq(conversations.provider, cuenta.provider), eq(conversations.externalId, externalId)))
+    .limit(1);
+  return previo?.id ?? null;
 }
 
 /** team_members.id del vendedor dueño de ese número, si se configuró. */

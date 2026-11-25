@@ -4,8 +4,8 @@ import { activities, contacts, conversations, pipelineStages, pipelines } from "
 import { and, desc, eq, or, sql } from "drizzle-orm";
 import { notifyMember } from "@/lib/notifications";
 import { resolveConversationId } from "@/lib/conversations";
-import { cuentaBotWhatsapp } from "@/lib/channels/numeros";
-import { deliverMessage } from "@/lib/channels/deliver";
+import { conversacionEnNumeroBot, conversacionPedidoWeb, cuentaBotWhatsapp } from "@/lib/channels/numeros";
+import { deliverMessage, getConversationRow } from "@/lib/channels/deliver";
 import { alertarEquipo } from "@/lib/agent/alertas";
 import { notificarSupervisoresCritico } from "@/lib/alerts/supervisor-alerts";
 import { displayName, getMember, listMembers } from "@/lib/team";
@@ -376,6 +376,23 @@ const sendMessage: ActionDef = {
           params: [clienteNombre, ordenNum, prods, tot, direccionCompleta],
           previewText: renderedOrderText,
         };
+      }
+    }
+
+    // 25/11: el primer mensaje de los pedidos nuevos de Shopify sale por la cuenta de pedidos
+    // web (977126462) y el bot atiende ese chat. Si falla (p. ej. plantilla aún sin aprobar en
+    // ese número), se intenta por el número del bot como siempre.
+    if (template && payload.origen === "shopify") {
+      const convWeb = await conversacionPedidoWeb(ctx.contactId);
+      if (convWeb) {
+        const resWeb = await deliverMessage(convWeb, { text: renderedOrderText, template }, "agent");
+        if (resWeb.ok) {
+          return { status: "done", detail: `Confirmación enviada por el número de pedidos web: "${text.slice(0, 50)}..."` };
+        }
+        console.warn(`[automations] confirmación por el número de pedidos web falló (${resWeb.error}); se intenta por el del bot`);
+        const fila = await getConversationRow(convWeb);
+        const enBot = fila ? await conversacionEnNumeroBot(fila) : null;
+        if (enBot) conversationId = enBot;
       }
     }
 
