@@ -30,8 +30,9 @@ interface Props {
   onToggleDetails?: () => void;
 }
 
-const POLL_INTERVAL_MS = 2500;
-const POLL_INTERVAL_HIDDEN_MS = 15000;
+// 24/11: antes 2,5 s (y 15 s oculta), con el historial completo en cada vuelta.
+const POLL_INTERVAL_MS = 6000;
+const POLL_INTERVAL_HIDDEN_MS = 60000;
 
 function rehydrate(raw: ConversationMessage): ConversationMessage {
   return {
@@ -78,7 +79,8 @@ export function ChatPanelLive({
         ? POLL_INTERVAL_HIDDEN_MS
         : POLL_INTERVAL_MS;
       timer = setTimeout(async () => {
-        await refetch();
+        // Con la pestaña oculta no se pide nada; al volver, visibilitychange recarga al instante.
+        if (!document.hidden) await refetch();
         if (mountedRef.current) schedule();
       }, delay);
     };

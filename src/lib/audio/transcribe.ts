@@ -6,6 +6,24 @@
 import { getNextGeminiKey, markGeminiKeyRateLimited } from "@/lib/gemini-keys";
 import { anotarUsoIA } from "@/lib/ia-uso";
 
+/**
+ * Zernio a veces entrega el adjunto con ruta relativa («/api/v1/whatsapp/media/<id>?accountId=…»)
+ * y fetch la rechaza («Failed to parse URL»): el bot no veía esa imagen o audio (24/11).
+ * Se completa con el origen de la API de Zernio.
+ */
+export function resolverUrlMediaZernio(url: string): string {
+  if (/^https?:\/\//i.test(url)) return url;
+  if (url.startsWith("//")) return `https:${url}`;
+  const base = process.env.ZERNIO_API_BASE || "https://zernio.com/api/v1";
+  let origen = "https://zernio.com";
+  try {
+    origen = new URL(base).origin;
+  } catch {
+    // base mal escrita: se usa el dominio por defecto
+  }
+  return `${origen}${url.startsWith("/") ? "" : "/"}${url}`;
+}
+
 export interface TranscribeOptions {
   apiKey?: string;
   zernioKey?: string;
@@ -17,7 +35,7 @@ export async function transcribeAudioAttachment(
   attachment: { url?: string; mimeType?: string; payload?: unknown },
   options: TranscribeOptions = {}
 ): Promise<string | null> {
-  const url = attachment.url;
+  const url = attachment.url ? resolverUrlMediaZernio(attachment.url) : null;
   if (!url) return null;
 
   const geminiKey = options.apiKey || getNextGeminiKey() || process.env.GEMINI_API_KEY;
@@ -151,7 +169,7 @@ export async function inspectImageAttachment(
   attachment: { url?: string; mimeType?: string; payload?: unknown },
   options: TranscribeOptions = {}
 ): Promise<string | null> {
-  const url = attachment.url;
+  const url = attachment.url ? resolverUrlMediaZernio(attachment.url) : null;
   if (!url) return null;
 
   const geminiKey = options.apiKey || getNextGeminiKey() || process.env.GEMINI_API_KEY;

@@ -9,8 +9,10 @@ interface Props {
   selectedId?: string;
 }
 
-const POLL_INTERVAL_MS = 4000;
-const POLL_INTERVAL_HIDDEN_MS = 20000;
+// 24/11: antes 4 s (y 20 s con la pestaña oculta). La bandeja completa cada 4 s
+// consumía casi todo el ancho de banda gratis de Render (5 GB/mes).
+const POLL_INTERVAL_MS = 12000;
+const POLL_INTERVAL_HIDDEN_MS = 60000;
 
 function rehydrate(raw: ConversationListItem): ConversationListItem {
   return {
@@ -47,7 +49,8 @@ export function ConversationsListLive({
         ? POLL_INTERVAL_HIDDEN_MS
         : POLL_INTERVAL_MS;
       timer = setTimeout(async () => {
-        await refetch();
+        // Con la pestaña oculta no se pide nada; al volver, visibilitychange recarga al instante.
+        if (!document.hidden) await refetch();
         if (mountedRef.current) schedule();
       }, delay);
     };

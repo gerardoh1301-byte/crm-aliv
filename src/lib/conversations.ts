@@ -100,7 +100,8 @@ export async function listConversations(filter?: {
       participantId: conversations.participantId,
       participantName: conversations.participantName,
       participantPicture: conversations.participantPicture,
-      lastBody: conversations.lastMessageBody,
+      // Solo la vista previa: la bandeja se pide seguido y el texto completo no se usa.
+      lastBody: sql<string | null>`left(${conversations.lastMessageBody}, 160)`,
       lastDirection: conversations.lastDirection,
       lastAt: conversations.lastMessageAt,
       unreadCount: conversations.unreadCount,
