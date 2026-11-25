@@ -13,6 +13,7 @@ import type { Channel } from "@/lib/channels/types";
 import { CHANNEL_COLORS, ChannelIcon } from "@/components/icons/channels";
 import { ChannelFilter } from "./ChannelFilter";
 import { ETIQUETAS_PRINCIPALES, getTagStyle, cleanStr } from "@/lib/tags";
+import { BOT_RECLUTADOR, botDelChat } from "@/lib/bots";
 
 const MINUTOS_ESPERA = 10;
 
@@ -605,7 +606,7 @@ export function ConversationsList({ conversations, selectedId }: Props) {
                             </span>
                           )}
                           <span
-                            title={c.aiEnabled ? "Bot activo en este chat" : "Bot apagado: atiende una persona"}
+                            title={c.aiEnabled ? `${botDelChat(c.tags)} activo en este chat` : `${botDelChat(c.tags)} apagado: atiende una persona`}
                             className={cn(
                               "shrink-0 inline-flex items-center gap-0.5 h-4 px-1 rounded-sm text-[9px] font-semibold uppercase tracking-wide",
                               c.aiEnabled
@@ -614,7 +615,7 @@ export function ConversationsList({ conversations, selectedId }: Props) {
                             )}
                           >
                             <Bot className="h-2.5 w-2.5" />
-                            {c.aiEnabled ? "on" : "off"}
+                            {c.aiEnabled ? (botDelChat(c.tags) === BOT_RECLUTADOR ? "reclutador" : "vendedor") : "off"}
                           </span>
                         </span>
                         {minutosEsperando(c) !== null ? (

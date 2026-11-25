@@ -493,7 +493,7 @@ async function derivarAsesor(args: { motivo?: string; apagarAgente?: boolean }, 
   try {
     const { esNumeroEntrenador, notificarSupervisoresCritico } = await import("@/lib/alerts/supervisor-alerts");
     if (!esNumeroEntrenador(c?.phone)) {
-      let tipoCritico: "comprobante_pago" | "reclamo_medico" | "pide_humano_llamada" | null = null;
+      let tipoCritico: "comprobante_pago" | "reclamo_medico" | "pide_humano_llamada" | "postulante_nuevo" | null = null;
       // R12: Normalizar tildes y diacríticos para que "médico", "reacción", "daño" disparen siempre la alerta
       const motivoNorm = (motivo + " " + ultimoCliente)
         .normalize("NFD")
@@ -501,7 +501,10 @@ async function derivarAsesor(args: { motivo?: string; apagarAgente?: boolean }, 
         .replace(/ñ/g, "n")
         .toLowerCase();
 
-      if (/\b(abono|pago|yape|plin|transferencia|voucher|captura|adelanto)\b/i.test(motivoNorm)) {
+      // Bot Reclutador: el aviso de un postulante va solo a Gerardo, con su propio título.
+      if (/postulante/i.test(motivo)) {
+        tipoCritico = "postulante_nuevo";
+      } else if (/\b(abono|pago|yape|plin|transferencia|voucher|captura|adelanto)\b/i.test(motivoNorm)) {
         tipoCritico = "comprobante_pago";
       } else if (/\b(reclamo|molestia|enfermedad|dolor|medic[oa]|reaccion|dan[io]|mal estado|insatisfaccion|alergia|intoxicacion|grave|hospital)\b/i.test(motivoNorm)) {
         tipoCritico = "reclamo_medico";

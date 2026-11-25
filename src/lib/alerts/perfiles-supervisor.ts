@@ -15,7 +15,7 @@
 export type PerfilSupervisor = "administrador" | "vendedor";
 
 /** logistica incluye el dinero: pagos, fletes, saldos, adelantos, claves, ERP. */
-export type CategoriaAviso = "logistica" | "atencion" | "comercial";
+export type CategoriaAviso = "logistica" | "atencion" | "comercial" | "reclutamiento";
 
 export interface Supervisor {
   nombre: string;
@@ -34,7 +34,7 @@ export const SUPERVISORES: readonly Supervisor[] = [
 ];
 
 export const CATEGORIAS_POR_PERFIL: Record<PerfilSupervisor, readonly CategoriaAviso[]> = {
-  administrador: ["logistica", "atencion", "comercial"],
+  administrador: ["logistica", "atencion", "comercial", "reclutamiento"],
   vendedor: ["atencion", "comercial"],
 };
 
@@ -51,7 +51,8 @@ export type TipoSituacionCritica =
   | "shalom_envio_confirmado"
   | "cambio_agencia_con_guia"
   | "shalom_cambio_destino"
-  | "aliclik_entregado";
+  | "aliclik_entregado"
+  | "postulante_nuevo";
 
 /** Categoría de cada aviso. Un tipo nuevo no compila hasta que se le asigne una. */
 export const CATEGORIA_AVISO: Record<TipoSituacionCritica, CategoriaAviso> = {
@@ -71,6 +72,8 @@ export const CATEGORIA_AVISO: Record<TipoSituacionCritica, CategoriaAviso> = {
   // Comercial: Administrador y Vendedor.
   pedido_chat: "comercial",
   pedido_shopify: "comercial",
+  // Reclutamiento (Bot Reclutador): solo el Administrador.
+  postulante_nuevo: "reclutamiento",
 };
 
 /** Últimos 9 dígitos de cada supervisor (para consultas SQL y comparaciones). */

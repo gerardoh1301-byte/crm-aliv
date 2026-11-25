@@ -23,6 +23,7 @@ import {
   ETIQUETAS_SECUNDARIAS,
   getTagStyle,
 } from "@/lib/tags";
+import { botDelChat } from "@/lib/bots";
 
 interface Contact {
   id: string;
@@ -321,7 +322,7 @@ export function ContactDetailPanel({
           <div className="flex items-center justify-between">
             <Label className="text-xs font-medium text-muted-foreground uppercase tracking-wider flex items-center gap-1.5">
               <Bot className="h-3 w-3" />
-              Agente IA
+              {botDelChat(tags)}
             </Label>
             <div className="flex items-center gap-1.5">
               {copilotMode && (

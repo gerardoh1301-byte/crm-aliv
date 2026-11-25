@@ -14,9 +14,9 @@ describe("mantener despierto el CRM en Render gratis", () => {
 });
 
 describe("asistente: reglas del 22/11", () => {
-  it("propone con herramienta y no dice listo si falta algo", () => {
+  it("cambia o propone con herramienta y no dice listo si falta algo", () => {
     const p = promptAsistente(new Date("2026-11-22T15:00:00Z"));
-    expect(p).toContain("LLAMA a la herramienta proponer_*");
+    expect(p).toContain("Nunca escribas una orden como texto para que Gerardo la copie: usa la herramienta");
     expect(p).toContain("*Todavía no*");
   });
 });

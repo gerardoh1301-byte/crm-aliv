@@ -520,19 +520,19 @@ const AYUDA = [
   "",
   "*Consultas generales*: «resumen de hoy» (o ayer, semana, mes), «quién me debe», «adelantos pendientes», «listos para agendar», «por enviar», «en camino», «pedidos por confirmar».",
   "",
-  "*Cambios en el CRM* (siempre te pido *SI* antes):",
+  "*Cambios en el CRM* (se aplican al toque si nombras el pedido):",
   "• *cancela 1140 porque no contesta* → pedido cancelado",
   "• *pasa 1140 a confirmado* (o preparando, enviado, por confirmar)",
   "• *dni 1140 45678912* · *direccion 1140 Av. Lima 123* · *agencia 1140 Shalom Huancayo Real*",
   "• *registra clave 1140 1330* · *total 1140 189* · *nota 1140 llamar después de las 6*",
   "• *registra 1171 en aliclik* → te muestro la orden contra entrega con el costo de envío; se crea en AliClik con tu *SI* (no aplica a Shalom con adelanto)",
   "",
-  "Antes de cambiar algo te pido confirmar con *SI 1140*. Para mandar la clave al cliente: *ENVIAR 1140*. *NO* cancela.",
+  "Solo te pido *SI 1140* si el pedido lo tomé del último aviso, para registrar en AliClik o para escribirle al cliente. Para mandar la clave al cliente: *ENVIAR 1140*. *NO* cancela.",
   "El pedido puede ir por número (1140), por guía Shalom (104493022), por celular (987654321) o por nombre («clave de Carlos Huaynalaya»).",
   "Si no pones número, uso el pedido de la última alerta.",
   "",
-  "*Asistente*: pregúntame lo que quieras del CRM con tus palabras («¿ya está todo para entregar el 1160?», «quién no ha recibido respuesta hoy?», «cómo nos fue ayer?», «escríbele a Carlos que pasamos el lunes», «pausa el bot con Marleni»). Leo pedidos, chats y métricas; los cambios y los mensajes a clientes te los propongo y solo se hacen con tu *SI*.",
-  "*modo prueba*: por 1 hora te contesta el bot de ventas como a un cliente. *modo asistente* para volver.",
+  "*Bot Asistente*: pregúntame lo que quieras del CRM con tus palabras («¿ya está todo para entregar el 1160?», «cuánto tiene que liquidar AliClik?», «cómo nos fue ayer?», «pausa el bot con Marleni», «escríbele a Carlos que pasamos el lunes»). Leo pedidos, chats, AliClik, Shalom y el ERP; los cambios del CRM los hago al toque y los mensajes a clientes te los propongo con *SI*.",
+  "*modo prueba*: por 1 hora te contesta el *Bot Vendedor* como a un cliente. *modo asistente* para volver.",
 ].join("\n");
 
 /**
@@ -1157,7 +1157,25 @@ async function ejecutarPendiente(cmd: Comando, conversationId: string): Promise<
       ? `Para mandar la clave al cliente responde *ENVIAR ${digitosPedido(pend.numeroOrden)}*.`
       : `Para confirmar responde *SI ${digitosPedido(pend.numeroOrden)}*.`;
   }
+  return aplicarPendiente(pend);
+}
 
+/**
+ * Lo que el Bot Asistente aplica sin pedir «SI»: cambios internos del CRM que Gerardo le
+ * pidió (pago, flete, guía, adelanto, entregado, estado, cancelar, DNI, dirección, clave,
+ * total, nota, bot y distrito). Lo que sale hacia afuera sigue pidiendo confirmación:
+ * mandar la clave o un mensaje al cliente y registrar un envío en AliClik (cuesta).
+ */
+export const ACCIONES_CON_CONFIRMACION: ReadonlySet<string> = new Set(["enviar_clave", "mensaje", "aliclik"]);
+
+/** Aplica de inmediato la propuesta recién guardada si es un cambio interno. null = sigue pendiente. */
+export async function aplicarPropuestaDirecta(): Promise<string | null> {
+  const pend = await leerPendiente();
+  if (!pend || ACCIONES_CON_CONFIRMACION.has(pend.accion)) return null;
+  return aplicarPendiente(pend);
+}
+
+async function aplicarPendiente(pend: Pendiente): Promise<string> {
   const p = await pedidoPorId(pend.pedidoId);
   if (!p) {
     await guardarPendiente(null);
@@ -1288,8 +1306,8 @@ export async function manejarComandoSupervisor(conversationId: string, phone: st
     await responder(
       conversationId,
       modo === "prueba"
-        ? "🧪 *Modo prueba* por 1 hora: lo que escribas (salvo órdenes como «SI 1160») lo contesta el bot de ventas como a un cliente. Escribe *modo asistente* para volver."
-        : "🤖 *Modo asistente*: te contesto yo con los datos del CRM. Para probar el bot de ventas escribe *modo prueba*."
+        ? "🧪 *Modo prueba* por 1 hora: lo que escribas (salvo órdenes como «SI 1160») lo contesta el *Bot Vendedor* como a un cliente. Escribe *modo asistente* para volver."
+        : "🤖 *Bot Asistente*: te contesto yo con los datos del CRM. Para probar el *Bot Vendedor* escribe *modo prueba*."
     );
     return true;
   }
@@ -1425,7 +1443,7 @@ export async function manejarComandoSupervisor(conversationId: string, phone: st
       conversationId,
       pareceOrdenNoEntendida(ultimo.body)
         ? `No entendí la orden; no cambié nada.\n\n${AYUDA}`
-        : "No pude procesar tu mensaje ahora (la IA no respondió). Prueba de nuevo en un momento o usa una orden: «estado 1160», «resumen de hoy». Para probar el bot de ventas escribe *modo prueba*."
+        : "No pude procesar tu mensaje ahora (la IA no respondió). Prueba de nuevo en un momento o usa una orden: «estado 1160», «resumen de hoy». Para probar el *Bot Vendedor* escribe *modo prueba*."
     );
     return true;
   }
@@ -1451,6 +1469,13 @@ async function ejecutarComando(cmd: Comando, entendido: string, conversationId: 
       texto = await ejecutarPendiente(cmd, conversationId);
     } else {
       texto = await proponer(cmd, conversationId);
+      // Desde el 25/11 los cambios internos se aplican al toque (Gerardo es el único que
+      // da órdenes aquí); solo lo que sale al cliente o a AliClik sigue pidiendo SI/ENVIAR.
+      // Si el pedido se tomó del último aviso (no lo nombró), sigue pidiendo SI: puede ser otro.
+      if (/Responde \*SI [^*]+\*/.test(texto) && !texto.startsWith("ℹ️ Tomé el pedido")) {
+        const aplicado = await aplicarPropuestaDirecta();
+        if (aplicado) texto = aplicado;
+      }
     }
   } catch (err) {
     console.error("[supervisor-comandos] error:", err);

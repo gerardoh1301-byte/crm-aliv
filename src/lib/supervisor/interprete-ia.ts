@@ -47,7 +47,7 @@ REGLAS:
 - Si el mensaje no dice el pedido (ni guía, celular o nombre) pero se refiere al cliente del último aviso del chat (por ejemplo "confirma ese adelanto", "ya pagó"), usa el número de pedido del aviso más reciente.
 - Si da la guía Shalom, el celular o el nombre del cliente, ponlos en la orden tal cual (por ejemplo "clave 104493022" o "estado carlos huaynalaya"); NO uses el pedido del último aviso en ese caso.
 - Nunca inventes montos ni números de pedido que no estén en el mensaje o en el chat.
-- Todo cambio se le volverá a confirmar a Gerardo con "SI <pedido>": tradúcelo a la orden aunque sea un cambio.
+- Los cambios internos se APLICAN AL INSTANTE (sin "SI"): traduce a una orden de cambio solo una instrucción clara de Gerardo. Si el mensaje es ambiguo, cuenta algo sin pedir un cambio o no está claro el monto o el pedido, es tipo "consulta".
 - Lee la INTENCIÓN del mensaje completo, no palabras sueltas. «Angy de orden #1047 no respondió cuando se le pidió el adelanto de 20 soles, muévelo a cancelado» es "cancela 1047 porque no respondió al pedido de adelanto": la palabra «adelanto» ahí es el motivo, no una confirmación de adelanto.
 - Una negación nunca es una confirmación: «no pagó», «no mandó el adelanto», «todavía no recoge» NO son "pagó", "adelanto" ni "entregado".
 - Mover a cancelado, anular, dar de baja o sacar del pipeline un pedido es "cancela <pedido> porque <motivo>", con el motivo en pocas palabras tomado del mensaje.

@@ -328,3 +328,134 @@ export async function chatPorCliente(args: { cliente?: string; cantidad?: number
     });
   return [`Chat de ${c.nombre || "Cliente"} (${c.celular}) · bot ${conv.bot ? "activo" : "pausado"}${conv.pideHumano ? " · PIDE HUMANO" : ""}:`, ...lineas].join("\n");
 }
+
+// ---------------------------------------------------------------------------
+// Liquidación de AliClik (lo que AliClik nos debe depositar por los contra entrega entregados)
+
+/** Costos por pedido que AliClik descuenta si no se registró otro monto (mismos valores que el botón del pipeline). */
+export const COSTO_ENVIO_ALICLIK = 13.5;
+export const COSTO_FULFILLMENT_ALICLIK = 3;
+
+export interface FilaLiquidacion {
+  numeroOrden: string;
+  cliente: string | null;
+  total: number;
+  transportadora: string | null;
+  notas: string;
+  entregado: string; // AAAA-MM-DD
+}
+
+/** Fecha de entrega: la que dejó la sincronización de AliClik o, si no, la última actualización. */
+export function fechaEntregaAliclik(notas: string, actualizado: Date | string | null): string {
+  const m = /\[ALICLIK_ENTREGADO\]\s*(\d{4}-\d{2}-\d{2})/.exec(notas || "");
+  if (m) return m[1];
+  return actualizado ? diaLima(0, new Date(actualizado)) : "";
+}
+
+/** Pedido contra entrega que cobra AliClik (no el delivery propio ni el motorizado de Aliv). */
+export function esPedidoAliclik(transportadora: string | null | undefined): boolean {
+  const t = (transportadora || "").toLowerCase();
+  return !t || t.includes("aliclik");
+}
+
+/** Separa los entregados en liquidados y pendientes, con el neto estimado de los pendientes. */
+export async function resumirLiquidaciones(
+  filas: FilaLiquidacion[],
+  rango: { desde: string; hasta: string } | null
+): Promise<string> {
+  const { extraerLiquidacionAliclik } = await import("@/lib/aliclik/liquidacion");
+  const s = (n: number) => `S/ ${n.toFixed(2)}`;
+  const pendientes: FilaLiquidacion[] = [];
+  const liquidados: Array<FilaLiquidacion & { neto: number; fecha: string; descuento: number }> = [];
+  for (const f of filas) {
+    const liq = extraerLiquidacionAliclik(f.notas);
+    if (liq) liquidados.push({ ...f, neto: liq.montoNeto, fecha: liq.fecha, descuento: Math.max(0, liq.montoBruto - liq.montoNeto) });
+    else pendientes.push(f);
+  }
+  const enRango = (d: string) => !rango || (d >= rango.desde && d <= rango.hasta);
+  const pend = pendientes.filter((f) => enRango(f.entregado)).sort((a, b) => a.entregado.localeCompare(b.entregado));
+  const liq = liquidados.filter((f) => enRango(f.fecha));
+  const bruto = pend.reduce((a, f) => a + f.total, 0);
+  // Descuento por pedido: el promedio real de lo ya liquidado (envío, fulfillment y POS);
+  // sin historial, los costos fijos del botón del pipeline.
+  const porDefecto = COSTO_ENVIO_ALICLIK + COSTO_FULFILLMENT_ALICLIK;
+  const descuento = liquidados.length ? liquidados.reduce((a, f) => a + f.descuento, 0) / liquidados.length : porDefecto;
+  const costos = pend.length * descuento;
+  const base = liquidados.length
+    ? `descontando S/ ${descuento.toFixed(2)} por pedido, el promedio real de ${liquidados.length} liquidación(es) anteriores`
+    : `descontando S/ ${COSTO_ENVIO_ALICLIK.toFixed(2)} de envío + S/ ${COSTO_FULFILLMENT_ALICLIK.toFixed(2)} de fulfillment por pedido`;
+  const periodo = rango ? ` (${rango.desde} a ${rango.hasta})` : "";
+  return [
+    `AliClik POR LIQUIDAR${periodo}: ${pend.length} pedido(s) contra entrega entregados sin liquidación registrada en el CRM.`,
+    `Cobrado a clientes: ${s(bruto)} · neto estimado a depositar: ${s(bruto - costos)} (${base}; el monto exacto lo da AliClik).`,
+    ...pend.slice(0, 30).map((f) => `• ${f.numeroOrden} · ${f.cliente || "Cliente"} · ${s(f.total)} · entregado ${f.entregado || "-"}${f.transportadora ? ` · ${f.transportadora}` : ""}`),
+    `YA LIQUIDADOS${periodo}: ${liq.length} pedido(s), neto depositado ${s(liq.reduce((a, f) => a + f.neto, 0))}.`,
+    ...liq.slice(0, 15).map((f) => `• ${f.numeroOrden} · ${f.cliente || "Cliente"} · neto ${s(f.neto)} el ${f.fecha}`),
+  ].join("\n");
+}
+
+export async function liquidacionAliclik(args: { periodo?: string; desde?: string; hasta?: string }): Promise<string> {
+  const { pedidosOrdenes } = await import("@modules/pedidos/tabla");
+  const { deals } = await import("@/db/schema");
+  const { and } = await import("drizzle-orm");
+  const filas = await db
+    .select({
+      numeroOrden: pedidosOrdenes.numeroOrden,
+      total: pedidosOrdenes.total,
+      transportadora: pedidosOrdenes.transportadora,
+      notas: pedidosOrdenes.notas,
+      notasDeal: deals.notes,
+      actualizado: pedidosOrdenes.updatedAt,
+      cliente: contacts.name,
+    })
+    .from(pedidosOrdenes)
+    .leftJoin(contacts, eq(contacts.id, pedidosOrdenes.contactId))
+    .leftJoin(deals, eq(deals.id, pedidosOrdenes.dealId))
+    .where(and(eq(pedidosOrdenes.estado, "entregado"), eq(pedidosOrdenes.modalidadPago, "contraentrega")));
+  const lista: FilaLiquidacion[] = filas
+    .filter((f) => esPedidoAliclik(f.transportadora))
+    .map((f) => {
+      const notas = [f.notas, f.notasDeal].filter(Boolean).join("\n");
+      return {
+        numeroOrden: f.numeroOrden,
+        cliente: f.cliente,
+        total: Number(f.total) || 0,
+        transportadora: f.transportadora,
+        notas,
+        entregado: fechaEntregaAliclik(notas, f.actualizado),
+      };
+    });
+  const conRango = Boolean(args.periodo || args.desde || args.hasta);
+  return resumirLiquidaciones(lista, conRango ? rangoFechas(args) : null);
+}
+
+export async function registrarLiquidacion(
+  args: { pedido?: string; monto_neto?: unknown; monto_bruto?: unknown; costo_envio?: unknown; fulfillment?: unknown; fecha?: string; operacion?: string },
+  conversationId: string
+): Promise<string> {
+  const r = await pedidoParaHerramienta(String(args.pedido || ""), conversationId);
+  if (!r.ok) return r.texto;
+  const p = r.pedido;
+  if (p.estado !== "entregado") return `${r.titulo} está «${p.estado}», no entregado: no se liquida todavía.`;
+  const neto = Number(args.monto_neto);
+  if (!(neto > 0) || neto > 2000) return "Falta el monto neto que depositó AliClik (por ejemplo 102.50).";
+  const { registrarLiquidacionAliclik } = await import("@/lib/aliclik/liquidacion");
+  const res = await registrarLiquidacionAliclik(
+    {
+      pedidoId: p.id,
+      dealId: p.dealId ?? undefined,
+      contactId: p.contactId,
+      numeroOrden: p.numeroOrden,
+      montoNeto: neto,
+      montoBruto: Number(args.monto_bruto) || Number(p.total) || neto,
+      costoEnvio: Number(args.costo_envio ?? COSTO_ENVIO_ALICLIK),
+      costoFulfillment: Number(args.fulfillment ?? COSTO_FULFILLMENT_ALICLIK),
+      fechaLiquidacion: args.fecha,
+      nroOperacion: args.operacion,
+    },
+    "Gerardo (WhatsApp)"
+  );
+  if (!res.ok) return `No se registró: ${res.error}`;
+  if (res.duplicado) return `${r.titulo} ya tenía esa liquidación registrada; no cambié nada.`;
+  return `HECHO: liquidación AliClik de ${r.titulo} registrada: neto S/ ${res.liquidacion.montoNeto.toFixed(2)} en BCP el ${res.liquidacion.fecha} (pedido, pipeline y ERP).`;
+}
