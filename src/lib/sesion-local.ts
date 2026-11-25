@@ -24,11 +24,10 @@ function secreto(): string | null {
     process.env.AGENT_WORKER_SECRET;
   if (valor) return valor;
   if (process.env.NODE_ENV === "test") return null;
-  return process.env.ZERNIO_WEBHOOK_SECRET ||
-    process.env.DATABASE_URL ||
-    (modoLocal() && process.env.NODE_ENV !== "production"
-      ? "modo-local-sin-secreto"
-      : "aliv-crm-master-session-secret-2026");
+  // 24/11 (auditoría CRM-03): en producción no hay respaldo fijo ni DATABASE_URL; sin
+  // SESSION_SECRET ni AGENT_WORKER_SECRET no se firman sesiones (falla cerrado).
+  if (process.env.NODE_ENV === "production") return null;
+  return modoLocal() ? "modo-local-sin-secreto" : null;
 }
 
 function firmar(datos: string, clave: string): string {

@@ -10,6 +10,7 @@ const pkg = JSON.parse(readFileSync(path.resolve("package.json"), "utf8")) as { 
 generarRegistroModulos(process.cwd());
 
 const nextConfig: NextConfig = {
+  poweredByHeader: false,
   experimental: {
     agentUpgrade: "security",
   },

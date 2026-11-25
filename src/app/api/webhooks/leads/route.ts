@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { timingSafeEqual } from "node:crypto";
 import { emitContactCreated } from "@/lib/contacts/events";
 import { db } from "@/db";
 import { contacts, activities, crmSettings } from "@/db/schema";
@@ -97,9 +98,19 @@ export async function POST(request: NextRequest) {
     secreto = stored?.value ?? "";
   }
 
-  if (secreto) {
-    const secretHeader = request.headers.get("x-webhook-secret");
-    if (!secretHeader || secretHeader !== secreto) {
+  // 24/11 (auditoría CRM-02): sin secreto el endpoint queda cerrado (antes aceptaba cualquier
+  // POST). Para usarlo: LEADS_WEBHOOK_SECRET en Render y la cabecera x-webhook-secret.
+  if (!secreto) {
+    return NextResponse.json(
+      { error: "Webhook de leads desactivado: falta LEADS_WEBHOOK_SECRET" },
+      { status: 503 }
+    );
+  }
+  {
+    const secretHeader = request.headers.get("x-webhook-secret") || "";
+    const a = Buffer.from(secretHeader);
+    const b = Buffer.from(String(secreto));
+    if (a.length !== b.length || !timingSafeEqual(a, b)) {
       return NextResponse.json(
         { error: "Secret invalido o faltante" },
         { status: 401 }

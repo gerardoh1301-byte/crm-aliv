@@ -63,14 +63,11 @@ async function verificarTokenGoogle(idToken: string): Promise<{
     const clientIdConfigurado =
       process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID ||
       (await leerSettingTexto("auth.google_client_id"));
-    if (
-      clientIdConfigurado &&
-      clientIdConfigurado.includes(".apps.googleusercontent.com") &&
-      data.aud &&
-      data.aud.trim() !== clientIdConfigurado.trim()
-    ) {
-      return null;
-    }
+    // 24/11 (auditoría CRM-01): sin un Client ID válido no se acepta ningún token. Antes, con
+    // el campo mal cargado (tenía un correo), se aceptaba un token emitido para CUALQUIER app.
+    const clientId = (clientIdConfigurado || "").trim();
+    if (!clientId.endsWith(".apps.googleusercontent.com")) return null;
+    if (!data.aud || data.aud.trim() !== clientId) return null;
 
     return {
       email: data.email.trim().toLowerCase(),
