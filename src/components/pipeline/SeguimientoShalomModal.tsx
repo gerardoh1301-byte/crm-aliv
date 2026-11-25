@@ -639,6 +639,10 @@ Recuerda acudir con tu DNI físico original para el retiro. ¡Que disfrutes tus 
                 await guardarEnBaseDeDatos();
                 onUpdated?.(numeroGuia.trim(), codigoRastreo.trim(), claveRecojo.trim(), agenciaDestino.trim(), totalSoles);
               }}
+              onLeido={(n, c) => {
+                if (n && !numeroGuia.trim()) setNumeroGuia(n);
+                if (c && !codigoRastreo.trim()) setCodigoRastreo(c);
+              }}
             />
           )}
 

@@ -7,6 +7,7 @@ import { getCurrentMember } from "@/lib/team";
 import { sincronizarEtapaPipeline } from "../../../../../modules/pedidos/servidor";
 import { sincronizarConGoogleDrive } from "@/lib/drive-sync";
 import type { EstadoPedido } from "../../../../../modules/pedidos/tipos";
+import { avisarFichaAliclik } from "@/lib/pedidos/ficha-aliclik";
 
 export const dynamic = "force-dynamic";
 
@@ -191,6 +192,9 @@ export async function POST(req: NextRequest) {
     dealId: actualizado.dealId,
   });
 
+  // Con preguía, código y clave cargados: ficha para registrarlo en AliClik y pagar los S/5.
+  await avisarFichaAliclik(actualizado).catch((err) => console.warn("[seguimiento] ficha AliClik:", err));
+
   // Sincronizar respaldo en Google Drive
   await sincronizarConGoogleDrive().catch(() => {});
 
@@ -200,3 +204,4 @@ export async function POST(req: NextRequest) {
     advertencia: advertenciaClave,
   });
 }
+

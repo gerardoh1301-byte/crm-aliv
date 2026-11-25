@@ -20,17 +20,27 @@ export function GuiaPdfDrive({
   pedidoId,
   antesDeSubir,
   enviarPorDefecto = true,
+  onLeido,
 }: {
   pedidoId: string;
   /** Guarda primero N° de orden y código, para que el mensaje los lleve. */
   antesDeSubir?: () => Promise<unknown>;
   /** Desde la ficha del contacto la casilla viene apagada (se envía solo si la marcan). */
   enviarPorDefecto?: boolean;
+  /** N° de orden y código que se leyeron del rótulo, para llenar los campos del formulario. */
+  onLeido?: (numeroGuia: string | null, codigo: string | null) => void;
 }) {
   const [estado, setEstado] = useState<EstadoDrive | null>(null);
   const [subiendo, setSubiendo] = useState(false);
   const [enviar, setEnviar] = useState(enviarPorDefecto);
-  const [resultado, setResultado] = useState<{ archivo?: string; pdfUrl?: string | null; envio?: { enviado: boolean; motivo?: string } } | null>(null);
+  const [resultado, setResultado] = useState<{
+    archivo?: string;
+    pdfUrl?: string | null;
+    envio?: { enviado: boolean; motivo?: string };
+    leido?: { numeroGuia: string | null; codigo: string | null };
+  } | null>(null);
+  // Lo que ya estaba cargado: sin esto, al reabrir la tarjeta parecía que no había preguía.
+  const [previa, setPrevia] = useState<{ tieneGuia: boolean; pdfUrl: string | null; enviada: boolean } | null>(null);
   const input = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
@@ -39,10 +49,14 @@ export function GuiaPdfDrive({
       .then((r) => (r.ok ? r.json() : null))
       .then((j) => vivo && setEstado(j))
       .catch(() => vivo && setEstado(null));
+    fetch(`/api/pedidos/guia-pdf?pedidoId=${encodeURIComponent(pedidoId)}`)
+      .then((r) => (r.ok ? r.json() : null))
+      .then((j) => vivo && j?.estado && setPrevia(j.estado))
+      .catch(() => {});
     return () => {
       vivo = false;
     };
-  }, []);
+  }, [pedidoId]);
 
   const subir = async (archivo: File) => {
     setSubiendo(true);
@@ -57,6 +71,10 @@ export function GuiaPdfDrive({
       const j = await r.json().catch(() => ({}));
       if (!r.ok || !j.ok) throw new Error(j.error || "No se pudo subir la guía");
       setResultado(j);
+      if (j.leido && (j.leido.numeroGuia || j.leido.codigo)) {
+        onLeido?.(j.leido.numeroGuia, j.leido.codigo);
+        toast.success(`Leído del rótulo: ${[j.leido.numeroGuia, j.leido.codigo].filter(Boolean).join(" · ")}`);
+      }
       if (j.envio?.enviado) toast.success("Guía guardada en Drive y enviada al cliente 📦");
       else if (enviar) toast.warning(`Guía guardada en Drive. No se envió: ${j.envio?.motivo ?? "sin detalle"}`, { duration: 8000 });
       else toast.success("Guía guardada en Drive");
@@ -116,6 +134,17 @@ export function GuiaPdfDrive({
               Enviar la foto al cliente con una pregunta
             </label>
           </div>
+          {!resultado?.archivo && previa?.tieneGuia && (
+            <p className="text-[10.5px] text-muted-foreground flex items-center gap-1 flex-wrap">
+              ✅ Ya hay una preguía cargada{previa.enviada ? " y se le envió al cliente" : " (aún no se le envió al cliente)"}.
+              {previa.pdfUrl && (
+                <a href={previa.pdfUrl} target="_blank" rel="noopener" className="inline-flex items-center gap-0.5 text-red-600 underline">
+                  ver <ExternalLink className="h-3 w-3" />
+                </a>
+              )}
+              <span>Si subes otra, reemplaza a esta.</span>
+            </p>
+          )}
           {resultado?.archivo && (
             <p className="text-[10.5px] text-muted-foreground flex items-center gap-1 flex-wrap">
               Guardado: <span className="font-medium text-foreground">{resultado.archivo}</span>
@@ -123,6 +152,12 @@ export function GuiaPdfDrive({
                 <a href={resultado.pdfUrl} target="_blank" rel="noopener" className="inline-flex items-center gap-0.5 text-red-600 underline">
                   ver <ExternalLink className="h-3 w-3" />
                 </a>
+              )}
+              <span>· se guarda sola, no hace falta otro botón.</span>
+              {resultado.envio && (
+                <span className={resultado.envio.enviado ? "text-emerald-700" : "text-amber-700"}>
+                  {resultado.envio.enviado ? "· enviada al cliente ✅" : `· no se envió: ${resultado.envio.motivo ?? "sin detalle"}`}
+                </span>
               )}
             </p>
           )}

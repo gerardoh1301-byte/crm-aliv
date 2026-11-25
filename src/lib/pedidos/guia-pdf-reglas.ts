@@ -70,7 +70,7 @@ export function mensajeGuia(params: {
 }): string {
   const nombre = (params.nombre || "").trim().split(/\s+/)[0] || "";
   const lineas = [
-    `¡Hola${nombre ? `, ${nombre}` : ""}! 📦 Tu pedido ya salió por Shalom. Te dejo la foto de tu guía.`,
+    `¡Hola${nombre ? `, ${nombre}` : ""}! 📦 Ya está lista la guía de Shalom de tu pedido. Te dejo la foto.`,
   ];
   const datos: string[] = [];
   if (params.numeroGuia) datos.push(`• N° de orden: ${params.numeroGuia}`);
@@ -93,4 +93,30 @@ export function validarPdf(datos: Uint8Array, maxBytes = 8 * 1024 * 1024): strin
   const cabecera = Buffer.from(datos.subarray(0, 5)).toString("latin1");
   if (cabecera !== "%PDF-") return "El archivo no es un PDF.";
   return null;
+}
+
+export interface DatosRotulo {
+  numeroOrden: string | null;
+  codigo: string | null;
+}
+
+/**
+ * Valida lo que la IA leyó del rótulo de Shalom: el N° de orden son 8 a 10 dígitos
+ * (105410411) y el código 4 letras/números (HMNJ). Lo que no calza queda en null.
+ */
+export function datosDeRotulo(respuesta: string): DatosRotulo | null {
+  let crudo: Record<string, unknown> = {};
+  try {
+    const json = respuesta.match(/\{[\s\S]*\}/)?.[0];
+    crudo = json ? (JSON.parse(json) as Record<string, unknown>) : {};
+  } catch {
+    return null;
+  }
+  const numero = String(crudo.numeroOrden ?? "").replace(/\D/g, "");
+  const codigo = String(crudo.codigo ?? "").replace(/[^A-Za-z0-9]/g, "").toUpperCase();
+  const r: DatosRotulo = {
+    numeroOrden: /^\d{8,10}$/.test(numero) ? numero : null,
+    codigo: /^[A-Z0-9]{4}$/.test(codigo) ? codigo : null,
+  };
+  return r.numeroOrden || r.codigo ? r : null;
 }

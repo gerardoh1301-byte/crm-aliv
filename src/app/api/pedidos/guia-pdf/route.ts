@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireMember } from "@/lib/api-auth";
-import { guardarGuiaPdf, pedidosShalomDeContacto } from "@/lib/pedidos/guia-pdf";
+import { estadoGuiaPedido, guardarGuiaPdf, pedidosShalomDeContacto } from "@/lib/pedidos/guia-pdf";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
@@ -28,10 +28,12 @@ export async function POST(req: NextRequest) {
   }
 }
 
-/** Pedidos Shalom de un contacto (?contactId=), para subir la preguía desde su ficha. */
+/** ?pedidoId=: estado de la preguía de ese pedido. ?contactId=: sus pedidos Shalom, para subirla desde la ficha. */
 export async function GET(req: NextRequest) {
   const auth = await requireMember();
   if ("response" in auth) return auth.response;
+  const pedidoId = req.nextUrl.searchParams.get("pedidoId") ?? "";
+  if (pedidoId) return NextResponse.json({ estado: await estadoGuiaPedido(pedidoId).catch(() => null) });
   const contactId = req.nextUrl.searchParams.get("contactId") ?? "";
   if (!contactId) return NextResponse.json({ pedidos: [] });
   try {

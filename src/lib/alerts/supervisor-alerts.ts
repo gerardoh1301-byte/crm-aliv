@@ -68,7 +68,7 @@ const TITULOS_ALERTA: Record<TipoSituacionCritica, string> = {
   reclamo_medico: "⚠️ Reclamo / Inconformidad o Molestia",
   pide_humano_llamada: "📞 Solicitud de Asesor Humano / Llamada",
   shalom_24h_retraso: "📦 Paquete >24h en Agencia Shalom sin retirar",
-  shalom_preguia_pago_almacen: "📦 Preguía Shalom + AliClik lista · Verificar y Pagar Almacén",
+  shalom_preguia_pago_almacen: "📦 Preguía lista · Registrar en AliClik y pagar S/5",
   pedido_chat: "🛒 Pedido nuevo registrado por el bot",
   pedido_shopify: "🛍️ Pedido nuevo de la web (Shopify)",
   guardrail_bloqueo: "🛑 Respuesta del bot bloqueada (clave o monto)",
