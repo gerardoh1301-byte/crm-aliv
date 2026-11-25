@@ -8,10 +8,12 @@ import {
   conversations,
   messages,
 } from "@/db/schema";
-import { and, desc, eq, gte, isNull, sql } from "drizzle-orm";
+import { and, desc, eq, gte, isNull, or, sql } from "drizzle-orm";
 import { normalizePhone } from "@/lib/phone";
 import { enqueueAgentJob } from "@/lib/agent/queue";
 import { applyAutoAssignToContact } from "@/lib/team/auto-assign";
+import { assignContact } from "@/lib/contacts/assign";
+import { esCuentaDeVendedor, vendedorDeCuenta } from "./numeros";
 import { CHANNEL_LABELS, type Channel, type Provider } from "./types";
 
 /**
@@ -219,6 +221,7 @@ export async function upsertConversation(
   input: UpsertConversationInput
 ): Promise<typeof conversations.$inferSelect> {
   const now = new Date();
+  const numeroDeVendedor = input.channel === "whatsapp" && (await esCuentaDeVendedor(input.accountId));
 
   // Si ya existia una conversacion para este contacto con un externalId provisorio (ej. 'zernio:+51...'),
   // actualizar el externalId real del proveedor para evitar duplicar el hilo de chat.
@@ -229,7 +232,12 @@ export async function upsertConversation(
       and(
         eq(conversations.contactId, input.contactId),
         eq(conversations.channel, input.channel),
-        sql`${conversations.externalId} LIKE 'zernio:%'`
+        sql`${conversations.externalId} LIKE 'zernio:%'`,
+        // Con varios números, el hilo provisorio de otra cuenta no se adopta: el del bot
+        // no puede pasar a ser el chat del vendedor (ni al revés).
+        input.accountId
+          ? or(isNull(conversations.accountId), eq(conversations.accountId, input.accountId))
+          : undefined
       )
     )
     .limit(1);
@@ -240,6 +248,7 @@ export async function upsertConversation(
       .set({
         externalId: input.externalId,
         accountId: input.accountId,
+        ...(numeroDeVendedor ? { aiEnabled: false } : {}),
         participantName: input.participantName ?? undefined,
         participantHandle: input.participantHandle ?? undefined,
         participantPicture: input.participantPicture ?? undefined,
@@ -265,6 +274,8 @@ export async function upsertConversation(
       participantHandle: input.participantHandle ?? null,
       participantPicture: input.participantPicture ?? null,
       metadata: input.metadata ?? null,
+      // En el número de un vendedor el bot no contesta.
+      ...(numeroDeVendedor ? { aiEnabled: false } : {}),
       createdAt: now,
       updatedAt: now,
     })
@@ -420,14 +431,21 @@ export async function ingestMessage(
   }
 
   // Si entra un mensaje del cliente, asegurar asignación automática al asesor configurado
+  const numeroDeVendedor = conv.channel === "whatsapp" && (await esCuentaDeVendedor(conv.accountId));
   if (conv.contactId) {
-    await applyAutoAssignToContact(conv.contactId);
+    if (numeroDeVendedor) {
+      // El cliente le escribió al número del vendedor: el chat es de ese vendedor.
+      await asignarAlVendedorDelNumero(conv.contactId, conv.accountId);
+    } else {
+      await applyAutoAssignToContact(conv.contactId);
+    }
   }
 
-  await maybeReactivateAfterInactivity(conv.id, conv.contactId);
+  // En el número de un vendedor el bot nunca se reactiva solo.
+  if (!numeroDeVendedor) await maybeReactivateAfterInactivity(conv.id, conv.contactId);
 
   const tooOld = Date.now() - sentAt.getTime() > MAX_AGE_FOR_AGENT_MS;
-  const shouldEnqueue = (input.enqueueAgent ?? true) && !tooOld;
+  const shouldEnqueue = (input.enqueueAgent ?? true) && !tooOld && !numeroDeVendedor;
   if (!shouldEnqueue || !conv.contactId) {
     return { duplicate: false, messageId, jobId: null };
   }
@@ -438,6 +456,19 @@ export async function ingestMessage(
     conv.id
   );
   return { duplicate: false, messageId, jobId };
+}
+
+async function asignarAlVendedorDelNumero(contactId: string, accountId: string | null): Promise<void> {
+  const vendedor = await vendedorDeCuenta(accountId);
+  if (!vendedor) return;
+  const [c] = await db.select({ ownerId: contacts.ownerId }).from(contacts).where(eq(contacts.id, contactId)).limit(1);
+  if (!c || c.ownerId === vendedor) return;
+  await assignContact({
+    contactId,
+    ownerId: vendedor,
+    by: { type: "automation" },
+    reason: "Escribió al número de WhatsApp del vendedor",
+  });
 }
 
 /** Mantiene al dia los campos materializados del hilo (lista + ventana de 24h). */

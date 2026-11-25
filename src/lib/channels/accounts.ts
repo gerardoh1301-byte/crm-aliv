@@ -3,6 +3,7 @@ import { db } from "@/db";
 import { channelAccounts } from "@/db/schema";
 import { and, asc, eq } from "drizzle-orm";
 import type { Channel, Provider } from "./types";
+import { cuentaBotWhatsapp } from "./numeros";
 
 /**
  * Resolucion de cuentas conectadas por canal. Espeja `whatsapp-accounts.ts`, que hace
@@ -92,8 +93,12 @@ export async function getAccountForChannel(
     )
     .orderBy(asc(channelAccounts.createdAt));
 
+  // Con varios WhatsApp, lo saliente sin chat previo va por el número del bot.
+  const bot = platform === "whatsapp" ? await cuentaBotWhatsapp() : null;
   const preferred =
-    rows.find((r) => r.provider === "zernio" && r.zernioAccountId) ?? rows[0];
+    (bot ? rows.find((r) => r.id === bot.id) : undefined) ??
+    rows.find((r) => r.provider === "zernio" && r.zernioAccountId) ??
+    rows[0];
   return preferred ? mapRow(preferred) : null;
 }
 

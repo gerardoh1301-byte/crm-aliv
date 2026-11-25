@@ -56,6 +56,8 @@ export function ConversationsList({ conversations, selectedId }: Props) {
 
   // Filtro rápido por etapa del pipeline (mejora 10 del informe).
   const [etapa, setEtapa] = useState<string>(() => searchParams.get("etapa") || "all");
+  // Varios números de WhatsApp (bot + vendedores): filtro por número.
+  const [numero, setNumero] = useState<string>(() => searchParams.get("numero") || "all");
 
   const [soloAtencion, setSoloAtencion] = useState<boolean>(() => {
     return searchParams.get("filtro") === "atencion";
@@ -232,8 +234,15 @@ export function ConversationsList({ conversations, selectedId }: Props) {
     return [...m.entries()].sort((a, b) => b[1].n - a[1].n);
   }, [conversations]);
 
+  const numeros = useMemo(() => {
+    const m = new Map<string, number>();
+    for (const c of conversations) if (c.numero) m.set(c.numero, (m.get(c.numero) ?? 0) + 1);
+    return [...m.entries()].sort((a, b) => b[1] - a[1]);
+  }, [conversations]);
+
   const filtered = useMemo(() => {
-    const atencion = soloAtencion ? conversations.filter(requiereAtencion) : conversations;
+    const porNumero = numero === "all" ? conversations : conversations.filter((c) => c.numero === numero);
+    const atencion = soloAtencion ? porNumero.filter(requiereAtencion) : porNumero;
     const base =
       etapa === "all"
         ? atencion
@@ -269,7 +278,7 @@ export function ConversationsList({ conversations, selectedId }: Props) {
       return false;
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [conversations, search, channel, tagFilter, soloAtencion, etapa]);
+  }, [conversations, search, channel, tagFilter, soloAtencion, etapa, numero]);
 
   return (
     <aside
@@ -351,6 +360,40 @@ export function ConversationsList({ conversations, selectedId }: Props) {
       </div>
 
       <ChannelFilter value={channel} onChange={handleChannelChange} counts={counts} />
+
+      {numeros.length > 1 && (
+        <div className="flex items-center gap-2 px-3 py-1.5 border-b border-border/50">
+          <label htmlFor="filtro-numero" className="text-[11px] text-muted-foreground shrink-0">
+            Número
+          </label>
+          <select
+            id="filtro-numero"
+            value={numero}
+            onChange={(e) => setNumero(e.target.value)}
+            className={cn(
+              "flex-1 min-w-0 h-7 rounded-md border bg-background px-2 text-xs cursor-pointer",
+              numero !== "all" && "border-primary text-primary font-medium"
+            )}
+          >
+            <option value="all">Todos los números</option>
+            {numeros.map(([n, total]) => (
+              <option key={n} value={n}>
+                {n} ({total})
+              </option>
+            ))}
+          </select>
+          {numero !== "all" && (
+            <button
+              type="button"
+              aria-label="Quitar filtro de número"
+              onClick={() => setNumero("all")}
+              className="text-muted-foreground hover:text-foreground cursor-pointer"
+            >
+              <X className="h-3.5 w-3.5" />
+            </button>
+          )}
+        </div>
+      )}
 
       {etapas.length > 0 && (
         <div className="flex items-center gap-2 px-3 py-1.5 border-b border-border/50">

@@ -1,9 +1,10 @@
 import "server-only";
 import { db } from "@/db";
-import { activities, channelAccounts, contacts, conversations, pipelineStages, pipelines } from "@/db/schema";
+import { activities, contacts, conversations, pipelineStages, pipelines } from "@/db/schema";
 import { and, desc, eq, or, sql } from "drizzle-orm";
 import { notifyMember } from "@/lib/notifications";
 import { resolveConversationId } from "@/lib/conversations";
+import { cuentaBotWhatsapp } from "@/lib/channels/numeros";
 import { deliverMessage } from "@/lib/channels/deliver";
 import { alertarEquipo } from "@/lib/agent/alertas";
 import { notificarSupervisoresCritico } from "@/lib/alerts/supervisor-alerts";
@@ -303,11 +304,8 @@ const sendMessage: ActionDef = {
           conversationId = existente.id;
         } else {
           // Buscar cuenta activa de WhatsApp (Zernio o directa)
-          const [account] = await db
-            .select()
-            .from(channelAccounts)
-            .where(and(eq(channelAccounts.platform, "whatsapp"), eq(channelAccounts.status, "active")))
-            .limit(1);
+          // Número del bot: es el que tiene las plantillas (ver numeros-reglas.ts).
+          const account = await cuentaBotWhatsapp();
 
           const accountId = account?.id ?? null;
           const provider = account?.provider ?? "zernio";

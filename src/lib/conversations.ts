@@ -36,6 +36,8 @@ export interface ConversationListItem {
   /** Etapa del pipeline del último deal del contacto (filtro rápido de la bandeja, mejora 10). */
   stageName?: string | null;
   stageColor?: string | null;
+  /** Número de WhatsApp por el que entra el chat (útil cuando hay varios números). */
+  numero?: string | null;
 }
 
 export interface ConversationMessage {
@@ -109,6 +111,7 @@ export async function listConversations(filter?: {
       convNeedsHuman: conversations.needsHuman,
       convNeedsHumanReason: conversations.needsHumanReason,
       contactName: contacts.name,
+      numero: sql<string | null>`coalesce(${channelAccounts.username}, ${channelAccounts.displayName})`,
       contactTags: contacts.tags,
       phone: contacts.phone,
       contactAiEnabled: contacts.aiEnabled,
@@ -177,6 +180,7 @@ export async function listConversations(filter?: {
     needsHumanReason: r.convNeedsHumanReason ?? r.contactNeedsHumanReason ?? null,
     stageName: r.stage ? r.stage.split("|")[0] : null,
     stageColor: r.stage ? r.stage.split("|")[1] ?? null : null,
+    numero: r.channel === "whatsapp" ? r.numero : null,
   }));
 }
 

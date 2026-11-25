@@ -3,7 +3,6 @@ import { db } from "@/db";
 import { esNumeroEntrenador } from "@/lib/alerts/supervisor-alerts";
 import {
   activities,
-  channelAccounts,
   contacts,
   conversations,
   deals,
@@ -13,6 +12,7 @@ import {
 } from "@/db/schema";
 import { and, desc, eq, gte, like, or, sql } from "drizzle-orm";
 import { resolveConversationId } from "@/lib/conversations";
+import { cuentaBotWhatsapp } from "@/lib/channels/numeros";
 import { deliverMessage } from "@/lib/channels/deliver";
 import { setDealStage } from "@/lib/deals/stage";
 import { resolveDefaultTenantId } from "@/lib/tenants";
@@ -293,11 +293,8 @@ async function conversacionWhatsapp(contactId: string): Promise<string | null> {
     .orderBy(desc(conversations.createdAt))
     .limit(1);
   if (previa) return previa.id;
-  const [account] = await db
-    .select()
-    .from(channelAccounts)
-    .where(and(eq(channelAccounts.platform, "whatsapp"), eq(channelAccounts.status, "active")))
-    .limit(1);
+  // Número del bot: es el que tiene las plantillas (ver numeros-reglas.ts).
+  const account = await cuentaBotWhatsapp();
   const [creada] = await db
     .insert(conversations)
     .values({

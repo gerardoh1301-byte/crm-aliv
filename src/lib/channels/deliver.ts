@@ -6,6 +6,7 @@ import { getAccountById } from "./accounts";
 import { conectorParaConversacion } from "./conectores";
 import type { ConversationRow, OutboundMessage } from "./conector";
 import { touchConversation } from "./ingest";
+import { conversacionEnNumeroBot, esCuentaDeVendedor } from "./numeros";
 import type { Channel } from "./types";
 import { aplicaVentana24h, fueraDeVentana24h } from "./ventana-24h";
 
@@ -57,9 +58,28 @@ export async function deliverMessage(
    */
   opts: { permitirRepetido?: boolean } = {}
 ): Promise<DeliverResult> {
-  const conversation = await getConversationRow(conversationId);
+  let conversation = await getConversationRow(conversationId);
   if (!conversation) {
     return { ok: false, messageId: null, error: "conversation_not_found" };
+  }
+
+  // Número de un vendedor: lo automático (bot, plantillas, avisos) sale por el número del
+  // bot, que es el que tiene las plantillas aprobadas. Solo lo que escribe una persona sale
+  // por el número del vendedor. Ver numeros-reglas.ts.
+  if (origin !== "human" && conversation.channel === "whatsapp" && (await esCuentaDeVendedor(conversation.accountId))) {
+    const idBot = await conversacionEnNumeroBot(conversation);
+    const enBot = idBot ? await getConversationRow(idBot) : null;
+    if (!idBot || !enBot) {
+      return {
+        ok: false,
+        messageId: null,
+        error: "sin_chat_en_numero_bot",
+        hint: "El chat es del número de un vendedor y no se pudo abrir el chat en el número del bot.",
+      };
+    }
+    console.info(`[deliver] ${origin} desde el número del vendedor redirigido al número del bot: ${conversationId} -> ${idBot}`);
+    conversation = enBot;
+    conversationId = idBot;
   }
 
   const conector = conectorParaConversacion(conversation);
