@@ -352,6 +352,7 @@ export function DealCard({
     claveRecojo: currentClaveRecojo || null,
     transportadora: transportadora || "Shalom",
     estadoPedido: estadoPedido || null,
+    fleteShalom: currentFinanzas?.fleteShalom ?? null,
   };
 
   const parsedOrdenItems: any[] = (() => {

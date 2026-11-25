@@ -48,6 +48,8 @@ export interface SeguimientoShalomData {
   claveRecojo?: string | null;
   transportadora?: string | null;
   estadoPedido?: string | null;
+  /** Flete que se le pagó a Shalom (soles), si ya se registró. */
+  fleteShalom?: number | null;
   /** Productos de la orden, para ver qué se empaca y envía sin salir del modal. */
   productos?: Array<{ titulo?: string | null; cantidad?: number | null }> | null;
 }
@@ -90,6 +92,8 @@ export function SeguimientoShalomModal({
   const [numeroGuia, setNumeroGuia] = useState(defaultGuia);
   const [codigoRastreo, setCodigoRastreo] = useState(defaultCodigo);
   const [claveRecojo, setClaveRecojo] = useState(data.claveRecojo || "");
+  const fleteInicial = data.fleteShalom === null || data.fleteShalom === undefined ? "" : String(data.fleteShalom);
+  const [flete, setFlete] = useState(fleteInicial);
   const [estado, setEstado] = useState(data.estadoPedido || "enviado");
   const [saving, setSaving] = useState(false);
   const [sendingAuto, setSendingAuto] = useState(false);
@@ -149,7 +153,7 @@ Tu clave secreta de recojo te la enviaremos por aquí en cuanto confirmes el pag
 Ingresa a 👉 https://shalom.com.pe/rastrea/
 Coloca tu *N° de Orden* (${guiaText}) y tu *Código* (${codigoText}) para ver dónde se encuentra tu envío.
 
-¡Muchas gracias por tu compra en Aliv Perú! 🌿`;
+¿Me confirmas con un *OK* que recibiste estos datos? Así te aviso por aquí apenas tu pedido llegue a la agencia 🙌`;
   };
 
   // Mensaje posterior cuando el cliente ya transfirió el saldo restante
@@ -212,7 +216,33 @@ Recuerda acudir con tu DNI físico original para el retiro. ¡Que disfrutes tus 
     if (json.advertencia) {
       toast.warning(json.advertencia, { duration: 7000 });
     }
+    await guardarFlete();
     return json;
+  };
+
+  /**
+   * El flete va al mismo registro que «Dinero del pedido» (solo la etiqueta del flete;
+   * adelanto y saldo no se tocan). Si falla, el seguimiento igual queda guardado.
+   */
+  const guardarFlete = async () => {
+    const valor = flete.trim().replace(",", ".");
+    if (!valor || valor === fleteInicial) return;
+    const numero = Number(valor);
+    if (!Number.isFinite(numero) || numero < 0) {
+      toast.warning("El flete Shalom no es un número válido: no se guardó");
+      return;
+    }
+    const res = await fetch("/api/pedidos/finanzas-shalom", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ dealId: data.dealId, pedidoId: data.pedidoId, numeroOrden: data.numeroOrden, fleteShalom: numero }),
+    }).catch(() => null);
+    const j = res ? await res.json().catch(() => ({})) : {};
+    if (!res?.ok || !j.ok) {
+      toast.warning(`El flete no se guardó: ${j.error || (res?.status === 403 ? "solo un administrador puede registrarlo" : "error de conexión")}`, { duration: 7000 });
+      return;
+    }
+    window.dispatchEvent(new Event("pipeline:refresh"));
   };
 
   const handleGuardar = async () => {
@@ -611,6 +641,25 @@ Recuerda acudir con tu DNI físico original para el retiro. ¡Que disfrutes tus 
               }}
             />
           )}
+
+          <div className="space-y-1">
+            <Label htmlFor="shalom-flete" className="text-xs font-semibold">
+              Flete pagado a Shalom (S/):
+            </Label>
+            <Input
+              id="shalom-flete"
+              type="number"
+              step="0.01"
+              min="0"
+              placeholder="Ej. 10.00"
+              value={flete}
+              onChange={(e) => setFlete(e.target.value)}
+              className="text-xs h-8 w-32 tabular-nums"
+            />
+            <p className="text-[10px] text-muted-foreground leading-tight">
+              Se guarda junto con la guía y pasa al ERP como costo del pedido (cuenta BCP, fecha de hoy).
+            </p>
+          </div>
 
           {/* Campo editable: Agencia Shalom / Destino de Entrega */}
           <div className="space-y-1 pt-0.5">

@@ -17,6 +17,7 @@ import { cn } from "@/lib/utils";
 import { toast } from "sonner";
 import { formatDistanceToNow } from "date-fns";
 import { es } from "date-fns/locale";
+import { PreguiaShalomContacto } from "./PreguiaShalomContacto";
 
 interface DocItem {
   id: string;
@@ -188,9 +189,11 @@ export function DocumentsPanel({ contactId }: { contactId: string }) {
           dragging && "bg-primary/5 ring-2 ring-inset ring-primary/40"
         )}
       >
+        <PreguiaShalomContacto contactId={contactId} />
+
         {!storageReady && (
           <p className="text-sm text-amber-700 bg-amber-500/10 rounded-lg px-3 py-2">
-            El almacenamiento de archivos no esta configurado (variables <code>S3_*</code>).
+            Los demás archivos no se pueden subir aquí todavía (falta configurar el almacenamiento S3). La preguía Shalom sí: va a tu Drive.
           </p>
         )}
 

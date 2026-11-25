@@ -24,12 +24,15 @@ function limpiar(t: string, max: number): string {
     .slice(0, max);
 }
 
-/** "Manuel Vertiz - #LEG-1153 - 2026-11-21.pdf" (fecha de Lima). */
-export function nombreArchivoGuia(params: { cliente: string | null; numeroOrden: string; fecha?: Date }): string {
+/**
+ * "Manuel Vertiz - 2026-11-21 - #LEG-1153.pdf": cliente, FECHA DEL PEDIDO (Lima) y orden.
+ * Así en Drive quedan ordenadas por cliente y se distinguen dos pedidos del mismo cliente.
+ */
+export function nombreArchivoGuia(params: { cliente: string | null; numeroOrden: string; fecha?: Date | null }): string {
   const nombre = limpiar(params.cliente || "Cliente", 60) || "Cliente";
   const orden = limpiar(params.numeroOrden.replace(/^#+/, ""), 30) || "SIN-ORDEN";
   const fecha = new Intl.DateTimeFormat("en-CA", { timeZone: "America/Lima" }).format(params.fecha ?? new Date());
-  return `${nombre} - #${orden} - ${fecha}.pdf`;
+  return `${nombre} - ${fecha} - #${orden}.pdf`;
 }
 
 export function marcaGuiaPdf(d: DatosGuiaPdf): string {

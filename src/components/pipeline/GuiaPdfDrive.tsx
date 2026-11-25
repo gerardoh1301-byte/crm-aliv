@@ -13,20 +13,23 @@ interface EstadoDrive {
 }
 
 /**
- * Sube la guía PDF de Shalom a Drive («Nombre - #orden - fecha.pdf») y, si se marca, el bot
+ * Sube la preguía / guía PDF de Shalom a Drive («Nombre - fecha del pedido - #orden.pdf») y, si se marca, el bot
  * le envía al cliente la imagen de la guía con una pregunta (solo dentro de las 24 h).
  */
 export function GuiaPdfDrive({
   pedidoId,
   antesDeSubir,
+  enviarPorDefecto = true,
 }: {
   pedidoId: string;
   /** Guarda primero N° de orden y código, para que el mensaje los lleve. */
   antesDeSubir?: () => Promise<unknown>;
+  /** Desde la ficha del contacto la casilla viene apagada (se envía solo si la marcan). */
+  enviarPorDefecto?: boolean;
 }) {
   const [estado, setEstado] = useState<EstadoDrive | null>(null);
   const [subiendo, setSubiendo] = useState(false);
-  const [enviar, setEnviar] = useState(true);
+  const [enviar, setEnviar] = useState(enviarPorDefecto);
   const [resultado, setResultado] = useState<{ archivo?: string; pdfUrl?: string | null; envio?: { enviado: boolean; motivo?: string } } | null>(null);
   const input = useRef<HTMLInputElement>(null);
 
@@ -71,7 +74,7 @@ export function GuiaPdfDrive({
     <div className="rounded-md border border-dashed p-2.5 space-y-1.5">
       <div className="flex items-center justify-between gap-2">
         <span className="text-xs font-semibold flex items-center gap-1">
-          <FileUp className="h-3.5 w-3.5 text-red-600" /> Guía PDF (Drive)
+          <FileUp className="h-3.5 w-3.5 text-red-600" /> Preguía / guía PDF (Drive)
         </span>
         {estado.conectado && estado.cuenta && (
           <span className="text-[9.5px] text-muted-foreground truncate">{estado.cuenta}</span>
@@ -106,7 +109,7 @@ export function GuiaPdfDrive({
           <div className="flex items-center gap-2 flex-wrap">
             <Button type="button" size="sm" variant="outline" className="h-7 text-xs" disabled={subiendo} onClick={() => input.current?.click()}>
               {subiendo ? <Loader2 className="h-3.5 w-3.5 animate-spin mr-1" /> : <FileUp className="h-3.5 w-3.5 mr-1" />}
-              Subir guía PDF
+              Subir preguía PDF
             </Button>
             <label className="text-[11px] flex items-center gap-1 cursor-pointer select-none">
               <input type="checkbox" checked={enviar} onChange={(e) => setEnviar(e.target.checked)} />

@@ -37,7 +37,7 @@ export async function guardarGuiaPdf(params: { pedidoId: string; pdf: Uint8Array
   if (invalido) return { ok: false, error: invalido };
 
   const [p] = await db
-    .select({ id: pedidosOrdenes.id, numeroOrden: pedidosOrdenes.numeroOrden, notas: pedidosOrdenes.notas, contactId: pedidosOrdenes.contactId, cliente: contacts.name })
+    .select({ id: pedidosOrdenes.id, numeroOrden: pedidosOrdenes.numeroOrden, notas: pedidosOrdenes.notas, contactId: pedidosOrdenes.contactId, creado: pedidosOrdenes.createdAt, cliente: contacts.name })
     .from(pedidosOrdenes)
     .leftJoin(contacts, eq(contacts.id, pedidosOrdenes.contactId))
     .where(eq(pedidosOrdenes.id, params.pedidoId))
@@ -51,7 +51,7 @@ export async function guardarGuiaPdf(params: { pedidoId: string; pdf: Uint8Array
     return { ok: false, error: `No se pudo leer el PDF: ${err instanceof Error ? err.message : String(err)}` };
   }
 
-  const nombre = nombreArchivoGuia({ cliente: p.cliente, numeroOrden: p.numeroOrden });
+  const nombre = nombreArchivoGuia({ cliente: p.cliente, numeroOrden: p.numeroOrden, fecha: p.creado });
   const carpeta = await carpetaGuias();
   const pdf = await subirArchivo({ nombre, mime: "application/pdf", datos: params.pdf, carpetaId: carpeta });
   const img = await subirArchivo({ nombre: nombre.replace(/\.pdf$/, ".jpg"), mime: "image/jpeg", datos: imagen, carpetaId: carpeta });
@@ -73,6 +73,38 @@ export async function guardarGuiaPdf(params: { pedidoId: string; pdf: Uint8Array
 export interface ResultadoEnvio {
   enviado: boolean;
   motivo?: string;
+}
+
+export interface PedidoShalomContacto {
+  id: string;
+  numeroOrden: string;
+  fecha: string;
+  estado: string;
+  tieneGuia: boolean;
+}
+
+/** Pedidos Shalom del contacto (más recientes primero), para subir la preguía desde su ficha. */
+export async function pedidosShalomDeContacto(contactId: string): Promise<PedidoShalomContacto[]> {
+  const { ilike, or } = await import("drizzle-orm");
+  const filas = await db
+    .select({ id: pedidosOrdenes.id, numeroOrden: pedidosOrdenes.numeroOrden, creado: pedidosOrdenes.createdAt, estado: pedidosOrdenes.estado, notas: pedidosOrdenes.notas })
+    .from(pedidosOrdenes)
+    .where(
+      and(
+        eq(pedidosOrdenes.contactId, contactId),
+        or(ilike(pedidosOrdenes.transportadora, "%shalom%"), ilike(pedidosOrdenes.modalidadPago, "%adelanto%"))
+      )
+    )
+    .orderBy(desc(pedidosOrdenes.createdAt))
+    .limit(10);
+  const fmt = new Intl.DateTimeFormat("en-CA", { timeZone: "America/Lima" });
+  return filas.map((f) => ({
+    id: f.id,
+    numeroOrden: f.numeroOrden,
+    fecha: fmt.format(f.creado),
+    estado: f.estado,
+    tieneGuia: leerGuiaPdf(f.notas) !== null,
+  }));
 }
 
 /** Envía la imagen de la guía con la pregunta. Solo dentro de la ventana de 24 h; no repite. */

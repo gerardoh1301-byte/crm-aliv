@@ -31,9 +31,9 @@ function pdfMinimo(): Uint8Array {
 }
 
 describe("guía PDF de Shalom", () => {
-  it("nombra el archivo con cliente, orden y fecha de Lima, sin clave", () => {
+  it("nombra el archivo con cliente, fecha del pedido (Lima) y orden, sin clave", () => {
     const n = nombreArchivoGuia({ cliente: "Ana / Pérez", numeroOrden: "#LEG-1153", fecha: new Date("2026-11-22T03:00:00Z") });
-    expect(n).toBe("Ana Pérez - #LEG-1153 - 2026-11-21.pdf");
+    expect(n).toBe("Ana Pérez - 2026-11-21 - #LEG-1153.pdf");
     expect(n).not.toMatch(/clave/i);
   });
 
