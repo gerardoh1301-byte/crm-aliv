@@ -19,6 +19,10 @@ export interface ConfigVozIA {
   agentPhoneNumberId: string | null;
   /** Endpoint configurable por si usa integración Twilio nativa o SIP trunk en ElevenLabs */
   endpointKind: "twilio" | "sip_trunk";
+  /** Si están presentes, saca la llamada por Twilio API con Verified Caller ID peruano (+51...) */
+  twilioAccountSid: string | null;
+  twilioAuthToken: string | null;
+  twilioCallerId: string | null;
 }
 
 async function leerSetting(key: string): Promise<string | null> {
@@ -50,9 +54,13 @@ export async function obtenerConfigVozIA(): Promise<ConfigVozIA> {
   const rawEnabled = process.env.VOICE_AI_CALLS_ENABLED?.trim() || (await leerSetting("voice.enabled"));
   const kindRaw = process.env.ELEVENLABS_OUTBOUND_KIND?.trim() || (await leerSetting("voice.outbound_kind"));
 
+  const twilioAccountSid = process.env.TWILIO_ACCOUNT_SID?.trim() || (await leerSetting("voice.twilio_account_sid"));
+  const twilioAuthToken = process.env.TWILIO_AUTH_TOKEN?.trim() || (await leerSetting("voice.twilio_auth_token"));
+  const twilioCallerId = process.env.TWILIO_CALLER_ID?.trim() || (await leerSetting("voice.twilio_caller_id"));
+
   const enabled = rawEnabled
     ? rawEnabled.toLowerCase() !== "false" && rawEnabled.toLowerCase() !== "off"
-    : Boolean(apiKey && agentId && agentPhoneNumberId);
+    : Boolean(apiKey && agentId && (agentPhoneNumberId || (twilioAccountSid && twilioAuthToken && twilioCallerId)));
 
   return {
     enabled,
@@ -60,6 +68,9 @@ export async function obtenerConfigVozIA(): Promise<ConfigVozIA> {
     agentId: agentId || null,
     agentPhoneNumberId: agentPhoneNumberId || null,
     endpointKind: kindRaw === "sip_trunk" ? "sip_trunk" : "twilio",
+    twilioAccountSid: twilioAccountSid || null,
+    twilioAuthToken: twilioAuthToken || null,
+    twilioCallerId: twilioCallerId || null,
   };
 }
 
@@ -100,56 +111,134 @@ export async function dispararLlamadaConfirmacionPedido(
   const config = await obtenerConfigVozIA();
   const variables = construirVariablesLlamadaPedido(datos);
 
-  if (!config.enabled || !config.apiKey || !config.agentId || !config.agentPhoneNumberId) {
+  if (!config.enabled || !config.apiKey || !config.agentId) {
     return {
       ok: false,
       omitido: true,
-      motivo: "Credenciales de ElevenLabs + Twilio aún no configuradas (ELEVENLABS_API_KEY, ELEVENLABS_AGENT_ID, ELEVENLABS_PHONE_NUMBER_ID)",
+      motivo: "Credenciales de ElevenLabs + Twilio aún no configuradas (ELEVENLABS_API_KEY, ELEVENLABS_AGENT_ID)",
       variables,
     };
   }
 
-  const url =
-    config.endpointKind === "sip_trunk"
-      ? "https://api.elevenlabs.io/v1/convai/sip-trunk/outbound-call"
-      : "https://api.elevenlabs.io/v1/convai/twilio/outbound-call";
+  const usarCallerIdPeruano = Boolean(
+    config.twilioAccountSid && config.twilioAuthToken && config.twilioCallerId
+  );
 
   try {
-    const res = await fetch(url, {
-      method: "POST",
-      headers: {
-        "xi-api-key": config.apiKey,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        agent_id: config.agentId,
-        agent_phone_number_id: config.agentPhoneNumberId,
-        to_number: toNumber,
-        conversation_initiation_client_data: {
-          dynamic_variables: variables,
+    let conversationId: string | undefined;
+    let callSid: string | undefined;
+
+    if (usarCallerIdPeruano) {
+      // MODO 1 (Preferido para Perú): Registrar la sesión en ElevenLabs para obtener el TwiML
+      // y lanzar la llamada directo por Twilio API mostrando el Verified Caller ID peruano (+51 944 392 731).
+      const regRes = await fetch("https://api.elevenlabs.io/v1/convai/twilio/register-call", {
+        method: "POST",
+        headers: {
+          "xi-api-key": config.apiKey,
+          "Content-Type": "application/json",
         },
-      }),
-      signal: AbortSignal.timeout(12_000),
-    });
-
-    const body = (await res.json().catch(() => null)) as Record<string, unknown> | null;
-    if (!res.ok) {
-      const errDetail =
-        typeof body?.detail === "string"
-          ? body.detail
-          : body?.detail
-          ? JSON.stringify(body.detail)
-          : `HTTP ${res.status}`;
-      await db.insert(activities).values({
-        type: "call",
-        description: `📞 [IA Voz] Falló el inicio de llamada automática para ${datos.numeroOrden} (${toNumber}): ${errDetail.slice(0, 300)}`,
-        contactId: datos.contactId,
+        body: JSON.stringify({
+          agent_id: config.agentId,
+          from_number: config.twilioCallerId,
+          to_number: toNumber,
+          direction: "outbound",
+          conversation_initiation_client_data: {
+            dynamic_variables: variables,
+          },
+        }),
+        signal: AbortSignal.timeout(12_000),
       });
-      return { ok: false, motivo: errDetail, variables };
-    }
 
-    const conversationId = typeof body?.conversation_id === "string" ? body.conversation_id : undefined;
-    const callSid = typeof body?.callSid === "string" ? body.callSid : typeof body?.sip_call_id === "string" ? body.sip_call_id : undefined;
+      const twiml = await regRes.text();
+      if (!regRes.ok || !twiml.includes("<Response")) {
+        throw new Error(`ElevenLabs register-call falló (HTTP ${regRes.status}): ${twiml.slice(0, 250)}`);
+      }
+
+      const authHeader = Buffer.from(`${config.twilioAccountSid}:${config.twilioAuthToken}`).toString("base64");
+      const form = new URLSearchParams();
+      form.set("To", toNumber);
+      form.set("From", config.twilioCallerId!);
+      form.set("Twiml", twiml);
+
+      const twilioRes = await fetch(
+        `https://api.twilio.com/2010-04-01/Accounts/${config.twilioAccountSid}/Calls.json`,
+        {
+          method: "POST",
+          headers: {
+            Authorization: `Basic ${authHeader}`,
+            "Content-Type": "application/x-www-form-urlencoded",
+          },
+          body: form.toString(),
+          signal: AbortSignal.timeout(12_000),
+        }
+      );
+
+      const twilioBody = (await twilioRes.json().catch(() => null)) as Record<string, unknown> | null;
+      if (!twilioRes.ok) {
+        const errDetail =
+          typeof twilioBody?.message === "string" ? twilioBody.message : `Twilio HTTP ${twilioRes.status}`;
+        await db.insert(activities).values({
+          type: "call",
+          description: `📞 [IA Voz] Falló Twilio con Caller ID ${config.twilioCallerId} para ${datos.numeroOrden} (${toNumber}): ${errDetail.slice(0, 300)}`,
+          contactId: datos.contactId,
+        });
+        return { ok: false, motivo: errDetail, variables };
+      }
+
+      callSid = typeof twilioBody?.sid === "string" ? twilioBody.sid : undefined;
+      const mConv = twiml.match(/conversation_id["']\s+value=["']([^"']+)["']/i);
+      conversationId = mConv?.[1];
+    } else {
+      // MODO 2 (Respaldo): Llamada directa por número importado en ElevenLabs
+      if (!config.agentPhoneNumberId) {
+        return { ok: false, omitido: true, motivo: "Falta ELEVENLABS_PHONE_NUMBER_ID", variables };
+      }
+      const url =
+        config.endpointKind === "sip_trunk"
+          ? "https://api.elevenlabs.io/v1/convai/sip-trunk/outbound-call"
+          : "https://api.elevenlabs.io/v1/convai/twilio/outbound-call";
+
+      const res = await fetch(url, {
+        method: "POST",
+        headers: {
+          "xi-api-key": config.apiKey,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          agent_id: config.agentId,
+          agent_phone_number_id: config.agentPhoneNumberId,
+          to_number: toNumber,
+          conversation_initiation_client_data: {
+            dynamic_variables: variables,
+          },
+        }),
+        signal: AbortSignal.timeout(12_000),
+      });
+
+      const body = (await res.json().catch(() => null)) as Record<string, unknown> | null;
+      if (!res.ok) {
+        const errDetail =
+          typeof body?.detail === "string"
+            ? body.detail
+            : body?.detail
+            ? JSON.stringify(body.detail)
+            : `HTTP ${res.status}`;
+        await db.insert(activities).values({
+          type: "call",
+          description: `📞 [IA Voz] Falló el inicio de llamada automática para ${datos.numeroOrden} (${toNumber}): ${errDetail.slice(0, 300)}`,
+          contactId: datos.contactId,
+        });
+        return { ok: false, motivo: errDetail, variables };
+      }
+
+      conversationId = typeof body?.conversation_id === "string" ? body.conversation_id : undefined;
+      callSid =
+        typeof body?.callSid === "string"
+          ? body.callSid
+          : typeof body?.sip_call_id === "string"
+          ? body.sip_call_id
+          : undefined;
+    }
 
     // Registrar en el pedido y en el historial de actividades que la llamada IA ya salió
     const [pedidoActual] = await db
