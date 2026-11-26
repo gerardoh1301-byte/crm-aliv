@@ -106,6 +106,27 @@ export function buscarSedesShalomParaVoz(ciudad: string | null, distrito: string
   return sedes;
 }
 
+export function normalizarTextoParaVoz(texto: string | null | undefined): string {
+  return String(texto ?? "")
+    .replace(/\bAv\.?\s+/gi, "Avenida ")
+    .replace(/\bJr\.?\s+/gi, "Jirón ")
+    .replace(/\bCl\.?\s+/gi, "Calle ")
+    .replace(/\bPsj\.?\s+/gi, "Pasaje ")
+    .replace(/\bUrb\.?\s+/gi, "Urbanización ")
+    .replace(/\bMz\.?\s*/gi, "Manzana ")
+    .replace(/\bLt\.?\s*/gi, "Lote ")
+    .replace(/\bNro\.?\s*/gi, "número ")
+    .replace(/\bN°\s*/gi, "número ")
+    .replace(/\bDpto\.?\s*/gi, "Departamento ")
+    .replace(/\bInt\.?\s*/gi, "Interior ")
+    .replace(/\bNAC\s?600\b/gi, "NAC seiscientos")
+    .replace(/\bNAD\+/gi, "NAD plus")
+    .replace(/S\/\s?(\d+(?:\.\d+)?)/gi, "$1 soles")
+    .replace(/\.+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
 /**
  * Construye las variables dinámicas y el guion exacto que recibe ElevenLabs Conversational AI
  * al iniciar la llamada para este pedido específico.
@@ -137,9 +158,11 @@ export function construirVariablesLlamadaPedido(p: DatosPedidoParaLlamada): Vari
     faltantes.push("el día y rango de horario en que se encuentra para recibir al repartidor");
 
     const dirMostrar = [direccion, distrito, ciudad].filter(Boolean).join(", ") || ciudad;
+    const dirVoz = normalizarTextoParaVoz(dirMostrar);
+    const prodVoz = normalizarTextoParaVoz(p.productosTexto);
     const saludo = primerNombre
-      ? `¡Hola, ${primerNombre}! Qué tal, te saluda Sofía del área de despacho de Aliv Perú. Te llamo rapidito porque acabamos de recibir tu pedido de ${p.productosTexto} por ${totalNum} soles con envío gratis a tu domicilio en ${dirMostrar}, con pago al recibir. ¿Me confirmas si tus datos están correctos para programarte el envío?`
-      : `¡Hola! Qué tal, te saluda Sofía del área de despacho de Aliv Perú. Te llamo rapidito porque acabamos de recibir tu pedido de ${p.productosTexto} por ${totalNum} soles con envío gratis a domicilio en ${dirMostrar}, con pago al recibir. ¿Me confirmas si tu pedido está correcto para programarte el envío?`;
+      ? `¡Hola, ${primerNombre}! Qué tal, te saluda Sofía de Aliv Perú. Te llamo rapidito porque recibimos tu pedido de ${prodVoz} por ${totalNum} soles con envío gratis a ${dirVoz}, pagas al recibir. ¿Me confirmas si todo está correcto para programarte la entrega?`
+      : `¡Hola! Qué tal, te saluda Sofía de Aliv Perú. Te llamo rapidito porque recibimos tu pedido de ${prodVoz} por ${totalNum} soles con envío gratis a ${dirVoz}, pagas al recibir. ¿Me confirmas si todo está correcto para programarte la entrega?`;
 
     const instrucciones = [
       `MODALIDAD DEL PEDIDO: CONTRAENTREGA A DOMICILIO (PAGA AL RECIBIR S/ ${totalNum}).`,
@@ -187,9 +210,11 @@ export function construirVariablesLlamadaPedido(p: DatosPedidoParaLlamada): Vari
   faltantesShalom.push(`confirmar a cuál de las agencias Shalom de ${ciudad} prefiere que enviemos su paquete (${sedesTexto})`);
   faltantesShalom.push("confirmar el adelanto de 20 soles por Yape al 951 365 418 a nombre de Gerardo Huaynalaya que ya le enviamos a su WhatsApp");
 
+  const prodVozShalom = normalizarTextoParaVoz(p.productosTexto);
+  const sedeVozShalom = normalizarTextoParaVoz(primeraSede);
   const saludoShalom = primerNombre
-    ? `¡Hola, ${primerNombre}! Qué tal, te saluda Sofía del área de despacho de Aliv Perú. Te llamo rapidito porque acabamos de recibir tu pedido de ${p.productosTexto} por ${totalNum} soles con envío gratis a ${ciudad}. Para tu zona despachamos por agencia Shalom; veo que cerca tienes la sede de ${primeraSede}. ¿Te queda cómoda esa agencia para recoger tu pedido?`
-    : `¡Hola! Qué tal, te saluda Sofía del área de despacho de Aliv Perú. Te llamo rapidito porque acabamos de recibir tu pedido de ${p.productosTexto} por ${totalNum} soles con envío gratis a ${ciudad}. Para tu zona despachamos por agencia Shalom; cerca tienes la sede de ${primeraSede}. ¿Te queda cómoda esa agencia para recoger tu pedido?`;
+    ? `¡Hola, ${primerNombre}! Qué tal, te saluda Sofía de Aliv Perú. Te llamo rapidito porque recibimos tu pedido de ${prodVozShalom} por ${totalNum} soles con envío gratis a ${ciudad}. Para tu zona despachamos por agencia Shalom y cerca tienes la sede de ${sedeVozShalom}. ¿Te queda cómoda esa agencia para recogerlo?`
+    : `¡Hola! Qué tal, te saluda Sofía de Aliv Perú. Te llamo rapidito porque recibimos tu pedido de ${prodVozShalom} por ${totalNum} soles con envío gratis a ${ciudad}. Para tu zona despachamos por agencia Shalom y cerca tienes la sede de ${sedeVozShalom}. ¿Te queda cómoda esa agencia para recogerlo?`;
 
   const instruccionesShalom = [
     `MODALIDAD DEL PEDIDO: ENVÍO A PROVINCIA POR AGENCIA SHALOM (Total: S/ ${totalNum} | Adelanto para emitir guía: S/ 20 | Saldo al llegar a agencia: S/ ${saldoNum}).`,
@@ -228,15 +253,39 @@ export function construirVariablesLlamadaPedido(p: DatosPedidoParaLlamada): Vari
 /**
  * Prompt maestro del agente de voz en ElevenLabs (para copiar o sincronizar vía API).
  */
-export const PROMPT_AGENTE_VOZ_ALIV = `Eres Sofía, coordinadora de despacho de Aliv Perú (alivstore.shop). Hablas español peruano natural, cálido, empático, ágil y muy profesional.
+export const PROMPT_AGENTE_VOZ_ALIV = `Eres Sofía, coordinadora de despacho de Aliv Perú (alivstore.shop, RUC 20612283134). Hablas español peruano natural, cálido, empático, ágil y muy profesional.
 Estás realizando una llamada telefónica saliente inmediata a un cliente que acaba de registrar su pedido en nuestra tienda web.
 
+DATOS DEL PEDIDO ACTUAL:
+- Cliente: {{nombre_cliente}}
+- Pedido: {{numero_orden}} ({{productos}})
+- Monto Total: {{total_soles}} soles
+- Ciudad / Distrito: {{ciudad}} / {{distrito}}
+- Dirección registrada: {{direccion_registrada}}
+- Modalidad determinada por cobertura: {{modalidad}}
+
+INSTRUCCIONES ESPECÍFICAS PARA ESTE PEDIDO:
+{{instrucciones_especificas}}
+
+CONOCIMIENTO GENERAL DE PRODUCTOS (RESPONDE BREVE Y CON SEGURIDAD SI EL CLIENTE PREGUNTA):
+1. NAC seiscientos + NAD plus (NAC600):
+   - Qué es: Suplemento antioxidante importado de Estados Unidos (laboratorio The Modern Formula), 60 cápsulas por frasco en aceite de coco y MCT (suave para el estómago, sin olor ni sabor a azufre).
+   - Para qué sirve: Aporta cisteína para que el cuerpo produzca glutatión (su principal antioxidante) y NAD plus que apoya la energía celular diaria.
+   - Dosis y modo de uso: Se toman 2 cápsulas al día con agua, de preferencia junto con el desayuno. Un frasco de 60 cápsulas rinde exactamente 30 días.
+   - Precios oficiales: 1 frasco 119 soles, 2 frascos 189 soles, 3 frascos 199 soles (el más elegido para 90 días).
+   - Regla de salud: Es un complemento de bienestar, no es un medicamento ni cura enfermedades. Si el cliente menciona embarazo, lactancia o medicación específica, respóndele la dosis normal y recomiéndale comentarlo con su médico.
+2. Tobillera Termix:
+   - Qué es: Tobillera inalámbrica con calor de grafeno regulable hasta 60 grados y 3 niveles de masaje por vibración.
+   - Características: Talla universal con velcro (18 a 34 centímetros), sirve para pie izquierdo o derecho, batería recargable por cable USB-C incluido.
+   - Precios oficiales: 1 tobillera 79 soles, 2 tobilleras (el par) 139 soles, 3 tobilleras 189 soles.
+3. Confianza y garantía:
+   - Somos Aliv Perú, empresa formal con RUC 20612283134. Envíos gratis de lunes a sábado (domingos no hay reparto). Garantía de 30 días si el producto llega dañado o con falla de fábrica.
+
 REGLAS DE VOZ Y ESTILO PERUANO:
-- Habla en frases cortas y conversacionales (1 a 2 oraciones por turno). Nunca des monólogos largos.
-- Usa un tono cercano y confiable ("Qué tal", "Perfecto", "Claro que sí", "Listo").
-- Pronuncia los montos de forma natural ("ciento diecinueve soles", "veinte soles").
-- Cuando anotes una referencia de domicilio o un DNI de 8 dígitos, repítelo brevemente en voz alta para confirmar que lo apuntaste bien.
-- Sigue estrictamente las instrucciones de la modalidad del pedido que recibes en {{instrucciones_especificas}}:
-  * Si {{modalidad}} es COD_DOMICILIO: el cliente paga el total de {{total_soles}} soles AL RECIBIR en su domicilio. JAMÁS le pidas adelanto de 20 soles ni le hables de agencia Shalom. Pídele únicamente confirmar el pedido, una referencia exacta de su casa (fachada, color de puerta o lugar cercano) y qué día/horario puede recibir al repartidor.
-  * Si {{modalidad}} es AGENCIA_SHALOM: en su zona de {{ciudad}} enviamos por Agencia Shalom. Confirma qué sede de Shalom prefiere ({{agencias_shalom_cercanas}}), pídele su número de DNI de 8 dígitos para la guía oficial, e indícale que en su WhatsApp ya le dejamos el Yape oficial 951 365 418 (a nombre de Gerardo Huaynalaya) para que envíe la captura del adelanto de 20 soles y el saldo de {{saldo_soles}} soles lo paga cuando el paquete llegue a su agencia.
-- Si el cliente dice que desea cancelar o que se equivocó al pedir, agradécele con amabilidad y despídete sin presionar.`;
+- Habla en frases cortas y conversacionales (1 a 2 oraciones por turno, máximo 25 palabras por intervención). Nunca des monólogos largos.
+- Usa un tono peruano cercano, amable y confiable ("Qué tal", "Perfecto", "Claro que sí", "Listo").
+- Si el cliente hace una pregunta sobre cómo se toma, qué contiene o los precios, respóndele de forma natural en 1 o 2 frases y enseguida retoma el dato que te falta para programar su despacho.
+- Cuando el cliente te dé una referencia de su casa, un horario o su DNI de 8 dígitos, repítelo brevemente para confirmar que lo anotaste bien.
+- Si {{modalidad}} es COD_DOMICILIO: el cliente paga los {{total_soles}} soles AL RECIBIR en su domicilio. JAMÁS pidas adelanto de 20 soles ni menciones agencia Shalom. Solo confirma el pedido, pide una referencia clara de su casa o fachada y el día y horario en que puede recibir al repartidor.
+- Si {{modalidad}} es AGENCIA_SHALOM: confirma en cuál de las agencias Shalom ({{agencias_shalom_cercanas}}) le queda más cómodo recoger, pídele su número de DNI de 8 dígitos para la guía oficial, e indícale que en su WhatsApp ya tiene nuestro número de Yape oficial 951 365 418 (a nombre de Gerardo Huaynalaya) para que envíe la captura del adelanto de 20 soles y el saldo de {{saldo_soles}} soles lo paga cuando el paquete llegue a su agencia.
+- Una vez que tengas los datos confirmados, agradécele con calidez y despídete.`;
