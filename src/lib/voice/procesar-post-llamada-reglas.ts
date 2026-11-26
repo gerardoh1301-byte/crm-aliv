@@ -37,12 +37,13 @@ function valorDataCollection(
   claves: string[]
 ): string | null {
   if (!dc || typeof dc !== "object") return null;
-  for (const k of claves) {
-    const entry = dc[k];
-    if (entry === null || entry === undefined) continue;
+  const clavesNorm = new Set(claves.map((c) => c.toLowerCase().trim()));
+
+  const extraerValor = (entry: unknown): string | null => {
+    if (entry === null || entry === undefined) return null;
     if (typeof entry === "string" || typeof entry === "number" || typeof entry === "boolean") {
       const s = String(entry).trim();
-      if (s && !/^(null|undefined|n\/a|none|ninguno|no)$/i.test(s)) return s;
+      if (s && !/^(null|undefined|n\/a|none|ninguno)$/i.test(s)) return s;
     }
     if (typeof entry === "object" && "value" in (entry as Record<string, unknown>)) {
       const val = (entry as { value?: unknown }).value;
@@ -51,7 +52,30 @@ function valorDataCollection(
         if (s && !/^(null|undefined|n\/a|none|ninguno)$/i.test(s)) return s;
       }
     }
+    return null;
+  };
+
+  // 1. Búsqueda directa por clave del objeto (formato antiguo o pruebas)
+  for (const k of claves) {
+    if (k in dc) {
+      const v = extraerValor(dc[k]);
+      if (v !== null) return v;
+    }
   }
+
+  // 2. Búsqueda por propiedad interna `name` (ElevenLabs V2 usa keys `aitem_...` y pone el nombre adentro, a veces con espacio al final como `"confirmado "`)
+  for (const entry of Object.values(dc)) {
+    if (entry && typeof entry === "object" && "name" in (entry as Record<string, unknown>)) {
+      const entryName = String((entry as { name?: unknown }).name ?? "")
+        .toLowerCase()
+        .trim();
+      if (clavesNorm.has(entryName)) {
+        const v = extraerValor(entry);
+        if (v !== null) return v;
+      }
+    }
+  }
+
   return null;
 }
 

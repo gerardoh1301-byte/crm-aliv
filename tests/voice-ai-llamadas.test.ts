@@ -127,6 +127,44 @@ describe("Extracción post-llamada (/api/webhooks/voice-ai)", () => {
     expect(res.compromisoAdelantoYape).toBe(true);
   });
 
+  it("extrae datos incluso cuando ElevenLabs V2 usa claves aitem_... con name interno y espacios", () => {
+    const res = analizarPayloadPostLlamada({
+      data: {
+        conversation_id: "conv_6001m8ccpsc3fxkt64qcgepz1t72",
+        metadata: { call_duration_secs: 61 },
+        transcript: [
+          { role: "agent", message: "¡Hola, Gerardo! ..." },
+          { role: "user", message: "Sí." },
+          { role: "agent", message: "¿Me das una referencia de tu casa?" },
+          { role: "user", message: "Frente a Molycentro." },
+          { role: "agent", message: "¿Qué día y en qué horario estarás?" },
+          { role: "user", message: "Mañana, eh, 4:00 p.m." },
+        ],
+        analysis: {
+          data_collection_results: {
+            aitem_5101m8c5wsgfewcar94974k07xke: {
+              name: "confirmado ",
+              value: true,
+            },
+            aitem_7901m8c5xv7se0gt1vm1fjrdjdqf: {
+              name: "referencia_domicilio",
+              value: "Frente a Molycentro",
+            },
+            aitem_2201m8cap3a3fd2s1rn1nww179ck: {
+              name: "horario_entrega",
+              value: "Mañana 4:00 p.m.",
+            },
+          },
+        },
+      },
+    });
+
+    expect(res.contestada).toBe(true);
+    expect(res.estadoConfirmacion).toBe("confirmado");
+    expect(res.referenciaDomicilio).toBe("Frente a Molycentro");
+    expect(res.horarioEntrega).toBe("Mañana 4:00 p.m.");
+  });
+
   it("detecta cuando el cliente no contestó la llamada", () => {
     const res = analizarPayloadPostLlamada({
       data: {
