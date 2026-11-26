@@ -186,6 +186,25 @@ describe("Extracción post-llamada (/api/webhooks/voice-ai)", () => {
     expect(res.horarioEntrega).toBe("Mañana 4:00 p.m.");
   });
 
+  it("detecta buzón de voz de operadora peruana (caso #1203 Juan) como no_contesto para disparar WhatsApp de respaldo", () => {
+    const res = analizarPayloadPostLlamada({
+      data: {
+        conversation_id: "conv_1203_buzon",
+        metadata: { call_duration_secs: 52 },
+        transcript: [
+          { role: "agent", message: "¡Hola, Juan! Te saluda Sofía de Aliv Perú..." },
+          { role: "user", message: "..." },
+          { role: "agent", message: "¿Hola, Juan? ¿Estás ahí?" },
+          { role: "user", message: "..." },
+          { role: "user", message: "Lo sentimos, ha llegado al tiempo límite de mensaje de voz. Su mensaje fue grabado exitosamente. Gracias." },
+        ],
+      },
+    });
+
+    expect(res.contestada).toBe(false);
+    expect(res.estadoConfirmacion).toBe("no_contesto");
+  });
+
   it("detecta cuando el cliente no contestó la llamada", () => {
     const res = analizarPayloadPostLlamada({
       data: {

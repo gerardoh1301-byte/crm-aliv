@@ -114,6 +114,19 @@ export function extraerHorarioDeTranscripcion(turnosUsuario: string[]): string |
   return m ? m[1].trim() : null;
 }
 
+/** Detecta mensajes grabados de buzón de voz de operadoras peruanas (Claro, Movistar, Entel, Bitel). */
+const RE_BUZON_VOZ =
+  /\b(buz[oó]n de voz|casilla de voz|mensaje de voz|despu[eé]s del tono|tiempo l[ií]mite de mensaje|mensaje fue grabado|no se encuentra disponible|no puede contestar|llamada ser[aá] transferida|deje su mensaje|fuera del [aá]rea de cobertura|el n[uú]mero marcado|voicemail|leave a message)\b/i;
+
+export function esSoloBuzonOSilencio(turnosUsuario: string[]): boolean {
+  const limpios = turnosUsuario
+    .map((t) => t.replace(/[\s.,…¡!¿?\-_]+/g, " ").trim())
+    .filter((t) => t.length > 0);
+  if (limpios.length === 0) return true;
+  // Si todos los turnos "del usuario" son grabaciones de buzón de voz
+  return limpios.every((t) => RE_BUZON_VOZ.test(t));
+}
+
 export function analizarPayloadPostLlamada(
   payload: Record<string, unknown>,
   ciudadPedido?: string | null
@@ -154,8 +167,9 @@ export function analizarPayloadPostLlamada(
     valorDataCollection(dc, ["resumen", "summary", "observaciones"]) ||
     "";
 
-  // ¿Contestó el cliente humano?
-  const contestada = turnosUsuario.length > 0 && duracionSegundos >= 5;
+  // ¿Contestó el cliente humano (y no fue solo buzón de voz o puntos suspensivos de silencio)?
+  const soloBuzon = esSoloBuzonOSilencio(turnosUsuario);
+  const contestada = !soloBuzon && turnosUsuario.length > 0 && duracionSegundos >= 5;
 
   // Estado de confirmación
   const confirmadoDc = valorDataCollection(dc, ["pedido_confirmado", "confirmado", "confirmed", "estado_pedido"]);
