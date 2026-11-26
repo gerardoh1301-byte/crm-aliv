@@ -1,7 +1,11 @@
 import { describe, expect, it } from "vitest";
 import { ubicarEnPunto } from "@/lib/aliclik/cobertura-cod";
 import { decisionDesdeMarcaEntregaWeb } from "@/lib/shopify/clasificar-entrega-web";
-import { construirVariablesLlamadaPedido } from "@/lib/voice/llamar-pedido-reglas";
+import {
+  construirVariablesLlamadaPedido,
+  dentroHorarioLlamadaIA,
+  formatearProductoParaVoz,
+} from "@/lib/voice/llamar-pedido-reglas";
 import { analizarPayloadPostLlamada } from "@/lib/voice/procesar-post-llamada-reglas";
 
 describe("Persistencia de decisión AliClik COD en provincia (Caso #1190 Cusco)", () => {
@@ -75,6 +79,22 @@ describe("Llamadas inmediatas con IA (ElevenLabs + Twilio) según decisión de A
     expect(vars.agencias_shalom_cercanas).toBeTruthy();
     expect(vars.instrucciones_especificas).toContain("951 365 418");
     expect(vars.datos_faltantes_pedir).toContain("DNI de 8 dígitos");
+  });
+  it("respeta el horario comercial de 7:00 a. m. a 10:00 p. m. hora Lima (UTC-5)", () => {
+    // 06:59 Lima = 11:59 UTC -> fuera de horario
+    expect(dentroHorarioLlamadaIA(new Date("2026-11-26T11:59:00Z"))).toBe(false);
+    // 07:00 Lima = 12:00 UTC -> dentro de horario
+    expect(dentroHorarioLlamadaIA(new Date("2026-11-26T12:00:00Z"))).toBe(true);
+    // 21:59 Lima = 02:59 UTC del día siguiente -> dentro de horario
+    expect(dentroHorarioLlamadaIA(new Date("2026-11-27T02:59:00Z"))).toBe(true);
+    // 22:00 Lima = 03:00 UTC del día siguiente -> fuera de horario
+    expect(dentroHorarioLlamadaIA(new Date("2026-11-27T03:00:00Z"))).toBe(false);
+  });
+
+  it("formatea los productos de forma natural para lectura por voz", () => {
+    expect(formatearProductoParaVoz("3x NAC600 + NAD+ (60 cápsulas)")).toBe("3 frascos de NAC seiscientos");
+    expect(formatearProductoParaVoz("1x NAC600 + NAD+")).toBe("un frasco de NAC seiscientos");
+    expect(formatearProductoParaVoz("2x Termix Tobillera")).toBe("2 tobilleras Termix");
   });
 });
 

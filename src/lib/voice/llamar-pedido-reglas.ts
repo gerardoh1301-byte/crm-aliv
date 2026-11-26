@@ -23,6 +23,45 @@ import { dniValido } from "@/lib/agent/datos-envio";
 
 export const MARCA_LLAMADA_IA_INICIADA = "[LLAMADA_IA_INICIADA]";
 export const MARCA_LLAMADA_IA_RESULTADO = "[LLAMADA_IA_RESULTADO]";
+export const MARCA_LLAMADA_IA_PENDIENTE_HORARIO = "[LLAMADA_IA_PENDIENTE_HORARIO]";
+
+/** Horario comercial permitido para llamadas automáticas de IA en hora de Lima (07:00 a 21:59). */
+export const HORARIO_LLAMADA_IA = { inicioHora: 7, finHora: 22 };
+
+/**
+ * Devuelve true si la hora actual en Perú (America/Lima) está dentro del horario comercial
+ * de 7:00 a. m. a 10:00 p. m. (07:00 <= hora < 22:00).
+ */
+export function dentroHorarioLlamadaIA(ahora: Date = new Date()): boolean {
+  const horaStr = new Intl.DateTimeFormat("en-US", {
+    timeZone: "America/Lima",
+    hour: "2-digit",
+    hour12: false,
+  }).format(ahora);
+  const hora = Number(horaStr) % 24;
+  return hora >= HORARIO_LLAMADA_IA.inicioHora && hora < HORARIO_LLAMADA_IA.finHora;
+}
+
+export function formatearProductoParaVoz(rawProds: string | null | undefined): string {
+  const s = String(rawProds ?? "").trim();
+  if (!s) return "tu pedido de Aliv Perú";
+
+  const partes = s.split(/\s*,\s*/).map((item) => {
+    const m = item.match(/^(\d+)\s*x?\s+(.+)$/i);
+    const cant = m ? Number(m[1]) || 1 : 1;
+    const nombre = m ? m[2] : item;
+    if (/nac\s?600|nad/i.test(nombre)) {
+      return cant === 1 ? "un frasco de NAC seiscientos" : `${cant} frascos de NAC seiscientos`;
+    }
+    if (/termix|tobill/i.test(nombre)) {
+      return cant === 1 ? "una tobillera Termix" : `${cant} tobilleras Termix`;
+    }
+    const limpio = normalizarTextoParaVoz(nombre.replace(/\([^)]*\)/g, ""));
+    return cant > 1 ? `${cant} unidades de ${limpio}` : limpio;
+  });
+
+  return partes.join(" y ");
+}
 
 export interface DatosPedidoParaLlamada {
   pedidoId: string;
@@ -159,7 +198,7 @@ export function construirVariablesLlamadaPedido(p: DatosPedidoParaLlamada): Vari
 
     const dirMostrar = [direccion, distrito, ciudad].filter(Boolean).join(", ") || ciudad;
     const dirVoz = normalizarTextoParaVoz(dirMostrar);
-    const prodVoz = normalizarTextoParaVoz(p.productosTexto);
+    const prodVoz = formatearProductoParaVoz(p.productosTexto);
     const saludo = primerNombre
       ? `¡Hola, ${primerNombre}! Qué tal, te saluda Sofía de Aliv Perú. Te llamo rapidito porque recibimos tu pedido de ${prodVoz} por ${totalNum} soles con envío gratis a ${dirVoz}, pagas al recibir. ¿Me confirmas si todo está correcto para programarte la entrega?`
       : `¡Hola! Qué tal, te saluda Sofía de Aliv Perú. Te llamo rapidito porque recibimos tu pedido de ${prodVoz} por ${totalNum} soles con envío gratis a ${dirVoz}, pagas al recibir. ¿Me confirmas si todo está correcto para programarte la entrega?`;
@@ -210,7 +249,7 @@ export function construirVariablesLlamadaPedido(p: DatosPedidoParaLlamada): Vari
   faltantesShalom.push(`confirmar a cuál de las agencias Shalom de ${ciudad} prefiere que enviemos su paquete (${sedesTexto})`);
   faltantesShalom.push("confirmar el adelanto de 20 soles por Yape al 951 365 418 a nombre de Gerardo Huaynalaya que ya le enviamos a su WhatsApp");
 
-  const prodVozShalom = normalizarTextoParaVoz(p.productosTexto);
+  const prodVozShalom = formatearProductoParaVoz(p.productosTexto);
   const sedeVozShalom = normalizarTextoParaVoz(primeraSede);
   const saludoShalom = primerNombre
     ? `¡Hola, ${primerNombre}! Qué tal, te saluda Sofía de Aliv Perú. Te llamo rapidito porque recibimos tu pedido de ${prodVozShalom} por ${totalNum} soles con envío gratis a ${ciudad}. Para tu zona despachamos por agencia Shalom y cerca tienes la sede de ${sedeVozShalom}. ¿Te queda cómoda esa agencia para recogerlo?`

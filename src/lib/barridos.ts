@@ -32,6 +32,8 @@ const ENDPOINTS = [
   "/api/agent/toque-caliente",
   // Contra entrega: recordatorio de ubicación y referencia a los 10 min; sin pin, punto de Google
   "/api/agent/ubicacion-ce",
+  // Llamadas IA de primera hora (7:00 a. m. Lima) para pedidos web que entraron de madrugada (10pm-7am)
+  "/api/agent/llamadas-pendientes",
   // Pedidos web de las últimas semanas: AG/CE según cobertura AliClik (una vez por pedido)
   "/api/agent/reclasificar-pedidos-web",
   // Posventa y recompra: incorpora los entregados (backfill idempotente, últimos 30 días)

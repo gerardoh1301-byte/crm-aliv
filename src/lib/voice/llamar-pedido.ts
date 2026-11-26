@@ -6,7 +6,9 @@ import { pedidosOrdenes } from "../../../modules/pedidos/tabla";
 import { esNumeroEntrenador } from "@/lib/alerts/supervisor-alerts";
 import {
   construirVariablesLlamadaPedido,
+  dentroHorarioLlamadaIA,
   MARCA_LLAMADA_IA_INICIADA,
+  MARCA_LLAMADA_IA_PENDIENTE_HORARIO,
   normalizarTelefonoE164Peru,
   type DatosPedidoParaLlamada,
   type VariablesDinamicasLlamada,
@@ -105,6 +107,39 @@ export async function dispararLlamadaConfirmacionPedido(
       ok: false,
       omitido: true,
       motivo: "Número de supervisor en lista blanca; no se dispara llamada automática",
+    };
+  }
+
+  // Horario comercial de llamadas automáticas: 7:00 a. m. a 10:00 p. m. (hora Perú).
+  // Si el pedido entra fuera de ese rango (ej. madrugada), se marca para atenderlo a las 7:00 a. m.
+  if (!opts.forzar && !dentroHorarioLlamadaIA()) {
+    const [pedidoActual] = await db
+      .select({ notas: pedidosOrdenes.notas })
+      .from(pedidosOrdenes)
+      .where(eq(pedidosOrdenes.id, datos.pedidoId))
+      .limit(1);
+    const notasActuales = pedidoActual?.notas ?? "";
+    if (!notasActuales.includes(MARCA_LLAMADA_IA_PENDIENTE_HORARIO)) {
+      const marcaPendiente = `${MARCA_LLAMADA_IA_PENDIENTE_HORARIO} ${new Date().toISOString()} En cola para llamar a primera hora (07:00 Lima)`;
+      await Promise.all([
+        db
+          .update(pedidosOrdenes)
+          .set({
+            notas: [notasActuales, marcaPendiente].filter(Boolean).join("\n"),
+            updatedAt: new Date(),
+          })
+          .where(eq(pedidosOrdenes.id, datos.pedidoId)),
+        db.insert(activities).values({
+          type: "note",
+          description: `⏰ [IA Voz] Pedido ${datos.numeroOrden} ingresó fuera de horario comercial (7am-10pm). Programado automáticamente para llamada de Sofía a las 7:00 a. m.`,
+          contactId: datos.contactId,
+        }),
+      ]);
+    }
+    return {
+      ok: false,
+      omitido: true,
+      motivo: "Fuera de horario comercial (7:00 a. m. - 10:00 p. m. Lima); encolado para primera hora",
     };
   }
 
