@@ -46,7 +46,8 @@ describe("Llamadas inmediatas con IA (ElevenLabs + Twilio) según decisión de A
     expect(vars.modalidad).toBe("COD_DOMICILIO");
     expect(vars.adelanto_soles).toBe("0");
     expect(vars.saludo_inicial).toContain("Hola, Daniel");
-    expect(vars.saludo_inicial).toContain("pago al recibir");
+    expect(vars.saludo_inicial).toContain("pagas al recibir");
+    expect(vars.saludo_inicial).toContain("Jirón Vilcabamba 109");
     expect(vars.instrucciones_especificas).toContain("PROHIBIDO pedir adelanto de S/ 20");
     expect(vars.datos_faltantes_pedir).toContain("referencia");
   });
