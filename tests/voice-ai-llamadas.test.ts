@@ -1,0 +1,142 @@
+import { describe, expect, it } from "vitest";
+import { ubicarEnPunto } from "@/lib/aliclik/cobertura-cod";
+import { decisionDesdeMarcaEntregaWeb } from "@/lib/shopify/clasificar-entrega-web";
+import { construirVariablesLlamadaPedido } from "@/lib/voice/llamar-pedido-reglas";
+import { analizarPayloadPostLlamada } from "@/lib/voice/procesar-post-llamada-reglas";
+
+describe("Persistencia de decisión AliClik COD en provincia (Caso #1190 Cusco)", () => {
+  it("no desvía Cusco a Vilcabamba cuando la calle se llama Jr. Vilcabamba 109", () => {
+    const p = ubicarEnPunto({
+      ciudad: "Cusco",
+      direccion: "Jr.vilcabamba. 109",
+    });
+    expect(p?.departamento).toBe("cusco");
+    expect(p?.provincia).toBe("cusco");
+  });
+
+  it("recupera la decisión provincia_cod desde la marca [ENTREGA_WEB:CE|provincia_cod|...] grabada en el pedido", () => {
+    const d = decisionDesdeMarcaEntregaWeb({
+      notasPedido: "Pedido web #1190\n[ENTREGA_WEB:CE|provincia_cod|Cusco, Cusco, Cusco|2026-11-26]",
+      modalidadPago: "contraentrega",
+      ciudad: "Cusco",
+    });
+    expect(d?.zona).toBe("provincia_cod");
+    expect(d?.modalidadPago).toBe("contraentrega");
+  });
+});
+
+describe("Llamadas inmediatas con IA (ElevenLabs + Twilio) según decisión de AliClik", () => {
+  it("arma guion COD_DOMICILIO sin adelanto ni Shalom cuando AliClik dio cobertura (esAgencia=false)", () => {
+    const vars = construirVariablesLlamadaPedido({
+      pedidoId: "ped-1190",
+      numeroOrden: "#1190",
+      contactId: "cont-1",
+      nombreCliente: "Daniel Quispe",
+      telefono: "+51914306439",
+      productosTexto: "1x NAC600 + NAD+",
+      totalSoles: 119,
+      ciudad: "Cusco",
+      distrito: "Santiago",
+      direccion: "Jr. Vilcabamba 109",
+      dni: null,
+      esAgencia: false,
+      modalidadEntregaTexto: "Contraentrega Domicilio AliClik (Cusco)",
+    });
+
+    expect(vars.modalidad).toBe("COD_DOMICILIO");
+    expect(vars.adelanto_soles).toBe("0");
+    expect(vars.saludo_inicial).toContain("Hola, Daniel");
+    expect(vars.saludo_inicial).toContain("pago al recibir");
+    expect(vars.instrucciones_especificas).toContain("PROHIBIDO pedir adelanto de S/ 20");
+    expect(vars.datos_faltantes_pedir).toContain("referencia");
+  });
+
+  it("arma guion AGENCIA_SHALOM con sedes cercanas, DNI y adelanto de S/20 cuando no hay cobertura COD (esAgencia=true)", () => {
+    const vars = construirVariablesLlamadaPedido({
+      pedidoId: "ped-1191",
+      numeroOrden: "#1191",
+      contactId: "cont-2",
+      nombreCliente: "María Flores",
+      telefono: "+51987654321",
+      productosTexto: "3x NAC600 + NAD+",
+      totalSoles: 199,
+      ciudad: "Pucallpa",
+      distrito: null,
+      direccion: "Av. Centenario",
+      dni: null,
+      esAgencia: true,
+      modalidadEntregaTexto: "Agencia Shalom / Olva (Provincia)",
+    });
+
+    expect(vars.modalidad).toBe("AGENCIA_SHALOM");
+    expect(vars.adelanto_soles).toBe("20");
+    expect(vars.saldo_soles).toBe("179");
+    expect(vars.agencias_shalom_cercanas).toBeTruthy();
+    expect(vars.instrucciones_especificas).toContain("951 365 418");
+    expect(vars.datos_faltantes_pedir).toContain("DNI de 8 dígitos");
+  });
+});
+
+describe("Extracción post-llamada (/api/webhooks/voice-ai)", () => {
+  it("extrae referencia, horario y confirmación de una llamada COD atendida", () => {
+    const res = analizarPayloadPostLlamada({
+      data: {
+        conversation_id: "conv_123",
+        metadata: { call_duration_secs: 48 },
+        transcript: [
+          { role: "agent", message: "¡Hola, Daniel! Te llamo de Aliv Perú para confirmar tu pedido #1190..." },
+          {
+            role: "user",
+            message: "Sí señorita, claro que lo confirmo. Mi casa es frente al colegio San José, puerta marrón, estoy en la mañana de 9 a 1.",
+          },
+        ],
+        analysis: {
+          transcript_summary: "El cliente confirmó su pedido y dio referencia y horario.",
+          data_collection_results: {
+            confirmado: { value: "true" },
+            referencia_domicilio: { value: "Frente al colegio San José, puerta marrón" },
+            horario_entrega: { value: "En la mañana de 9 a 1 pm" },
+          },
+        },
+      },
+    });
+
+    expect(res.contestada).toBe(true);
+    expect(res.estadoConfirmacion).toBe("confirmado");
+    expect(res.referenciaDomicilio).toBe("Frente al colegio San José, puerta marrón");
+    expect(res.horarioEntrega).toBe("En la mañana de 9 a 1 pm");
+  });
+
+  it("extrae DNI de 8 dígitos de la transcripción aunque el cliente lo dicte separado", () => {
+    const res = analizarPayloadPostLlamada(
+      {
+        data: {
+          conversation_id: "conv_456",
+          metadata: { call_duration_secs: 55 },
+          transcript: [
+            { role: "agent", message: "¿Me dictas tu DNI y qué agencia Shalom prefieres?" },
+            { role: "user", message: "Sí claro, mi DNI es 45 89 21 03 y ahorita te mando el Yape." },
+          ],
+        },
+      },
+      "Cusco"
+    );
+
+    expect(res.contestada).toBe(true);
+    expect(res.dniExtraido).toBe("45892103");
+    expect(res.compromisoAdelantoYape).toBe(true);
+  });
+
+  it("detecta cuando el cliente no contestó la llamada", () => {
+    const res = analizarPayloadPostLlamada({
+      data: {
+        conversation_id: "conv_789",
+        metadata: { call_duration_secs: 0 },
+        transcript: [],
+      },
+    });
+
+    expect(res.contestada).toBe(false);
+    expect(res.estadoConfirmacion).toBe("no_contesto");
+  });
+});

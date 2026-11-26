@@ -110,6 +110,30 @@ export function PedidosPage() {
   const [syncingDrive, setSyncingDrive] = useState(false);
   const [shopifyDialogOpen, setShopifyDialogOpen] = useState(false);
   const [syncingShopify, setSyncingShopify] = useState(false);
+  const [llamandoPedidoId, setLlamandoPedidoId] = useState<string | null>(null);
+
+  async function llamarConIA(p: PedidoConContacto) {
+    if (llamandoPedidoId) return;
+    setLlamandoPedidoId(p.id);
+    try {
+      const res = await fetch("/api/voice/llamar-pedido", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ pedidoId: p.id, forzar: true }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (res.ok && data.ok) {
+        toast.success(`📞 Sofía (IA) está llamando a ${p.contactName || p.contactPhone || p.numeroOrden}...`);
+        await cargarPedidos(true);
+      } else {
+        toast.error(data.motivo || data.error || "No se pudo iniciar la llamada con IA");
+      }
+    } catch {
+      toast.error("Error de red al iniciar la llamada con IA");
+    } finally {
+      setLlamandoPedidoId(null);
+    }
+  }
 
   const sincronizarDriveManual = useCallback(async (silencioso = false) => {
     setSyncingDrive(true);
@@ -793,6 +817,19 @@ export function PedidosPage() {
                             <MessageCircle className="h-3.5 w-3.5 mr-1 text-emerald-600" />
                             Chat
                           </Link>
+                        )}
+                        {p.contactPhone && p.estado !== "cancelado" && p.estado !== "entregado" && (
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            disabled={llamandoPedidoId === p.id}
+                            className="h-7 px-2 text-xs border-violet-500/40 text-violet-700 bg-violet-50/70 hover:bg-violet-100 dark:bg-violet-950/40 dark:text-violet-300 dark:border-violet-700 cursor-pointer shadow-2xs gap-1"
+                            title="Disparar llamada inmediata con Sofía (IA) para confirmar orden y pedir datos faltantes"
+                            onClick={() => llamarConIA(p)}
+                          >
+                            <Phone className="h-3 w-3 text-violet-600" />
+                            {llamandoPedidoId === p.id ? "Llamando..." : "Llamar IA"}
+                          </Button>
                         )}
                         <Button
                           size="sm"

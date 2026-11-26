@@ -195,6 +195,7 @@ export function ubicarEnPunto(params: {
   direccion?: string | null;
 }): PuntoReferencia | null {
   const distritoDado = normalizar(params.distrito);
+  const ciudadDada = normalizar(params.ciudad);
   const texto = normalizar([params.ciudad, params.distrito, params.direccion].filter(Boolean).join(" "));
   if (!texto) return null;
 
@@ -209,6 +210,12 @@ export function ubicarEnPunto(params: {
     if (contienePalabra(texto, p.provincia)) puntaje += 2;
     if (contienePalabra(texto, p.departamento)) puntaje += 1;
     if (puntaje === 0) continue;
+    // Si el cliente dio explícitamente su ciudad ("Cusco"), la provincia/departamento que coincide
+    // con `ciudad` recibe un bono fuerte (+5) para que una calle con nombre de pueblo en otra
+    // provincia ("Jr. Vilcabamba 109" en Cusco) no lo desvíe a La Convención (caso #1190, 26/11).
+    if (ciudadDada && (p.provincia === ciudadDada || p.departamento === ciudadDada || p.distrito === ciudadDada)) {
+      puntaje += 5;
+    }
     // Solo dio la ciudad: se usa la capital (distrito con el mismo nombre que la provincia).
     if (p.distrito === p.provincia) puntaje += 1;
     if (p.departamento === "lima" || p.departamento === "callao") puntaje += 0.1;

@@ -404,18 +404,38 @@ export async function renderContextoDetallado(
     }
 
     // Cobertura contra entrega de AliClik en provincia (consulta a la API, caché de 24 h).
-    if (textoDireccionOProvincia && !eligioShalom) {
-      try {
-        const { decidirEntrega, renderBloqueCobertura } = await import("@/lib/aliclik/cobertura-cod");
-        decisionEntrega = await decidirEntrega({
-          ciudad,
-          distrito,
-          direccion: ciudad || distrito || direccion ? direccion : textoDireccionOProvincia,
-        });
+    // Si el pedido web ya tiene grabada la decisión de AliClik ([ENTREGA_WEB:CE|provincia_cod|...]),
+    // se respeta siempre aunque en este turno la calle ("Jr. Vilcabamba 109") o un timeout de AliClik
+    // no devuelvan cobertura (caso #1190, Daniel en Cusco, 26/11/2026).
+    if (!eligioShalom) {
+      const { decisionDesdeMarcaEntregaWeb } = await import("@/lib/shopify/clasificar-entrega-web");
+      const decisionPrevia = decisionDesdeMarcaEntregaWeb({
+        notasPedido: pedidoReciente?.notas,
+        modalidadPago: pedidoReciente?.modalidadPago,
+        modalidadEntregaContacto: fields.modalidad_entrega,
+        ciudad: pedidoReciente?.ciudad ?? ciudad,
+        distrito: pedidoReciente?.distrito ?? distrito,
+      });
+      if (decisionPrevia && decisionPrevia.zona === "provincia_cod") {
+        decisionEntrega = decisionPrevia;
+        const { renderBloqueCobertura } = await import("@/lib/aliclik/cobertura-cod");
         const bloque = renderBloqueCobertura(decisionEntrega);
         if (bloque) partes.push(bloque);
-      } catch (err) {
-        console.warn("[prompt] No se pudo consultar la cobertura contra entrega de AliClik:", err);
+      } else if (textoDireccionOProvincia) {
+        try {
+          const { decidirEntrega, renderBloqueCobertura } = await import("@/lib/aliclik/cobertura-cod");
+          // Pasar solo ciudad y distrito (o texto si no hay ciudad) para que una calle suelta como
+          // "Jr. Vilcabamba 109" no desvíe ubicarEnPunto() hacia otro departamento (Vilcabamba).
+          decisionEntrega = await decidirEntrega({
+            ciudad: ciudad || pedidoReciente?.ciudad,
+            distrito: distrito || pedidoReciente?.distrito,
+            direccion: ciudad || distrito || pedidoReciente?.ciudad ? null : textoDireccionOProvincia,
+          });
+          const bloque = renderBloqueCobertura(decisionEntrega);
+          if (bloque) partes.push(bloque);
+        } catch (err) {
+          console.warn("[prompt] No se pudo consultar la cobertura contra entrega de AliClik:", err);
+        }
       }
     }
 

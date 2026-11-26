@@ -82,3 +82,64 @@ export function textoClasificacion(c: ClasificacionEntregaWeb): string {
   if (c.esAgencia) return "provincia: agencia Shalom, falta adelanto S/20";
   return "contra entrega en Lima";
 }
+
+/**
+ * Extrae la decisión de cobertura AliClik que ya quedó grabada en el pedido web
+ * (`[ENTREGA_WEB:CE|provincia_cod|Cusco|...]`) o en `customFields.modalidad_entrega`
+ * (`Contraentrega Domicilio AliClik (Cusco)`), para que el bot de WhatsApp o de Voz no
+ * vuelva a pedir agencia Shalom ni adelanto si la API de AliClik falla o no reconoce la calle
+ * en un turno posterior (caso #1190, Daniel en Cusco, 26/11/2026).
+ */
+export function decisionDesdeMarcaEntregaWeb(params: {
+  notasPedido?: string | null;
+  modalidadPago?: string | null;
+  modalidadEntregaContacto?: unknown;
+  ciudad?: string | null;
+  distrito?: string | null;
+}): DecisionEntrega | null {
+  const notas = String(params.notasPedido ?? "");
+  const m = notas.match(/\[ENTREGA_WEB:(CE|AG)\|([^|\]]+)(?:\|([^|\]]+))?/);
+  if (m) {
+    const tipo = m[1];
+    const zonaRaw = m[2];
+    const lugarMarca = m[3] && !/^\d{4}-\d{2}-\d{2}$/.test(m[3]) ? m[3] : undefined;
+    const lugar = lugarMarca || [params.distrito, params.ciudad].filter(Boolean).join(", ") || undefined;
+    if (tipo === "CE") {
+      if (zonaRaw === "provincia_cod") {
+        return {
+          zona: "provincia_cod",
+          modalidadPago: "contraentrega",
+          lugar,
+          cobertura: { estado: "cubierto", provincia: params.ciudad ?? undefined, distrito: params.distrito ?? undefined },
+        };
+      }
+      return {
+        zona: "lima",
+        modalidadPago: "contraentrega",
+        lugar: lugar || "Lima",
+      };
+    }
+    if (tipo === "AG") {
+      return {
+        zona: "provincia_shalom",
+        modalidadPago: "adelanto_agencia",
+        lugar,
+      };
+    }
+  }
+
+  const modContacto = String(params.modalidadEntregaContacto ?? "");
+  if (/aliclik/i.test(modContacto) && params.modalidadPago !== "adelanto_agencia") {
+    const mLugar = modContacto.match(/\(([^)]+)\)/);
+    const lugar = mLugar?.[1] || [params.distrito, params.ciudad].filter(Boolean).join(", ") || "tu ciudad";
+    return {
+      zona: "provincia_cod",
+      modalidadPago: "contraentrega",
+      lugar,
+      cobertura: { estado: "cubierto", provincia: params.ciudad ?? undefined, distrito: params.distrito ?? undefined },
+    };
+  }
+
+  return null;
+}
+

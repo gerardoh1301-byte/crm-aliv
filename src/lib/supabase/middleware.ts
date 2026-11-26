@@ -8,6 +8,7 @@ const PUBLIC_PATHS = ["/login", "/signup", "/auth", "/sin-acceso", "/correo"];
 const PUBLIC_API_PREFIXES = [
   "/api/health",
   "/api/webhooks",
+  "/api/voice",
   "/api/agent",
   "/api/automations/process",
   "/api/simulador",

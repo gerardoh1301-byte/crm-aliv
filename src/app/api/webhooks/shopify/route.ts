@@ -13,6 +13,7 @@ import { emitAutomationEvent } from "@/lib/automations";
 import { extraerDatosFormularioShopify } from "@/lib/shopify/form-extractor";
 import { marcarAbandonoRecuperado } from "@/lib/abandonos/servidor";
 import { clasificarEntregaWeb, textoClasificacion } from "@/lib/shopify/clasificar-entrega-web";
+import { dispararLlamadaConfirmacionPedido } from "@/lib/voice/llamar-pedido";
 
 export const dynamic = "force-dynamic";
 
@@ -429,6 +430,24 @@ ${entregaWeb.marca}`,
         clienteTelefono: telefono,
         contactId,
       }).catch((err) => console.warn("[shopify-webhook] aviso a supervisores falló:", err));
+
+      // Llamada inmediata con IA (ElevenLabs Conversational AI + Twilio) ni bien ingresa la orden
+      // respetando la decisión de cobertura de AliClik (entregaWeb.esAgencia).
+      void dispararLlamadaConfirmacionPedido({
+        pedidoId: pedidoNuevo.id,
+        numeroOrden,
+        contactId,
+        nombreCliente: nombre,
+        telefono,
+        productosTexto: items.map((i) => `${i.cantidad}x ${i.titulo}`).join(", "),
+        totalSoles: totalNum,
+        ciudad,
+        distrito,
+        direccion,
+        dni: dni || payload.shipping_address?.company || null,
+        esAgencia: entregaWeb.esAgencia,
+        modalidadEntregaTexto: entregaWeb.modalidadEntrega,
+      }).catch((err) => console.warn("[shopify-webhook] llamada inmediata de IA falló:", err));
     }
 
     await db.insert(activities).values({
