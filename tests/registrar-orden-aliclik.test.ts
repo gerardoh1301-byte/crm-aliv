@@ -85,8 +85,15 @@ describe("datos del pedido para AliClik", () => {
 
   it("usa el EAN de AliClik y reparte el total del pack", () => {
     const r = productosParaAliclik([{ sku: "", titulo: "NAC600 + NAD+", cantidad: 3, precioUnitario: 119 }], 199);
-    expect(r.productos).toEqual([{ ean: "1400091740516", sku: "SABC1", quantity: 3, price: 66.33 }]);
-    expect(r.cobrar).toBeCloseTo(198.99, 2);
+    // Precio exacto (66,3333…): AliClik no suma `delivery`, así que el céntimo no se puede
+    // compensar con envío (26/11, #1188 salió S/ 198,99).
+    expect(r.productos[0]).toMatchObject({ ean: "1400091740516", sku: "SABC1", quantity: 3 });
+    expect(r.productos[0].price).toBeCloseTo(199 / 3, 6);
+    expect(r.cobrar).toBe(199);
+
+    const dos = productosParaAliclik([{ sku: "", titulo: "NAC600", cantidad: 2, precioUnitario: 119 }], 189);
+    expect(dos.productos[0].price).toBe(94.5);
+    expect(dos.cobrar).toBe(189);
 
     const t = productosParaAliclik([{ sku: "", titulo: "Termix Tobillera", cantidad: 1, precioUnitario: 79 }], 79);
     expect(t.productos[0]).toMatchObject({ ean: "1400035195600", price: 79 });

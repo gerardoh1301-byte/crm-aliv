@@ -139,7 +139,10 @@ export function productosParaAliclik(
       ? restante
       : Math.round(sumaBruta > 0 ? (total * 100 * brutos[i]) / sumaBruta : (total * 100) / productos.length);
     restante -= parte;
-    p.price = Math.round(parte / p.quantity) / 100;
+    // Precio unitario sin redondear (199 / 3 = 66,3333…): AliClik lo guarda así y su total
+    // da exacto. Redondeado a 66,33 el panel mostraba S/ 198,99 (26/11, #1188) porque ignora
+    // el céntimo que antes se mandaba como `delivery`.
+    p.price = parte / p.quantity / 100;
   });
   const cobrar = Math.round(productos.reduce((a, p) => a + p.price * p.quantity, 0) * 100) / 100;
   return { productos, desconocidos, cobrar };

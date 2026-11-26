@@ -1759,11 +1759,10 @@ export async function proponerRegistroAliclik(ref: string, conversationId: strin
   if (!envio.ok) return `🛵 *${encabezado(p)}*: AliClik no da envío para ese punto (${envio.error}). No se registró nada.`;
 
   const { transportName: _nombreCourier, ...courier } = envio.courier;
-  // Envío gratis para el cliente; solo los céntimos del redondeo del pack (199 / 3) van
-  // como envío para que el motorizado cobre exacto el total del pedido.
-  const ajuste = Math.round((total - cobrar) * 100) / 100;
-  const delivery = ajuste > 0 && ajuste < 1 ? ajuste : 0;
-  const cobraMotorizado = Math.round((cobrar + delivery) * 100) / 100;
+  // Envío gratis para el cliente. El total ya cuadra con el precio unitario exacto: AliClik
+  // no suma `delivery` al total que cobra el motorizado (26/11, #1188 salió S/ 198,99).
+  const delivery = 0;
+  const cobraMotorizado = cobrar;
   const orden: OrdenAliclik = {
     note: `CRM ${p.numeroOrden}`,
     channel: "WHATSAPP",
