@@ -150,9 +150,12 @@ export async function sincronizarEntregasAliclik(opts: { limite?: number } = {})
           const r = await cliente.searchOrders({ from: fechaISO(new Date((p.createdAt ?? new Date()).getTime() - 3 * 86_400_000)), to: hasta, phone: cel, pageSize: 20 });
           for (const o of r.items ?? []) if (!porNumero.has(o.orderNumber)) { porNumero.set(o.orderNumber, o); ordenesAliclik.push(o); }
         }
+        // Órdenes COD anuladas al pasar el pedido a Shalom: no se vuelven a cruzar por celular.
+        const anteriores = new Set([...(p.notas ?? "").matchAll(/\[ALICLIK_ORDEN_ANTERIOR:([^\]]+)\]/gi)].map((m) => m[1].trim()));
         const delCliente = ordenesAliclik.filter(
           (o) =>
             !usados.has(o.orderNumber) &&
+            !anteriores.has(o.orderNumber) &&
             mismoCelular(o.customerPhone, cel) &&
             // El pedido de AliClik se crea después del pedido del CRM (margen de 3 días).
             fechaCompatible(o.createdAt, p.createdAt)

@@ -23,6 +23,7 @@ import {
   PackageCheck,
   Landmark,
   CheckCircle2,
+  ArrowLeftRight,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { avatarBg, getInitials } from "@/lib/avatar";
@@ -171,6 +172,41 @@ export function DealCard({
       t.toLowerCase().includes("pendiente") &&
       t.toLowerCase().includes("courier"),
   );
+
+  // Cambiar contra entrega (AliClik) ↔ agencia Shalom (26/11).
+  const cambiarEntrega = async (destino: "shalom" | "cod", confirmado = false): Promise<void> => {
+    if (!pedidoId) {
+      toast.info("Esta tarjeta no tiene pedido asociado");
+      return;
+    }
+    if (!confirmado) {
+      const texto =
+        destino === "shalom"
+          ? "¿Cambiar este pedido a agencia Shalom (adelanto S/20)?"
+          : "¿Cambiar este pedido a contra entrega por AliClik?";
+      if (!window.confirm(texto)) return;
+    }
+    try {
+      const res = await fetch("/api/pedidos/cambiar-entrega", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ pedidoId, destino, confirmado }),
+      });
+      const data = (await res.json().catch(() => ({}))) as { mensaje?: string; error?: string; confirmar?: boolean };
+      if (res.status === 409 && data.confirmar) {
+        if (window.confirm(`${data.error}\n\n¿Ya lo anulaste? Aceptar = cambiar igual.`)) await cambiarEntrega(destino, true);
+        return;
+      }
+      if (!res.ok) {
+        toast.error(data.error || "No se pudo cambiar el tipo de entrega");
+        return;
+      }
+      toast.success(data.mensaje || "Tipo de entrega cambiado");
+      router.refresh();
+    } catch {
+      toast.error("No se pudo cambiar el tipo de entrega");
+    }
+  };
 
   const togglePendienteCourier = async () => {
     if (!contactId) {
@@ -774,6 +810,11 @@ export function DealCard({
               <DropdownMenuItem onClick={() => setLiquidarOpen(true)} className="text-amber-700 dark:text-amber-400 font-semibold cursor-pointer">
                 <Landmark className="h-4 w-4 text-amber-600" /> {currentLiquidacion ? `Editar Liquidación BCP (S/ ${currentLiquidacion.montoNeto.toFixed(2)})` : "Confirmar Liquidación AliClik (BCP)"}
               </DropdownMenuItem>
+              {pedidoId && !pagoDirecto && !esEntregado && (
+                <DropdownMenuItem onClick={() => cambiarEntrega(esShalom ? "cod" : "shalom")}>
+                  <ArrowLeftRight className="h-4 w-4" /> {esShalom ? "Cambiar a contra entrega (AliClik)" : "Cambiar a agencia Shalom"}
+                </DropdownMenuItem>
+              )}
               <DropdownMenuItem onClick={togglePendienteCourier}>
                 <Truck className="h-4 w-4" /> {isPendienteCourier ? "Quitar pendiente de courier" : "Marcar pendiente de courier"}
               </DropdownMenuItem>
