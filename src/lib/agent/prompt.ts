@@ -204,9 +204,14 @@ export async function renderContexto(contactId: string): Promise<string> {
 /** Contexto del prompt y, aparte, los datos de envío que faltan (para exigirlos sin el modelo). */
 export async function renderContextoDetallado(
   contactId: string
-): Promise<{ texto: string; requisitosShalom: RequisitosShalom }> {
+): Promise<{
+  texto: string;
+  requisitosShalom: RequisitosShalom;
+  /** Contra entrega en provincia: lugar y fecha más pronta, para corregir promesas de «mañana». */
+  entregaCod: import("@/lib/aliclik/entrega-fecha").EntregaCodProvincia | null;
+}> {
   const [contact] = await db.select().from(contacts).where(eq(contacts.id, contactId)).limit(1);
-  if (!contact) return { texto: "", requisitosShalom: SIN_REQUISITOS };
+  if (!contact) return { texto: "", requisitosShalom: SIN_REQUISITOS, entregaCod: null };
   let requisitosShalom: RequisitosShalom = SIN_REQUISITOS;
 
   // BLINDAJE DE SEGURIDAD: Purgar cualquier clave de recojo para que la IA JAMÁS tenga acceso a ella
@@ -579,7 +584,8 @@ export async function renderContextoDetallado(
     console.warn("[prompt] error al cargar business rules en contexto:", err);
   }
 
-  return { texto: partes.join("\n"), requisitosShalom };
+  const { entregaCodProvincia } = await import("@/lib/aliclik/cobertura-cod");
+  return { texto: partes.join("\n"), requisitosShalom, entregaCod: entregaCodProvincia(decisionEntrega) };
 }
 
 /** Prompt final con el template global (sin contexto de contacto). Para previews. */

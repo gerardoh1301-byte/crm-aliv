@@ -28,6 +28,7 @@ import { corregirFrasesSalud } from "./filtro-salud";
 import { registrarPromesaSiAplica } from "./seguimiento";
 import { executeTool, getEnabledToolDefinitions, type ToolContext } from "./tools";
 import { quitarPieRepetido } from "./imagenes-referencia";
+import { corregirPromesaEntregaCod } from "@/lib/aliclik/entrega-fecha";
 import { getOpenRouterClient, getAgentModel, hasOpenRouterKey, createChatCompletionWithFallback } from "./openrouter";
 import { autoDetectarYAgendarHorario } from "./scheduler";
 import { pedidosOrdenes } from "../../../modules/pedidos/tabla";
@@ -165,6 +166,12 @@ async function executeAgentTurn(
   ]);
   const contexto = contextoDetallado.texto;
   const requisitosShalom = contextoDetallado.requisitosShalom;
+  const entregaCod = contextoDetallado.entregaCod;
+  const corregirFecha = (texto: string): string => {
+    const r = corregirPromesaEntregaCod(texto, entregaCod);
+    if (r.corregido) console.info(`[agent] promesa de entrega corregida a ${entregaCod?.fecha.etiqueta} (${entregaCod?.lugar})`);
+    return r.texto;
+  };
   // Si en este turno el bot guardó datos o registró el pedido, se vuelve a evaluar qué falta
   // (si no, le pediría el DNI que el cliente acaba de dar).
   const executedToolsRef: string[] = [];
@@ -373,6 +380,7 @@ async function executeAgentTurn(
       if (postulante && reply) reply = quitarHorarioInventado(reply);
       if (reply) reply = await aplicarFiltroSalud(reply, contact.id);
       if (reply) reply = await aplicarDatosEnvio(reply, await requisitosVigentes(), contact.id);
+      if (reply) reply = corregirFecha(reply);
       if (!reply) {
         // A1: a veces el modelo cierra el turno sin texto. Se le pide una vez que responda
         // (las herramientas ya ejecutadas quedan en el historial, no se repiten).
@@ -485,6 +493,7 @@ async function executeAgentTurn(
     if (postulante && textoFinal) textoFinal = quitarHorarioInventado(textoFinal);
     if (textoFinal) textoFinal = await aplicarFiltroSalud(textoFinal, contact.id);
     if (textoFinal) textoFinal = await aplicarDatosEnvio(textoFinal, await requisitosVigentes(), contact.id);
+    if (textoFinal) textoFinal = corregirFecha(textoFinal);
     if (textoFinal) {
       const checkFinal = validarRespuestaBotContraOrden(textoFinal, ordenActiva);
       if (checkFinal.bloqueado) {

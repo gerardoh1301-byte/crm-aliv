@@ -14,7 +14,8 @@
  *
  * Token: `ALICLIK_COBERTURA_TOKEN` (la clave de "Registrar mi app" en AliClik). Es otra
  * clave que la del MCP de pedidos.
- */
+ */
+import { fechaMinimaCod, lineasFechaCod, type EntregaCodProvincia } from "./entrega-fecha";
 
 import agenciasConCoordenadas from "@/lib/agencias/shalom-agencias-569.json";
 /** Almacén WANKLIC GROUP 2 (el mismo de ALICLIK_CATALOG en api-client). */
@@ -280,16 +281,25 @@ function titulo(t: string | undefined): string {
 export const MARCA_COD_PROVINCIA = "## ENTREGA: CONTRA ENTREGA EN";
 
 /** Bloque para el system prompt del bot según la decisión. Vacío si no aplica. */
-export function renderBloqueCobertura(d: DecisionEntrega): string {
+/** Lugar y fecha más pronta de una entrega contra entrega en provincia (null si no aplica). */
+export function entregaCodProvincia(d: DecisionEntrega | null, ahora: Date = new Date()): EntregaCodProvincia | null {
+  if (!d || d.zona !== "provincia_cod") return null;
+  const fecha = fechaMinimaCod(d.cobertura?.diasExtra, ahora);
+  return fecha ? { lugar: titulo(d.lugar) || "tu ciudad", fecha } : null;
+}
+
+export function renderBloqueCobertura(d: DecisionEntrega, ahora: Date = new Date()): string {
   if (d.zona === "provincia_cod") {
     const dias = d.cobertura?.diasExtra != null ? ` (llega en unos ${d.cobertura.diasExtra + 1} días hábiles)` : "";
+    const entrega = entregaCodProvincia(d, ahora);
     return (
       `${MARCA_COD_PROVINCIA} ${(d.lugar || "su ciudad").toUpperCase()} (cobertura AliClik verificada)\n` +
       `- Este cliente está en provincia, pero su ciudad TIENE contra entrega a domicilio${dias}.\n` +
       "- Véndele IGUAL QUE EN LIMA: paga al recibir, en efectivo, Yape o tarjeta. SIN adelanto de S/20, SIN agencia Shalom y SIN clave de retiro.\n" +
       "- ESTÁ PROHIBIDO pedirle el adelanto de S/20, el DNI para guía o proponerle una agencia Shalom.\n" +
       "- Pide solo: nombre completo, dirección exacta con número y referencia, distrito y día de entrega. Pídele también que comparta su UBICACIÓN por WhatsApp (📎 → Ubicación) para que el motorizado llegue exacto.\n" +
-      "- Si el cliente prefiere recoger en agencia Shalom, también se puede, pero entonces sí aplica el adelanto de S/20."
+      "- Si el cliente prefiere recoger en agencia Shalom, también se puede, pero entonces sí aplica el adelanto de S/20." +
+      (entrega ? `\n${lineasFechaCod(entrega)}` : "")
     );
   }
   if (d.zona === "provincia_shalom") {
