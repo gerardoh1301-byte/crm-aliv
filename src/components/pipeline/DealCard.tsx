@@ -142,6 +142,37 @@ export function DealCard({
 
   const [finanzasOpen, setFinanzasOpen] = useState(false);
   const [currentFinanzas, setCurrentFinanzas] = useState<FinanzasShalom | null>(finanzasShalom ?? null);
+  const [llamandoIA, setLlamandoIA] = useState(false);
+
+  const dispararLlamadaIA = async () => {
+    if (llamandoIA) return;
+    if (!pedidoId && !numeroOrden) {
+      toast.info("Esta tarjeta no tiene un pedido asociado aún");
+      return;
+    }
+    setLlamandoIA(true);
+    try {
+      const res = await fetch("/api/voice/llamar-pedido", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          ...(pedidoId ? { pedidoId } : { numeroOrden }),
+          forzar: true,
+        }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (res.ok && data.ok) {
+        toast.success(`📞 Sofía (IA) está llamando a ${contactName || contactPhone || numeroOrdenLimpio}...`);
+        router.refresh();
+      } else {
+        toast.error(data.motivo || data.error || "No se pudo iniciar la llamada con IA");
+      }
+    } catch {
+      toast.error("Error de red al iniciar la llamada con IA");
+    } finally {
+      setLlamandoIA(false);
+    }
+  };
 
   useEffect(() => {
     setCurrentLiquidacion(liquidacionAliclik ?? null);
@@ -739,17 +770,30 @@ export function DealCard({
         )}
 
         {/* Pie: contacto rapido, asesor y menu */}
-        <div className="flex items-center gap-2.5 pt-2 border-t border-border/40 text-muted-foreground" onClick={(e) => e.stopPropagation()}>
+        <div className="flex items-center gap-2 pt-2 border-t border-border/40 text-muted-foreground" onClick={(e) => e.stopPropagation()}>
           {contactPhone ? (
             <a
               href={`tel:${contactPhone}`}
-              title={`Llamar a ${contactPhone}`}
+              title={`Llamar manualmente a ${contactPhone}`}
               {...pararArrastre}
               className="p-1 -m-1 rounded hover:bg-muted hover:text-primary"
             >
               <Phone className="h-3.5 w-3.5" aria-hidden />
             </a>
           ) : null}
+          {contactPhone && (pedidoId || numeroOrden) && !esEntregado && stageKeyLower !== "cancelado_rechazado" && (
+            <button
+              type="button"
+              disabled={llamandoIA}
+              title={`Llamar ahora con Sofía (IA) para confirmar ${numeroOrdenLimpio}`}
+              {...pararArrastre}
+              onClick={dispararLlamadaIA}
+              className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded border border-violet-500/40 bg-violet-500/10 text-violet-700 dark:text-violet-300 hover:bg-violet-500/20 text-[10px] font-semibold cursor-pointer disabled:opacity-50"
+            >
+              <Phone className="h-2.5 w-2.5 shrink-0" aria-hidden />
+              {llamandoIA ? "Llamando..." : "Llamar IA"}
+            </button>
+          )}
           <button
             type="button"
             title="Abrir chat"

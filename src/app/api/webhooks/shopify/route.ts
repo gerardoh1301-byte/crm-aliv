@@ -1,4 +1,4 @@
-import { NextRequest, NextResponse } from "next/server";
+import { NextRequest, NextResponse, after } from "next/server";
 import { createHmac, timingSafeEqual } from "node:crypto";
 import { db } from "@/db";
 import { activities, contacts, crmSettings, webhookEvents } from "@/db/schema";
@@ -433,7 +433,9 @@ ${entregaWeb.marca}`,
 
       // Llamada inmediata con IA (ElevenLabs Conversational AI + Twilio) ni bien ingresa la orden
       // respetando la decisión de cobertura de AliClik (entregaWeb.esAgencia).
-      void dispararLlamadaConfirmacionPedido({
+      // Se ejecuta dentro de `after()` de Next.js para que no bloquee el timeout de 5s de Shopify
+      // pero garantice que el servidor complete la llamada aunque la respuesta HTTP ya haya salido.
+      const datosLlamada = {
         pedidoId: pedidoNuevo.id,
         numeroOrden,
         contactId,
@@ -447,7 +449,17 @@ ${entregaWeb.marca}`,
         dni: dni || payload.shipping_address?.company || null,
         esAgencia: entregaWeb.esAgencia,
         modalidadEntregaTexto: entregaWeb.modalidadEntrega,
-      }).catch((err) => console.warn("[shopify-webhook] llamada inmediata de IA falló:", err));
+      };
+      try {
+        after(async () => {
+          const rCall = await dispararLlamadaConfirmacionPedido(datosLlamada);
+          console.log(`[shopify-webhook] Llamada IA ${numeroOrden}: ok=${rCall.ok} omitido=${rCall.omitido ?? false} motivo=${rCall.motivo ?? "ok"}`);
+        });
+      } catch {
+        void dispararLlamadaConfirmacionPedido(datosLlamada).catch((err) =>
+          console.warn("[shopify-webhook] llamada inmediata de IA falló:", err)
+        );
+      }
     }
 
     await db.insert(activities).values({
