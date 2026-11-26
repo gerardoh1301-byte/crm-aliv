@@ -12,10 +12,12 @@ export interface OrdenMin {
   trackingStatusLabel?: string | null;
   deliveryType: string;
   total: number;
+  /** Fecha programada de entrega (solo en el detalle del pedido: shipping.scheduledDate). */
+  scheduledDate?: string | null;
 }
 
 export interface DecisionAliclik {
-  accion: "marcar_entregado" | "sin_cambios" | "no_encontrado" | "solo_informar";
+  accion: "marcar_entregado" | "marcar_en_camino" | "sin_cambios" | "no_encontrado" | "solo_informar";
   motivo: string;
 }
 
@@ -62,3 +64,20 @@ export function mismoCelular(deAliclik: string | null | undefined, cel9: string)
   return cel9.startsWith(iniSin51) && cel9.endsWith(fin);
 }
 
+
+/** Fecha de Lima (UTC−5) en YYYY-MM-DD. */
+function diaLima(ms: number): string {
+  return new Date(ms - 5 * 3600_000).toISOString().slice(0, 10);
+}
+
+/**
+ * Contra entrega «Por entregar» cuya fecha programada ya llegó: está en reparto (26/11, #1183).
+ * La API de AliClik no dice cuándo sale el paquete del almacén (solo Por entregar, Reprogramado,
+ * Entregado, No contesta, Cancelado), pero sí la fecha programada: ese día el courier lo reparte.
+ */
+export function enCaminoAliclik(orden: OrdenMin | null | undefined, ahora: Date = new Date()): boolean {
+  if (!orden || orden.deliveryType !== "CASH_ON_DELIVERY" || orden.deliveryStatus !== "PENDING_DELIVERY") return false;
+  const ms = Date.parse(String(orden.scheduledDate ?? ""));
+  if (Number.isNaN(ms)) return false;
+  return diaLima(ms) <= diaLima(ahora.getTime());
+}

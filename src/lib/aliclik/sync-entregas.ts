@@ -4,7 +4,14 @@ import { activities, contacts } from "@/db/schema";
 import { and, desc, eq, gte, inArray } from "drizzle-orm";
 import { pedidosOrdenes } from "../../../modules/pedidos/tabla";
 import { AliclikMcpClient, type AliclikOrderItem } from "./mcp-client";
-import { decidirEntregaAliclik, elegirOrdenAliclik, mismoCelular, type DecisionAliclik, type OrdenMin } from "./sync-reglas";
+import {
+  decidirEntregaAliclik,
+  elegirOrdenAliclik,
+  enCaminoAliclik,
+  mismoCelular,
+  type DecisionAliclik,
+  type OrdenMin,
+} from "./sync-reglas";
 
 /**
  * Sincroniza los pedidos que lleva AliClik con su API de pedidos (MCP).
@@ -21,11 +28,13 @@ import { decidirEntregaAliclik, elegirOrdenAliclik, mismoCelular, type DecisionA
 
 const MARCA_ORDEN = /\[ALICLIK_ORDEN:([^\]]+)\]/i;
 const MARCA_ENTREGA = "[ALICLIK_ENTREGADO]";
+const MARCA_EN_CAMINO = "[ALICLIK_EN_CAMINO]";
 
 export interface ResultadoSyncAliclik {
   activo: boolean;
   revisados: number;
   entregados: number;
+  enCamino: number;
   diagnostico?: { listados: number; desde: string; hasta: string; respuestaLista: string; formatoFecha: string; formatoCelular: string };
   detalles: Array<{
     numeroOrden: string;
@@ -65,7 +74,7 @@ function fechaISO(d: Date): string {
 
 export async function sincronizarEntregasAliclik(opts: { limite?: number } = {}): Promise<ResultadoSyncAliclik> {
   const activo = syncEntregasActivo();
-  const res: ResultadoSyncAliclik = { activo, revisados: 0, entregados: 0, detalles: [] };
+  const res: ResultadoSyncAliclik = { activo, revisados: 0, entregados: 0, enCamino: 0, detalles: [] };
   const cliente = new AliclikMcpClient();
 
   // AliClik reparte contra entrega en Lima (ALIDRIVER) y en provincia, y lleva paquetes a
@@ -156,7 +165,23 @@ export async function sincronizarEntregasAliclik(opts: { limite?: number } = {})
       usados.add(numeroAliclik);
       res.revisados++;
 
-      const decision = decidirEntregaAliclik(orden);
+      let decision = decidirEntregaAliclik(orden);
+      // Contra entrega por entregar: si ya es su fecha programada, está en reparto. La fecha
+      // solo viene en el detalle; se pide solo para estos (pocos por corrida).
+      if (
+        decision.accion === "sin_cambios" &&
+        p.estado !== "enviado" &&
+        orden.deliveryType === "CASH_ON_DELIVERY" &&
+        orden.deliveryStatus === "PENDING_DELIVERY"
+      ) {
+        if (orden.scheduledDate === undefined) {
+          const det = await cliente.getOrder(numeroAliclik).catch(() => null);
+          orden = { ...orden, scheduledDate: det?.shipping?.scheduledDate ?? null };
+        }
+        if (enCaminoAliclik(orden)) {
+          decision = { accion: "marcar_en_camino", motivo: `por entregar con fecha programada ${String(orden.scheduledDate).slice(0, 10)}` };
+        }
+      }
       res.detalles.push({
         numeroOrden: p.numeroOrden,
         ordenAliclik: numeroAliclik,
@@ -178,6 +203,9 @@ export async function sincronizarEntregasAliclik(opts: { limite?: number } = {})
       if (decision.accion === "marcar_entregado") {
         await marcarEntregadoPorAliclik(p, numeroAliclik, decision.motivo);
         res.entregados++;
+      } else if (decision.accion === "marcar_en_camino") {
+        await marcarEnCaminoPorAliclik(p, numeroAliclik, decision.motivo);
+        res.enCamino++;
       }
     } catch (err) {
       res.detalles.push({
@@ -192,6 +220,36 @@ export async function sincronizarEntregasAliclik(opts: { limite?: number } = {})
     }
   }
   return res;
+}
+
+/** Contra entrega en reparto según AliClik: pedido «enviado» y tarjeta en «Orden en camino». */
+async function marcarEnCaminoPorAliclik(
+  p: { id: string; numeroOrden: string; contactId: string | null; dealId: string | null; notas: string | null; total: string | null; items: unknown },
+  numeroAliclik: string,
+  motivo: string
+): Promise<void> {
+  const { sincronizarEtapaPipeline } = await import("@modules/pedidos/servidor");
+  const ahora = new Date();
+  p.notas = `${p.notas ? `${p.notas}\n` : ""}${MARCA_EN_CAMINO} ${ahora.toISOString().slice(0, 10)}`;
+  await db
+    .update(pedidosOrdenes)
+    .set({ estado: "enviado", notas: p.notas, updatedAt: ahora })
+    .where(eq(pedidosOrdenes.id, p.id));
+  const items = Array.isArray(p.items) ? (p.items as Array<{ titulo?: string }>) : [];
+  const total = Number(p.total) || 0;
+  if (p.contactId) {
+    await sincronizarEtapaPipeline(p.contactId, "enviado", `${p.numeroOrden} · ${items[0]?.titulo ?? "Pedido Aliv"}`, total, p.id, p.dealId);
+    await db.insert(activities).values({
+      type: "note",
+      description: `[ALICLIK] ${p.numeroOrden} en camino según AliClik (${numeroAliclik}: ${motivo}).`,
+      contactId: p.contactId,
+      dealId: p.dealId,
+    });
+  }
+  if (p.dealId) {
+    const { notificarCambioDealAlErp } = await import("@/lib/finanzas/notificar-erp");
+    notificarCambioDealAlErp(p.dealId).catch(() => {});
+  }
 }
 
 async function marcarEntregadoPorAliclik(

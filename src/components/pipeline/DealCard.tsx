@@ -82,6 +82,8 @@ export interface DealCardProps {
   tags?: string[];
   liquidacionAliclik?: LiquidacionAliclikData | null;
   finanzasShalom?: FinanzasShalom | null;
+  /** Contra entrega por AliClik (Lima o provincia): no lleva guía ni dinero de Shalom. */
+  entregaAliclik?: boolean;
 }
 
 export function DealCard({
@@ -116,6 +118,7 @@ export function DealCard({
   tags = [],
   liquidacionAliclik,
   finanzasShalom,
+  entregaAliclik = false,
 }: DealCardProps) {
   const router = useRouter();
   const [rotuloOpen, setRotuloOpen] = useState(false);
@@ -254,7 +257,7 @@ export function DealCard({
   const esProvincia = Boolean(ciudadLower) && !esLima;
   // Pagado directo (Yape, Plin o tarjeta) con entrega propia: no pasa por AliClik ni por Shalom
   const pagoDirecto = ["yape", "plin", "tarjeta"].includes((ordenModalidadPago || "").toLowerCase());
-  const esShalom = !pagoDirecto && (
+  const esShalom = !pagoDirecto && !entregaAliclik && (
     transportadoraLower.includes("shalom") ||
     esProvincia ||
     Boolean(currentNumeroGuia) ||
@@ -289,9 +292,9 @@ export function DealCard({
   // Botón Rótulo Motorizado: Si es Lima y tiene datos de envío
   const mostrarBotonRotulo = esLima && tieneDatosEnvio;
   // Botón de Seguimiento Shalom: Si es Provincia o Shalom (siempre disponible para registrar/ver datos)
-  const mostrarBotonShalom = esShalom || esProvincia || !esLima || Boolean(currentNumeroGuia);
+  const mostrarBotonShalom = !entregaAliclik && (esShalom || esProvincia || !esLima || Boolean(currentNumeroGuia));
   // Botón Rótulo Shalom (Imagen): Siempre disponible como opción adicional
-  const mostrarBotonShalomRotulo = (esShalom || esProvincia || !esLima) && tieneDatosEnvio;
+  const mostrarBotonShalomRotulo = !entregaAliclik && (esShalom || esProvincia || !esLima) && tieneDatosEnvio;
 
   const numeroOrdenLimpio =
     numeroOrden ||

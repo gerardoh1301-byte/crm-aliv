@@ -130,6 +130,8 @@ export interface DealWithContact extends Deal {
     nroOperacion: string;
   } | null;
   finanzasShalom?: import("@/lib/finanzas/tags-shalom").FinanzasShalom | null;
+  /** Contra entrega por AliClik (Lima o provincia): sin botones de Shalom. */
+  entregaAliclik?: boolean;
 }
 
 export interface ContactWithDeals extends Contact {

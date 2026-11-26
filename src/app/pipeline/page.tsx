@@ -1,3 +1,4 @@
+import { esContraEntregaAliclik } from "@/lib/pedidos/entrega-aliclik";
 import { Suspense } from "react";
 import { db } from "@/db";
 import { pipelines, pipelineStages, deals, contacts, teamMembers } from "@/db/schema";
@@ -142,6 +143,13 @@ export default async function PipelinePage() {
       tags: (d.contactTags || []) as string[],
       // El dinero ya registrado (liquidación AliClik y dinero Shalom) vive en las notas del pedido y del deal.
       // Sin esto, al recargar la página la tarjeta volvía a mostrar "Registrar dinero Shalom" aunque estuviera guardado.
+      entregaAliclik: esContraEntregaAliclik({
+        transportadora: d.ordenTransportadora,
+        modalidadPago: d.ordenModalidadPago,
+        notas: d.ordenNotas,
+        numeroGuia: d.ordenNumeroGuia,
+        claveRecojo: d.ordenClaveRecojo,
+      }),
       liquidacionAliclik: extraerLiquidacionAliclik(notasCombinadas),
       finanzasShalom: extraerFinanzasShalom(notasCombinadas),
     };
