@@ -159,6 +159,40 @@ function normalizarFb(post: FbPost, esAnuncio: boolean, pageId: string): Comenta
   }));
 }
 
+declare global {
+  var __metaCreativos: { hasta: number; fb: string[]; ig: string[] } | undefined;
+}
+
+/**
+ * Posts de Facebook (effective_object_story_id) e Instagram (effective_instagram_media_id)
+ * de los anuncios activos de la cuenta publicitaria. Se guarda 10 min en memoria.
+ */
+export async function creativosAnuncios(): Promise<{ fb: string[]; ig: string[]; error?: string }> {
+  const { adAccountId } = metaComentariosConfig();
+  if (!adAccountId) return { fb: [], ig: [] };
+  const c = globalThis.__metaCreativos;
+  if (c && c.hasta > Date.now()) return { fb: c.fb, ig: c.ig };
+  try {
+    const ads = await graph<{
+      data?: Array<{ creative?: { effective_object_story_id?: string; effective_instagram_media_id?: string } }>;
+    }>(`act_${adAccountId}/ads`, {
+      usar: "base",
+      params: {
+        fields: "creative{effective_object_story_id,effective_instagram_media_id}",
+        effective_status: JSON.stringify(["ACTIVE"]),
+        limit: "100",
+      },
+    });
+    const uniq = (xs: Array<string | undefined>) => [...new Set(xs.filter((x): x is string => !!x))];
+    const fb = uniq((ads.data ?? []).map((a) => a.creative?.effective_object_story_id));
+    const ig = uniq((ads.data ?? []).map((a) => a.creative?.effective_instagram_media_id));
+    globalThis.__metaCreativos = { hasta: Date.now() + 10 * 60_000, fb, ig };
+    return { fb, ig };
+  } catch (err) {
+    return { fb: [], ig: [], error: err instanceof Error ? err.message : String(err) };
+  }
+}
+
 /** Comentarios recientes de la página: posts del muro y posts de anuncios (dark posts). */
 export async function comentariosFacebook(opts: { posts?: number; porPost?: number } = {}): Promise<{
   comentarios: ComentarioMeta[];
@@ -169,21 +203,26 @@ export async function comentariosFacebook(opts: { posts?: number; porPost?: numb
   const out: ComentarioMeta[] = [];
   if (!pageId) return { comentarios: out, errores: ["Falta META_PAGE_ID"] };
   const fields = campoPostsFb(opts.porPost ?? 25);
-  const fuentes: Array<{ edge: string; esAnuncio: boolean }> = [
-    { edge: "feed", esAnuncio: false },
-    { edge: "ads_posts", esAnuncio: true },
-  ];
-  for (const f of fuentes) {
+  try {
+    const res = await graph<{ data?: FbPost[] }>(`${pageId}/feed`, {
+      params: { fields, limit: String(opts.posts ?? 25) },
+    });
+    for (const p of res.data ?? []) out.push(...normalizarFb(p, false, pageId));
+  } catch (err) {
+    errores.push(`facebook feed: ${err instanceof Error ? err.message : String(err)}`);
+  }
+  // Los anuncios (dark posts) no salen en el feed: se llega por el creativo de cada anuncio activo.
+  const { fb, error } = await creativosAnuncios();
+  if (error) errores.push(`facebook anuncios: ${error}`);
+  for (const id of fb) {
     try {
-      const res = await graph<{ data?: FbPost[] }>(`${pageId}/${f.edge}`, {
-        params: { fields, limit: String(opts.posts ?? 25) },
-      });
-      for (const p of res.data ?? []) out.push(...normalizarFb(p, f.esAnuncio, pageId));
+      const p = await graph<FbPost>(id, { params: { fields } });
+      out.push(...normalizarFb(p, true, pageId));
     } catch (err) {
-      errores.push(`facebook ${f.edge}: ${err instanceof Error ? err.message : String(err)}`);
+      errores.push(`facebook anuncio ${id}: ${err instanceof Error ? err.message : String(err)}`);
     }
   }
-  // Un post impulsado aparece en feed y en ads_posts: un comentario una sola vez.
+  // Un post impulsado aparece en el feed y como anuncio: un comentario una sola vez.
   const vistos = new Set<string>();
   return {
     comentarios: out.filter((c) => (vistos.has(c.id) ? false : (vistos.add(c.id), true))),
@@ -247,31 +286,15 @@ export async function comentariosInstagram(opts: { posts?: number; porPost?: num
 
   // Los anuncios de Instagram no salen en /media: se llega por el creativo de cada anuncio activo.
   if (adAccountId) {
-    try {
-      const ads = await graph<{ data?: Array<{ creative?: { effective_instagram_media_id?: string } }> }>(
-        `act_${adAccountId}/ads`,
-        {
-          usar: "base",
-          params: {
-            fields: "creative{effective_instagram_media_id}",
-            effective_status: JSON.stringify(["ACTIVE"]),
-            limit: "100",
-          },
-        }
-      );
-      const ids = [
-        ...new Set((ads.data ?? []).map((a) => a.creative?.effective_instagram_media_id).filter((x): x is string => !!x)),
-      ];
-      for (const id of ids) {
-        try {
-          const m = await graph<IgMedia>(id, { params: { fields: camposMedia } });
-          out.push(...normalizarIg(m, true, igUserId));
-        } catch (err) {
-          errores.push(`instagram anuncio ${id}: ${err instanceof Error ? err.message : String(err)}`);
-        }
+    const { ig, error } = await creativosAnuncios();
+    if (error) errores.push(`instagram anuncios: ${error}`);
+    for (const id of ig) {
+      try {
+        const m = await graph<IgMedia>(id, { params: { fields: camposMedia } });
+        out.push(...normalizarIg(m, true, igUserId));
+      } catch (err) {
+        errores.push(`instagram anuncio ${id}: ${err instanceof Error ? err.message : String(err)}`);
       }
-    } catch (err) {
-      errores.push(`instagram anuncios: ${err instanceof Error ? err.message : String(err)}`);
     }
   }
   const vistos = new Set<string>();
@@ -321,5 +344,19 @@ export async function diagnosticoMeta(): Promise<Record<string, unknown>> {
   };
   await probar("pagina", () => graph(pageId, { params: { fields: "id,name,instagram_business_account" } }));
   if (igUserId) await probar("instagram", () => graph(igUserId, { params: { fields: "id,username" } }));
+  await probar("anuncios", async () => {
+    const a = await creativosAnuncios();
+    return { postsFacebook: a.fb.length, mediosInstagram: a.ig.length, error: a.error ?? null };
+  });
+  await probar("comentarios", async () => {
+    const [fb, ig] = await Promise.all([comentariosFacebook(), comentariosInstagram()]);
+    return {
+      facebook: fb.comentarios.length,
+      facebookAnuncios: fb.comentarios.filter((x) => x.esAnuncio).length,
+      instagram: ig.comentarios.length,
+      instagramAnuncios: ig.comentarios.filter((x) => x.esAnuncio).length,
+      errores: [...fb.errores, ...ig.errores].slice(0, 5),
+    };
+  });
   return out;
 }
