@@ -2,10 +2,10 @@ import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/db";
 import { pipelineStages, pipelines } from "@/db/schema";
 import { asc, eq } from "drizzle-orm";
-import { requireMember } from "@/lib/api-auth";
+import { requireAdmin } from "@/lib/api-auth";
 
 export async function POST(request: NextRequest) {
-  const auth = await requireMember();
+  const auth = await requireAdmin();
   if ("response" in auth) return auth.response;
   let body;
   try {

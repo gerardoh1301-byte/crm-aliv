@@ -31,6 +31,15 @@ export default function SettingsPage() {
     Array<{ id: string; name: string; color: string; order: number }>
   >([]);
 
+  // 26/11: canales, equipo, agente IA, reglas y webhook solo los ve el administrador.
+  const [esAdmin, setEsAdmin] = useState(false);
+  useEffect(() => {
+    fetch("/api/team/me")
+      .then((r) => (r.ok ? r.json() : { member: null }))
+      .then((d) => setEsAdmin(d?.member?.role === "admin"))
+      .catch(() => {});
+  }, []);
+
   useEffect(() => {
     fetch("/api/pipeline")
       .then((r) => r.json())
@@ -84,6 +93,8 @@ export default function SettingsPage() {
           </CardContent>
         </Card>
 
+        {esAdmin && (
+          <>
         {/* Canales conectados */}
         <Card className="lg:col-span-2">
           <CardHeader>
@@ -199,6 +210,9 @@ export default function SettingsPage() {
             </div>
           </CardContent>
         </Card>
+
+          </>
+        )}
 
         {/* Notifications */}
         <Card id="notificaciones" className="lg:col-span-2 scroll-mt-20">

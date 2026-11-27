@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/db";
 import { pipelines, pipelineStages } from "@/db/schema";
 import { asc, eq } from "drizzle-orm";
-import { requireMember } from "@/lib/api-auth";
+import { requireAdmin, requireMember } from "@/lib/api-auth";
 
 const SEED_STAGES = [
   { name: "Prospecto", order: 0, color: "#64748b", isWon: false, isLost: false },
@@ -35,7 +35,7 @@ export async function GET() {
 }
 
 export async function POST(request: NextRequest) {
-  const auth = await requireMember();
+  const auth = await requireAdmin();
   if ("response" in auth) return auth.response;
   let body;
   try {

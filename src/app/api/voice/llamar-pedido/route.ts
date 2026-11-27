@@ -20,6 +20,8 @@ export async function GET(req: NextRequest) {
   if (!esWorker) {
     const member = await getCurrentMember();
     if (!member) return NextResponse.json({ error: "No autorizado" }, { status: 401 });
+    // 26/11: las llamadas con IA cuestan dinero; solo el administrador las lanza o las configura.
+    if (member.role !== "admin") return NextResponse.json({ error: "Solo un administrador puede hacer esto." }, { status: 403 });
   }
   const config = await obtenerConfigVozIA();
   return NextResponse.json({
@@ -44,6 +46,8 @@ export async function POST(req: NextRequest) {
   if (!esWorker) {
     const member = await getCurrentMember();
     if (!member) return NextResponse.json({ error: "No autorizado" }, { status: 401 });
+    // 26/11: las llamadas con IA cuestan dinero; solo el administrador las lanza o las configura.
+    if (member.role !== "admin") return NextResponse.json({ error: "Solo un administrador puede hacer esto." }, { status: 403 });
   }
 
   let body: { pedidoId?: string; numeroOrden?: string; forzar?: boolean } = {};

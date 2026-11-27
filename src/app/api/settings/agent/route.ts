@@ -19,7 +19,7 @@ import {
   saveAgentConfig,
 } from "@/lib/agent/config";
 import { isChannel } from "@/lib/channels/types";
-import { requireMember } from "@/lib/api-auth";
+import { requireAdmin } from "@/lib/api-auth";
 
 const MIN_PROMPT_LENGTH = 50;
 
@@ -29,7 +29,7 @@ const MIN_PROMPT_LENGTH = 50;
  * `agent_configs` de ese canal, que es lo que permite tener un agente distinto por red.
  */
 export async function GET(request: NextRequest) {
-  const auth = await requireMember();
+  const auth = await requireAdmin();
   if ("response" in auth) return auth.response;
   const channel = request.nextUrl.searchParams.get("channel");
 
@@ -88,7 +88,7 @@ async function upsertSetting(key: string, value: string): Promise<void> {
 }
 
 export async function PUT(request: NextRequest) {
-  const auth = await requireMember();
+  const auth = await requireAdmin();
   if ("response" in auth) return auth.response;
   let body: PutBody;
   try {
@@ -185,7 +185,7 @@ export async function PUT(request: NextRequest) {
  * DELETE: limpia los overrides y vuelve a defaults.
  */
 export async function DELETE(request: NextRequest) {
-  const auth = await requireMember();
+  const auth = await requireAdmin();
   if ("response" in auth) return auth.response;
   const channel = request.nextUrl.searchParams.get("channel");
   if (isChannel(channel)) {

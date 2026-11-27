@@ -61,6 +61,23 @@ export async function POST(request: NextRequest) {
     );
   }
 
+  // 26/11: un vendedor solo escribe a clientes que tiene asignados, y siempre a su número
+  // registrado (no a uno escrito a mano). El admin puede escribir a cualquier número.
+  if (auth.member.role !== "admin") {
+    if (!body.contactId) {
+      return NextResponse.json({ error: "Solo puedes escribir a clientes asignados a ti." }, { status: 403 });
+    }
+    const [c] = await db
+      .select({ ownerId: contacts.ownerId, phone: contacts.phone })
+      .from(contacts)
+      .where(eq(contacts.id, body.contactId))
+      .limit(1);
+    if (!c || c.ownerId !== auth.member.id || !c.phone) {
+      return NextResponse.json({ error: "Solo puedes escribir a clientes asignados a ti." }, { status: 403 });
+    }
+    body.to = c.phone;
+  }
+
   const normalizedTo = `+${normalizePhone(body.to)}`;
   const tenantId = await resolveDefaultTenantId();
 

@@ -2,13 +2,13 @@ import { NextResponse } from "next/server";
 import { listChannelAccounts } from "@/lib/channels/sync";
 import { zernioConfig } from "@/lib/zernio/client";
 import { whatsappProvider } from "@/lib/channels/provider";
-import { requireMember } from "@/lib/api-auth";
+import { requireAdmin } from "@/lib/api-auth";
 import { estadoConectores } from "@/lib/channels/conectores";
 
 export const dynamic = "force-dynamic";
 
 export async function GET() {
-  const auth = await requireMember();
+  const auth = await requireAdmin();
   if ("response" in auth) return auth.response;
   const [accounts, conectores] = await Promise.all([listChannelAccounts(), estadoConectores()]);
   const zernio = zernioConfig();

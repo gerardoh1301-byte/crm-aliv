@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { requireMember } from "@/lib/api-auth";
+import { requireAdmin } from "@/lib/api-auth";
 import { db } from "@/db";
 import { deals, activities } from "@/db/schema";
 import { desc, eq } from "drizzle-orm";
@@ -35,7 +35,7 @@ export function agregarNotaSinBorrar(
 
 export async function POST(req: NextRequest) {
   // 24/11 (auditoría CRM-03): solo un miembro con sesión válida puede despachar
-  const auth = await requireMember();
+  const auth = await requireAdmin();
   if ("response" in auth) return auth.response;
   if (process.env.ALICLIK_DESPACHO_ENABLED !== "true") {
     return NextResponse.json(

@@ -10,21 +10,34 @@ import { useEffect, useState } from "react";
 // El rol no cambia durante la visita: se recuerda entre paginas para que el menu no
 // vuelva a parpadear en cada navegacion.
 let rolConocido: boolean | null = null;
+// 26/11: las tarjetas del pipeline tambien lo usan; con una consulta compartida no sale
+// un pedido a /api/team/me por cada tarjeta mientras el rol todavia no se conoce.
+let consulta: Promise<boolean> | null = null;
+
+function consultarRol(): Promise<boolean> {
+  if (!consulta) {
+    consulta = fetch("/api/team/me", { cache: "no-store" })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((data: { member?: { role?: string } } | null) => {
+        rolConocido = data?.member?.role === "admin";
+        return rolConocido;
+      })
+      .catch(() => {
+        consulta = null;
+        return false;
+      });
+  }
+  return consulta;
+}
 
 export function useEsAdmin(): boolean | null {
   const [esAdmin, setEsAdmin] = useState<boolean | null>(rolConocido);
   useEffect(() => {
     if (rolConocido !== null) return;
     let activo = true;
-    fetch("/api/team/me", { cache: "no-store" })
-      .then((r) => (r.ok ? r.json() : null))
-      .then((data: { member?: { role?: string } } | null) => {
-        rolConocido = data?.member?.role === "admin";
-        if (activo) setEsAdmin(rolConocido);
-      })
-      .catch(() => {
-        if (activo) setEsAdmin(false);
-      });
+    consultarRol().then((v) => {
+      if (activo) setEsAdmin(v);
+    });
     return () => {
       activo = false;
     };

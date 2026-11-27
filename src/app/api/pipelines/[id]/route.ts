@@ -2,13 +2,13 @@ import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/db";
 import { pipelines, pipelineStages, deals } from "@/db/schema";
 import { eq, inArray } from "drizzle-orm";
-import { requireMember } from "@/lib/api-auth";
+import { requireAdmin } from "@/lib/api-auth";
 
 export async function PUT(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
-  const auth = await requireMember();
+  const auth = await requireAdmin();
   if ("response" in auth) return auth.response;
   const { id } = await params;
   let body;
@@ -40,7 +40,7 @@ export async function DELETE(
   _request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
-  const auth = await requireMember();
+  const auth = await requireAdmin();
   if ("response" in auth) return auth.response;
   const { id } = await params;
 

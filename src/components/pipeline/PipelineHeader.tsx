@@ -22,6 +22,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { cn } from "@/lib/utils";
 import type { Pipeline } from "@/types";
+import { useEsAdmin } from "@/lib/use-es-admin";
 
 interface PipelineHeaderProps {
   pipelines: Pipeline[];
@@ -42,6 +43,7 @@ export function PipelineHeader({
   onViewChange,
   onOpenEditor,
 }: PipelineHeaderProps) {
+  const esAdmin = useEsAdmin();
   const router = useRouter();
   const [createOpen, setCreateOpen] = useState(false);
   const [newName, setNewName] = useState("");
@@ -268,6 +270,7 @@ export function PipelineHeader({
               <List className="h-3.5 w-3.5" />
             </button>
           </div>
+          {esAdmin && (
           <button
             type="button"
             onClick={onOpenEditor}
@@ -277,6 +280,7 @@ export function PipelineHeader({
           >
             <Settings2 className="h-4 w-4" />
           </button>
+          )}
         </div>
       </div>
 

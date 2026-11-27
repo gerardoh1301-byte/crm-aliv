@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { buildConnectUrl } from "@/lib/zernio/accounts";
 import { isChannel } from "@/lib/channels/types";
-import { requireMember } from "@/lib/api-auth";
+import { requireAdmin } from "@/lib/api-auth";
 
 export const dynamic = "force-dynamic";
 
@@ -10,7 +10,7 @@ export const dynamic = "force-dynamic";
  * esa URL. La API key nunca llega al browser, que la abre en un popup.
  */
 export async function GET(request: NextRequest) {
-  const auth = await requireMember();
+  const auth = await requireAdmin();
   if ("response" in auth) return auth.response;
   const params = request.nextUrl.searchParams;
   const platform = params.get("platform");

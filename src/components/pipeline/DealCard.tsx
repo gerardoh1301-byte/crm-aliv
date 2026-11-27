@@ -36,6 +36,7 @@ import {
   type SeguimientoShalomData,
 } from "./SeguimientoShalomModal";
 import { AsignarVendedorModal } from "./AsignarVendedorModal";
+import { useEsAdmin } from "@/lib/use-es-admin";
 import { DespacharAliclikModal, type DespacharAliclikModalData } from "./DespacharAliclikModal";
 import { LiquidarAliclikModal, type LiquidacionAliclikData } from "./LiquidarAliclikModal";
 import { FinanzasShalomModal } from "./FinanzasShalomModal";
@@ -122,6 +123,8 @@ export function DealCard({
   entregaAliclik = false,
 }: DealCardProps) {
   const router = useRouter();
+  // 26/11: dinero (liquidación, finanzas Shalom) y llamadas con IA solo para el administrador.
+  const esAdmin = useEsAdmin();
   const [rotuloOpen, setRotuloOpen] = useState(false);
   const [rotuloShalomOpen, setRotuloShalomOpen] = useState(false);
   const [shalomOpen, setShalomOpen] = useState(false);
@@ -685,6 +688,7 @@ export function DealCard({
         )}
 
         {/* Botón de Confirmación de Liquidación AliClik en BCP (para Contra Entrega) o resumen BCP Shalom */}
+        {esAdmin && (<>
         {esShalom && !currentLiquidacion && (esConfirmadoODespacho || esEntregado) ? (
           <Button
             type="button"
@@ -768,6 +772,7 @@ export function DealCard({
             </div>
           )
         )}
+        </>)}
 
         {/* Pie: contacto rapido, asesor y menu */}
         <div className="flex items-center gap-2 pt-2 border-t border-border/40 text-muted-foreground" onClick={(e) => e.stopPropagation()}>
@@ -781,7 +786,7 @@ export function DealCard({
               <Phone className="h-3.5 w-3.5" aria-hidden />
             </a>
           ) : null}
-          {contactPhone && (pedidoId || numeroOrden) && !esEntregado && stageKeyLower !== "cancelado_rechazado" && (
+          {esAdmin && contactPhone && (pedidoId || numeroOrden) && !esEntregado && stageKeyLower !== "cancelado_rechazado" && (
             <button
               type="button"
               disabled={llamandoIA}
@@ -846,14 +851,16 @@ export function DealCard({
                   <Printer className="h-4 w-4" /> Rótulo motorizado
                 </DropdownMenuItem>
               )}
-              {esShalom && (
+              {esAdmin && esShalom && (
                 <DropdownMenuItem onClick={() => setFinanzasOpen(true)} className="cursor-pointer">
                   <Landmark className="h-4 w-4" /> Dinero Shalom (flete, adelanto, saldo)
                 </DropdownMenuItem>
               )}
-              <DropdownMenuItem onClick={() => setLiquidarOpen(true)} className="text-amber-700 dark:text-amber-400 font-semibold cursor-pointer">
-                <Landmark className="h-4 w-4 text-amber-600" /> {currentLiquidacion ? `Editar Liquidación BCP (S/ ${currentLiquidacion.montoNeto.toFixed(2)})` : "Confirmar Liquidación AliClik (BCP)"}
-              </DropdownMenuItem>
+              {esAdmin && (
+                <DropdownMenuItem onClick={() => setLiquidarOpen(true)} className="text-amber-700 dark:text-amber-400 font-semibold cursor-pointer">
+                  <Landmark className="h-4 w-4 text-amber-600" /> {currentLiquidacion ? `Editar Liquidación BCP (S/ ${currentLiquidacion.montoNeto.toFixed(2)})` : "Confirmar Liquidación AliClik (BCP)"}
+                </DropdownMenuItem>
+              )}
               {pedidoId && !pagoDirecto && !esEntregado && (
                 <DropdownMenuItem onClick={() => cambiarEntrega(esShalom ? "cod" : "shalom")}>
                   <ArrowLeftRight className="h-4 w-4" /> {esShalom ? "Cambiar a contra entrega (AliClik)" : "Cambiar a agencia Shalom"}
