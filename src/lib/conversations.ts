@@ -339,7 +339,7 @@ export async function listConversationsForContact(
     })
     .from(conversations)
     .where(and(eq(conversations.contactId, contactId), accountIds ? soloCuentas(accountIds) : undefined))
-    .orderBy(desc(conversations.lastMessageAt));
+    .orderBy(sql`${conversations.lastMessageAt} desc nulls last`);
 
   return rows.map((r) => ({ ...r, channel: toChannel(r.channel) }));
 }
@@ -349,7 +349,9 @@ export async function listConversationsForContact(
  * Devuelve el id de conversacion si el parametro era un contacto.
  */
 export async function resolveConversationId(
-  id: string
+  id: string,
+  /** Cuentas propias del vendedor: su hilo gana aunque el del bot sea más reciente. */
+  preferirCuentas?: string[]
 ): Promise<string | null> {
   const [asConversation] = await db
     .select({ id: conversations.id })
@@ -362,7 +364,13 @@ export async function resolveConversationId(
     .select({ id: conversations.id })
     .from(conversations)
     .where(eq(conversations.contactId, id))
-    .orderBy(desc(conversations.lastMessageAt))
+    .orderBy(
+      ...(preferirCuentas?.length
+        ? [sql`case when ${inArray(conversations.accountId, preferirCuentas)} then 0 else 1 end`]
+        : []),
+      // Un hilo provisorio sin mensajes (NULL) no le gana al chat real.
+      sql`${conversations.lastMessageAt} desc nulls last`
+    )
     .limit(1);
 
   return byContact?.id ?? null;

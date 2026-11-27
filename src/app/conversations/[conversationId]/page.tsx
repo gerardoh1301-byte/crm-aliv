@@ -27,9 +27,10 @@ export default async function ConversationPage({ params }: Props) {
   const { conversation, contact, messages } = await getConversation(conversationId);
 
   // Retrocompatibilidad: hasta la migracion multicanal la ruta era /conversations/<contactId>.
-  // Los links y bookmarks viejos se redirigen al hilo mas reciente de ese contacto.
+  // Los links y bookmarks viejos se redirigen al hilo mas reciente de ese contacto
+  // (el del número propio, si es un vendedor con número).
   if (!conversation) {
-    const resolved = await resolveConversationId(conversationId);
+    const resolved = await resolveConversationId(conversationId, await cuentasVisiblesPara(member));
     if (resolved && resolved !== conversationId) {
       redirect(`/conversations/${resolved}`);
     }
@@ -56,6 +57,17 @@ export default async function ConversationPage({ params }: Props) {
   ]);
   const numeroDelHilo = conversation.accountId ? numerosCortos[conversation.accountId] : undefined;
 
+  // Hilo de otro número sin un solo mensaje (provisorio de una automatización): no hay nada
+  // que leer, así que se abre el chat del vendedor si existe.
+  if (soloLectura && messages.length === 0) {
+    const propio = contactThreads.find((t) => t.accountId && accountIds?.includes(t.accountId));
+    if (propio) redirect(`/conversations/${propio.conversationId}`);
+  }
+  // Los hilos vacíos de otros números no se muestran como pestaña.
+  const hilosVisibles = contactThreads.filter(
+    (t) => t.conversationId === conversationId || t.lastAt || cuentaPermitida(t.accountId, accountIds)
+  );
+
   return (
     <div className="flex h-[calc(100dvh-3.5rem-env(safe-area-inset-top)-2rem)] -m-4 md:-m-6 lg:-m-8 overflow-hidden border border-border rounded-lg bg-background">
       <ConversationsListLive
@@ -64,7 +76,7 @@ export default async function ConversationPage({ params }: Props) {
       />
       <ConversationView
         conversation={conversation}
-        threads={contactThreads.map((t) => ({
+        threads={hilosVisibles.map((t) => ({
           conversationId: t.conversationId,
           channel: t.channel,
           numero: t.accountId ? numerosCortos[t.accountId] : undefined,

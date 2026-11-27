@@ -315,7 +315,8 @@ export async function findConversationForContact(
         eq(conversations.channel, channel)
       )
     )
-    .orderBy(desc(conversations.lastMessageAt))
+    // NULLS LAST: un hilo provisorio sin mensajes no le gana al chat real (27/11).
+    .orderBy(sql`${conversations.lastMessageAt} desc nulls last`)
     .limit(1);
   return row ?? null;
 }
