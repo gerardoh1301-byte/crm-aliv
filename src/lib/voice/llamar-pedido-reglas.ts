@@ -204,7 +204,9 @@ export function construirVariablesLlamadaPedido(p: DatosPedidoParaLlamada): Vari
   if (!p.esAgencia) {
     // MODALIDAD 1: Contraentrega a Domicilio (Lima o Provincia con cobertura AliClik)
     const faltantes: string[] = [...(p.pendientesExtra ?? [])];
-    if (!direccion || !tieneNumeroDeCasa(direccion)) {
+    // Si los pendientes propios ya piden la dirección, no se repite la genérica.
+    const extraPideDireccion = (p.pendientesExtra ?? []).some((x) => /n[uú]mero|direcci|urbaniz|lote|manzana/i.test(x));
+    if (!extraPideDireccion && (!direccion || !tieneNumeroDeCasa(direccion))) {
       faltantes.push("la dirección exacta con calle y número de casa (o manzana y lote)");
     }
     if (!tieneRef) {
@@ -227,9 +229,8 @@ export function construirVariablesLlamadaPedido(p: DatosPedidoParaLlamada): Vari
       ? `¡Hola, ${primerNombre}! Qué tal, te saluda Sofía de Aliv Perú. Te llamo rapidito porque recibimos tu pedido de ${prodVoz} por ${totalNum} soles con envío gratis a ${dirVoz}, pagas al recibir. ¿Me confirmas si todo está correcto para programarte la entrega?`
       : `¡Hola! Qué tal, te saluda Sofía de Aliv Perú. Te llamo rapidito porque recibimos tu pedido de ${prodVoz} por ${totalNum} soles con envío gratis a ${dirVoz}, pagas al recibir. ¿Me confirmas si todo está correcto para programarte la entrega?`;
 
-    const primerFaltante = faltantes[0] ?? "el día y horario de entrega";
     const saludoFinal = p.yaConfirmado
-      ? `¡Hola${primerNombre ? `, ${primerNombre}` : ""}! Qué tal, te saluda Sofía de Aliv Perú. Tu pedido de ${prodVoz} ya está confirmado. Te llamo rapidito solo para completar un dato y programar tu entrega: ${primerFaltante}.`
+      ? `¡Hola${primerNombre ? `, ${primerNombre}` : ""}! Qué tal, te saluda Sofía de Aliv Perú. Tu pedido de ${prodVoz} ya está confirmado. Te llamo rapidito para completar un par de datos y programar tu entrega. ¿Tienes un minutito?`
       : saludo;
 
     const instrucciones = [
