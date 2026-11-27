@@ -6,7 +6,6 @@ import {
 } from "@/lib/conversations";
 import { requireMember } from "@/lib/api-auth";
 import { canAccessContact } from "@/lib/team";
-import { cuentaPermitida, cuentasVisiblesPara } from "@/lib/channels/numeros";
 
 export const dynamic = "force-dynamic";
 
@@ -33,7 +32,8 @@ export async function GET(
   const accesible = contact
     ? canAccessContact(auth.member, contact)
     : auth.member.role === "admin";
-  if (!accesible || !cuentaPermitida(conversation.accountId, await cuentasVisiblesPara(auth.member))) {
+  // 27/11: un hilo de otro número (el 944) de un cliente suyo se puede leer (solo lectura).
+  if (!accesible) {
     return NextResponse.json({ error: "not_found" }, { status: 404 });
   }
   await markConversationAsRead(conversationId);

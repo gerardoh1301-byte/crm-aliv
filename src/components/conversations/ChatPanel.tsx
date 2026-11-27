@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { ConversationMessage } from "@/lib/conversations";
 import { ChatInput } from "./ChatInput";
+import { AvisoSoloLectura } from "./AvisoSoloLectura";
 import { cn } from "@/lib/utils";
 import { avatarBg, getInitials } from "@/lib/avatar";
 import { format } from "date-fns";
@@ -49,6 +50,8 @@ interface Props {
   messages: ConversationMessage[];
   /** El menu de eliminar solo se le muestra al admin. */
   isAdmin?: boolean;
+  /** Hilo de otro número (el 944): sin caja de texto, con botón para escribir desde el propio. */
+  soloLectura?: { numero: string | null } | null;
   detailsOpen?: boolean;
   onToggleDetails?: () => void;
 }
@@ -71,6 +74,7 @@ export function ChatPanel({
   conversation,
   messages,
   isAdmin,
+  soloLectura,
   detailsOpen,
   onToggleDetails,
 }: Props) {
@@ -505,6 +509,9 @@ export function ChatPanel({
       </div>
 
       {/* Input */}
+      {soloLectura ? (
+        <AvisoSoloLectura contactId={contact.id} numero={soloLectura.numero} />
+      ) : (
       <ChatInput
         conversationId={conversation.conversationId}
         channel={conversation.channel}
@@ -516,6 +523,7 @@ export function ChatPanel({
         onClearReply={() => setReplyingTo(null)}
         suggestedReply={(conversation.metadata as Record<string, unknown> | null)?.suggestedReply as { text: string } | null}
       />
+      )}
     </section>
   );
 }

@@ -9,7 +9,7 @@ import {
 import { ConversationsListLive } from "@/components/conversations/ConversationsListLive";
 import { ConversationView } from "@/components/conversations/ConversationView";
 import { canAccessContact, getCurrentMember, visibleOwnerId } from "@/lib/team";
-import { cuentaPermitida, cuentasVisiblesPara } from "@/lib/channels/numeros";
+import { cuentaPermitida, cuentasVisiblesPara, numerosCortosDeCuentas } from "@/lib/channels/numeros";
 
 // El inbox lee la base en cada request: nunca se prerenderiza en build.
 export const dynamic = "force-dynamic";
@@ -40,16 +40,21 @@ export default async function ConversationPage({ params }: Props) {
   const accesible = contact
     ? canAccessContact(member, contact)
     : member.role === "admin";
-  // Vendedor con número propio: un hilo de otro número (el del bot) tampoco existe para él.
+  if (!accesible) notFound();
+  // Vendedor con número propio: el hilo de otro número (el 944) de un cliente suyo se abre
+  // solo para leer, como contexto para rescatar la venta (27/11). La bandeja sigue mostrando
+  // solo su número.
   const accountIds = await cuentasVisiblesPara(member);
-  if (!accesible || !cuentaPermitida(conversation.accountId, accountIds)) notFound();
+  const soloLectura = !cuentaPermitida(conversation.accountId, accountIds);
 
-  await markConversationAsRead(conversationId);
+  if (!soloLectura) await markConversationAsRead(conversationId);
 
-  const [conversations, contactThreads] = await Promise.all([
+  const [conversations, contactThreads, numerosCortos] = await Promise.all([
     listConversations({ ownerId: visibleOwnerId(member), accountIds }),
-    contact ? listConversationsForContact(contact.id, accountIds) : Promise.resolve([]),
+    contact ? listConversationsForContact(contact.id) : Promise.resolve([]),
+    numerosCortosDeCuentas(),
   ]);
+  const numeroDelHilo = conversation.accountId ? numerosCortos[conversation.accountId] : undefined;
 
   return (
     <div className="flex h-[calc(100dvh-3.5rem-env(safe-area-inset-top)-2rem)] -m-4 md:-m-6 lg:-m-8 overflow-hidden border border-border rounded-lg bg-background">
@@ -62,7 +67,9 @@ export default async function ConversationPage({ params }: Props) {
         threads={contactThreads.map((t) => ({
           conversationId: t.conversationId,
           channel: t.channel,
+          numero: t.accountId ? numerosCortos[t.accountId] : undefined,
         }))}
+        soloLectura={soloLectura ? { numero: numeroDelHilo ?? null } : null}
         contact={
           contact
             ? {

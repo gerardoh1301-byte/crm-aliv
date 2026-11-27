@@ -45,6 +45,8 @@ interface Contact {
 export interface ContactThread {
   conversationId: string;
   channel: Channel;
+  /** Primeros 3 dígitos del número de WhatsApp del hilo («944», «977»). */
+  numero?: string;
 }
 
 interface Props {
@@ -285,6 +287,7 @@ export function ContactDetailPanel({
                       )}
                     />
                     {CHANNEL_LABELS[t.channel]}
+                    {t.numero ? ` ${t.numero}` : ""}
                   </Link>
                 );
               })}

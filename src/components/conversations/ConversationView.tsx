@@ -28,6 +28,8 @@ interface Props {
   initialMessages: ConversationMessage[];
   /** Solo un admin puede eliminar el hilo. */
   isAdmin?: boolean;
+  /** Hilo de otro número (el 944) abierto por un vendedor: se lee, no se escribe. */
+  soloLectura?: { numero: string | null } | null;
 }
 
 const STORAGE_KEY = "conversations:detailsOpen";
@@ -43,6 +45,7 @@ export function ConversationView({
   threads = [],
   initialMessages,
   isAdmin = false,
+  soloLectura = null,
 }: Props) {
   // Preferencia por navegador. useSyncExternalStore evita setear estado dentro de un
   // efecto y no rompe la hidratacion: en el servidor vale `true`.
@@ -75,6 +78,7 @@ export function ConversationView({
         }}
         initialMessages={initialMessages}
         isAdmin={isAdmin}
+        soloLectura={soloLectura}
         detailsOpen={detailsOpen}
         onToggleDetails={toggle}
       />

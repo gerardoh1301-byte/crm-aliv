@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback, type ReactNode } from "react";
 import { useSearchParams } from "next/navigation";
 import { adelantoRegistrado, esPedidoDeProvincia, quienVerificoAdelanto } from "@/lib/pedidos/adelanto";
 import Link from "next/link";
@@ -111,6 +111,8 @@ export function PedidosPage() {
   const [shopifyDialogOpen, setShopifyDialogOpen] = useState(false);
   const [syncingShopify, setSyncingShopify] = useState(false);
   const [llamandoPedidoId, setLlamandoPedidoId] = useState<string | null>(null);
+  // 27/11: clic en el nombre del cliente → ficha completa del pedido.
+  const [detallePedido, setDetallePedido] = useState<PedidoConContacto | null>(null);
 
   async function llamarConIA(p: PedidoConContacto) {
     if (llamandoPedidoId) return;
@@ -710,9 +712,14 @@ export function PedidosPage() {
                       </p>
                     </TableCell>
                     <TableCell>
-                      <p className="font-medium text-sm leading-tight">
+                      <button
+                        type="button"
+                        onClick={() => setDetallePedido(p)}
+                        className="font-medium text-sm leading-tight text-left hover:text-primary hover:underline underline-offset-2 cursor-pointer"
+                        title="Ver toda la información del pedido"
+                      >
                         {p.contactName ?? "Cliente"}
-                      </p>
+                      </button>
                       <p className="text-xs text-muted-foreground flex items-center gap-2 mt-0.5">
                         {p.contactPhone && (
                           <span className="inline-flex items-center gap-0.5">
@@ -1357,6 +1364,103 @@ export function PedidosPage() {
               Entendido
             </Button>
           </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Ficha completa del pedido (clic en el nombre del cliente) */}
+      <Dialog open={Boolean(detallePedido)} onOpenChange={(o) => !o && setDetallePedido(null)}>
+        <DialogContent className="sm:max-w-lg max-h-[85vh] overflow-y-auto">
+          {detallePedido && (() => {
+            const d = detallePedido;
+            const fila = (etiqueta: string, valor: ReactNode) =>
+              valor === null || valor === undefined || valor === "" ? null : (
+                <div className="grid grid-cols-[120px_1fr] gap-2 py-1.5 border-b border-border/60 last:border-0">
+                  <dt className="text-xs text-muted-foreground">{etiqueta}</dt>
+                  <dd className="text-sm break-words">{valor}</dd>
+                </div>
+              );
+            const adelanto = !esPedidoDeProvincia(d)
+              ? "No aplica (Lima: paga al recibir)"
+              : adelantoRegistrado(d.notas)
+                ? `Verificado${quienVerificoAdelanto(d.notas) ? ` por ${quienVerificoAdelanto(d.notas)}` : ""}`
+                : d.numeroGuia || ["enviado", "entregado"].includes(d.estado)
+                  ? "Despachado"
+                  : d.estado === "cancelado"
+                    ? "—"
+                    : "Pendiente S/20";
+            return (
+              <>
+                <DialogHeader>
+                  <DialogTitle className="flex items-center gap-2 flex-wrap">
+                    <span>{d.contactName ?? "Cliente"}</span>
+                    <span className="font-mono text-sm text-muted-foreground">{d.numeroOrden}</span>
+                    <Badge variant="outline" className={ESTILO_ESTADO[d.estado] ?? ""}>
+                      {ETIQUETA_ESTADO_PEDIDO[d.estado] ?? d.estado}
+                    </Badge>
+                  </DialogTitle>
+                </DialogHeader>
+                <dl className="mt-1">
+                  {fila("Celular", d.contactPhone)}
+                  {fila("DNI", d.dniCliente)}
+                  {fila("Ciudad", d.ciudad)}
+                  {fila("Distrito", d.distrito)}
+                  {fila("Dirección", d.direccionEnvio)}
+                  {fila(
+                    "Productos",
+                    (d.items ?? []).length ? (
+                      <ul className="space-y-0.5">
+                        {(d.items ?? []).map((it, i) => (
+                          <li key={i}>
+                            <span className="font-semibold">{it.cantidad}x</span> {it.titulo}
+                          </li>
+                        ))}
+                      </ul>
+                    ) : null
+                  )}
+                  {fila("Total", <span className="font-semibold tabular-nums">{formatearSoles(d.total)}</span>)}
+                  {fila("Pago", <span className="capitalize">{d.modalidadPago.replace(/_/g, " ")}</span>)}
+                  {fila("Adelanto", adelanto)}
+                  {fila("Transportadora", d.transportadora ?? "Sin despachar")}
+                  {fila("Guía", d.numeroGuia ? <span className="font-mono">{d.numeroGuia}</span> : null)}
+                  {fila("Clave de recojo", d.claveRecojo ? <span className="font-mono">{d.claveRecojo}</span> : null)}
+                  {fila("Pedido Shopify", d.shopifyOrderId)}
+                  {fila("Creado", formatearFecha(d.createdAt))}
+                  {fila("Actualizado", formatearFecha(d.updatedAt))}
+                  {fila("Notas", d.notas ? <span className="whitespace-pre-wrap text-xs">{d.notas}</span> : null)}
+                </dl>
+                <DialogFooter className="gap-2 sm:justify-start flex-wrap">
+                  {d.contactId && (
+                    <Link
+                      href={`/conversations/${d.contactId}`}
+                      className="inline-flex items-center h-8 px-3 rounded-md border text-xs font-semibold text-emerald-700 border-emerald-500/40 bg-emerald-50/70 hover:bg-emerald-100 dark:bg-emerald-950/40 dark:text-emerald-300"
+                    >
+                      <MessageCircle className="h-3.5 w-3.5 mr-1" /> Chat
+                    </Link>
+                  )}
+                  {d.contactId && (
+                    <Link
+                      href={`/contacts/${d.contactId}`}
+                      className="inline-flex items-center h-8 px-3 rounded-md border text-xs font-semibold hover:bg-muted"
+                    >
+                      Ficha del contacto
+                    </Link>
+                  )}
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="h-8 text-xs"
+                    onClick={() => {
+                      const pedido = d;
+                      setDetallePedido(null);
+                      abrirModalEdicion(pedido);
+                    }}
+                  >
+                    <Pencil className="h-3.5 w-3.5 mr-1" /> Editar pedido
+                  </Button>
+                </DialogFooter>
+              </>
+            );
+          })()}
         </DialogContent>
       </Dialog>
     </div>

@@ -26,6 +26,7 @@ interface Props {
   conversation: ConversationHeaderInfo;
   initialMessages: ConversationMessage[];
   isAdmin?: boolean;
+  soloLectura?: { numero: string | null } | null;
   detailsOpen?: boolean;
   onToggleDetails?: () => void;
 }
@@ -52,6 +53,7 @@ export function ChatPanelLive({
   conversation,
   initialMessages,
   isAdmin,
+  soloLectura,
   detailsOpen,
   onToggleDetails,
 }: Props) {
@@ -120,6 +122,7 @@ export function ChatPanelLive({
       conversation={conversation}
       messages={messages}
       isAdmin={isAdmin}
+      soloLectura={soloLectura}
       detailsOpen={detailsOpen}
       onToggleDetails={onToggleDetails}
     />

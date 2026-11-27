@@ -6,6 +6,7 @@ import { eq } from "drizzle-orm";
 import { canAccessContactId } from "@/lib/team";
 import { requireMember } from "@/lib/api-auth";
 import { autorizadoPorSecreto } from "@/lib/secreto-worker";
+import { cuentaPermitida, cuentasVisiblesPara } from "@/lib/channels/numeros";
 
 /**
  * Envio generico por conversacion: sirve para WhatsApp, Instagram y Messenger.
@@ -66,7 +67,7 @@ export async function POST(request: NextRequest) {
 
   // Un asesor solo escribe en hilos de sus contactos asignados (404: no se confirma que exista).
   const [conv] = await db
-    .select({ contactId: conversations.contactId })
+    .select({ contactId: conversations.contactId, accountId: conversations.accountId })
     .from(conversations)
     .where(eq(conversations.id, body.conversationId))
     .limit(1);
@@ -80,6 +81,13 @@ export async function POST(request: NextRequest) {
         : member.role !== "admin"))
   ) {
     return NextResponse.json({ error: "conversation_not_found" }, { status: 404 });
+  }
+  // Vendedor con número propio: el historial de otro número (el 944) es solo lectura (27/11).
+  if (!esWorker && member && !cuentaPermitida(conv.accountId, await cuentasVisiblesPara(member))) {
+    return NextResponse.json(
+      { error: "Este chat es de otro número y es solo lectura. Escríbele desde tu número." },
+      { status: 403 }
+    );
   }
 
   const result = await deliverMessage(

@@ -329,12 +329,13 @@ export async function firmaMensajes(conversationId: string): Promise<string> {
 export async function listConversationsForContact(
   contactId: string,
   accountIds?: string[]
-): Promise<Array<{ conversationId: string; channel: Channel; lastAt: Date | null }>> {
+): Promise<Array<{ conversationId: string; channel: Channel; lastAt: Date | null; accountId: string | null }>> {
   const rows = await db
     .select({
       conversationId: conversations.id,
       channel: conversations.channel,
       lastAt: conversations.lastMessageAt,
+      accountId: conversations.accountId,
     })
     .from(conversations)
     .where(and(eq(conversations.contactId, contactId), accountIds ? soloCuentas(accountIds) : undefined))

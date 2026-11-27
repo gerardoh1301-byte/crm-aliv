@@ -100,6 +100,14 @@ export async function atiendeVendedorEn(conv: { accountId: string | null | undef
 export async function conversacionPedidoWeb(contactId: string): Promise<string | null> {
   const cuenta = await cuentaPedidosWeb();
   if (!cuenta) return null;
+  return conversacionEnCuenta(contactId, cuenta, true);
+}
+
+/**
+ * Chat del contacto en la cuenta dada; si no existe, crea el hilo provisorio
+ * `zernio:<cuenta>:+51…`. Con `encenderBot`, deja el bot encendido en ese hilo.
+ */
+async function conversacionEnCuenta(contactId: string, cuenta: CuentaWhatsapp, encenderBot: boolean): Promise<string | null> {
   const [existente] = await db
     .select({ id: conversations.id, aiEnabled: conversations.aiEnabled })
     .from(conversations)
@@ -108,7 +116,7 @@ export async function conversacionPedidoWeb(contactId: string): Promise<string |
     .limit(1);
   if (existente) {
     // Si ya tenía chat con el vendedor, el bot lo atiende para este pedido.
-    if (!existente.aiEnabled) {
+    if (encenderBot && !existente.aiEnabled) {
       await db.update(conversations).set({ aiEnabled: true, updatedAt: new Date() }).where(eq(conversations.id, existente.id));
     }
     return existente.id;
@@ -132,7 +140,7 @@ export async function conversacionPedidoWeb(contactId: string): Promise<string |
       participantId: contacto.phone,
       participantName: contacto.name,
       status: "active",
-      aiEnabled: true,
+      ...(encenderBot ? { aiEnabled: true } : {}),
     })
     .onConflictDoNothing()
     .returning({ id: conversations.id });
@@ -143,6 +151,30 @@ export async function conversacionPedidoWeb(contactId: string): Promise<string |
     .where(and(eq(conversations.provider, cuenta.provider), eq(conversations.externalId, externalId)))
     .limit(1);
   return previo?.id ?? null;
+}
+
+/**
+ * Chat del contacto en el número propio del vendedor (27/11: desde el historial del 944,
+ * Rossana le escribe al cliente desde el 977). null si el miembro no tiene número propio.
+ */
+export async function conversacionEnNumeroDelMiembro(
+  contactId: string,
+  member: { id: string; role: string }
+): Promise<string | null> {
+  const propias = await cuentasVisiblesPara(member);
+  if (!propias?.length) return null;
+  const cuenta = (await leer()).cuentas.find((c) => c.id === propias[0]);
+  return cuenta ? conversacionEnCuenta(contactId, cuenta, false) : null;
+}
+
+/** Últimos 3 dígitos del número de cada cuenta de WhatsApp («944», «977»), para rotular hilos. */
+export async function numerosCortosDeCuentas(): Promise<Record<string, string>> {
+  const out: Record<string, string> = {};
+  for (const c of (await leer()).cuentas) {
+    const d = (c.username ?? "").replace(/\D/g, "").slice(-9);
+    if (d.length === 9) out[c.id] = d.slice(0, 3);
+  }
+  return out;
 }
 
 /** team_members.id del vendedor dueño de ese número, si se configuró. */
