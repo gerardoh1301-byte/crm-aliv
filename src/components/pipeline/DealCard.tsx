@@ -26,6 +26,7 @@ import {
   ArrowLeftRight,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { enlaceLlamadaWhatsApp, PESTANA_WHATSAPP_WEB } from "@/lib/llamada-whatsapp";
 import { avatarBg, getInitials } from "@/lib/avatar";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
@@ -778,8 +779,10 @@ export function DealCard({
         <div className="flex items-center gap-2 pt-2 border-t border-border/40 text-muted-foreground" onClick={(e) => e.stopPropagation()}>
           {contactPhone ? (
             <a
-              href={`tel:${contactPhone}`}
-              title={`Llamar manualmente a ${contactPhone}`}
+              href={enlaceLlamadaWhatsApp(contactPhone)}
+              target={PESTANA_WHATSAPP_WEB}
+              rel="noopener noreferrer"
+              title={`Llamar por WhatsApp Web a ${contactPhone}`}
               {...pararArrastre}
               className="p-1 -m-1 rounded hover:bg-muted hover:text-primary"
             >

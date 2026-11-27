@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { enlaceLlamadaWhatsApp, PESTANA_WHATSAPP_WEB } from "@/lib/llamada-whatsapp";
 import { useRouter } from "next/navigation";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -208,9 +209,11 @@ export function ContactDetailClient({
                     <MessageCircle className="h-3.5 w-3.5 text-green-600" />
                   </a>
                   <a
-                    href={`tel:${contact.phone}`}
+                    href={enlaceLlamadaWhatsApp(contact.phone)}
+                    target={PESTANA_WHATSAPP_WEB}
+                    rel="noopener noreferrer"
                     className="p-1 rounded hover:bg-blue-50 cursor-pointer"
-                    title="Llamar"
+                    title="Llamar por WhatsApp Web"
                   >
                     <Phone className="h-3.5 w-3.5 text-blue-600" />
                   </a>

@@ -4,6 +4,7 @@ import { useMemo, useState } from "react";
 import Link from "next/link";
 import { MessageCircle, Phone } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { enlaceLlamadaWhatsApp, PESTANA_WHATSAPP_WEB } from "@/lib/llamada-whatsapp";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 import {
   armarMatriz,
@@ -173,8 +174,10 @@ export function CentroControlEcommerce({ pedidos }: { pedidos: PedidoCentro[] })
                 </Link>
                 {p.telefono && (
                   <a
-                    href={`tel:${p.telefono.replace(/[^\d+]/g, "")}`}
-                    aria-label={`Llamar a ${p.nombre}`}
+                    href={enlaceLlamadaWhatsApp(p.telefono)}
+                    target={PESTANA_WHATSAPP_WEB}
+                    rel="noopener noreferrer"
+                    aria-label={`Llamar por WhatsApp Web a ${p.nombre}`}
                     className="inline-flex h-8 w-8 items-center justify-center rounded-md border hover:bg-muted"
                   >
                     <Phone className="h-4 w-4" />

@@ -9,6 +9,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
 import { avatarBg, getInitials } from "@/lib/avatar";
 import { cn } from "@/lib/utils";
+import { enlaceLlamadaWhatsApp, PESTANA_WHATSAPP_WEB } from "@/lib/llamada-whatsapp";
 import { toast } from "sonner";
 import { CHANNEL_LABELS, type Channel } from "@/lib/channels/types";
 import { CHANNEL_COLORS, ChannelIcon } from "@/components/icons/channels";
@@ -228,7 +229,10 @@ export function ContactDetailPanel({
           <p className="text-sm font-semibold tracking-tight">{contact.name}</p>
           {contact.phone && (
             <a
-              href={`tel:${contact.phone}`}
+              href={enlaceLlamadaWhatsApp(contact.phone)}
+              target={PESTANA_WHATSAPP_WEB}
+              rel="noopener noreferrer"
+              title="Abrir en WhatsApp Web para llamar"
               className="mt-1 inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground"
             >
               <Phone className="h-3 w-3" />
