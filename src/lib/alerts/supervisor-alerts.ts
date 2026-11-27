@@ -78,6 +78,7 @@ const TITULOS_ALERTA: Record<TipoSituacionCritica, string> = {
   shalom_cambio_destino: "🔀 Shalom registró un cambio de destino · registra la guía nueva",
   aliclik_entregado: "🚚 AliClik entregó un pedido contra entrega · valida la liquidación",
   postulante_nuevo: "🧑‍💼 Bot Reclutador · postulante para Asesor(a) de confirmaciones",
+  comentario_queja: "💬 Queja en comentarios de Facebook o Instagram (oculta)",
 };
 
 /** Tipos que pueden repetirse en ráfaga (p. ej. Gemini caído): un aviso por chat cada 30 min. */

@@ -52,7 +52,8 @@ export type TipoSituacionCritica =
   | "cambio_agencia_con_guia"
   | "shalom_cambio_destino"
   | "aliclik_entregado"
-  | "postulante_nuevo";
+  | "postulante_nuevo"
+  | "comentario_queja";
 
 /** Categoría de cada aviso. Un tipo nuevo no compila hasta que se le asigne una. */
 export const CATEGORIA_AVISO: Record<TipoSituacionCritica, CategoriaAviso> = {
@@ -67,6 +68,7 @@ export const CATEGORIA_AVISO: Record<TipoSituacionCritica, CategoriaAviso> = {
   // Atención al cliente: Administrador y Vendedor.
   reclamo_medico: "atencion",
   pide_humano_llamada: "atencion",
+  comentario_queja: "atencion",
   guardrail_bloqueo: "atencion",
   bot_sin_respuesta: "atencion",
   // Comercial: Administrador y Vendedor.

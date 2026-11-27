@@ -43,6 +43,9 @@ const ENDPOINTS = [
   "/api/respaldo/chats",
   // 22:00 Lima: pendientes de cada vendedor a su WhatsApp y resumen general a Gerardo.
   "/api/agent/resumen-diario",
+  // Comentarios de Facebook e Instagram: responde con el WhatsApp de ventas, oculta los
+  // negativos y borra el spam (actúa solo con COMENTARIOS_MODERACION=on).
+  "/api/comentarios/moderar",
 ];
 
 import { iniciarMantenerDespierto } from "./mantener-despierto";
