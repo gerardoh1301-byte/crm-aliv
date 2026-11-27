@@ -34,12 +34,46 @@ export class GraphError extends Error {
   }
 }
 
+declare global {
+  var __metaTokenPagina: { base: string; token: string } | undefined;
+}
+
+/**
+ * META_PAGE_TOKEN puede ser el token del usuario del sistema: con él se pide el token de
+ * la página (que es el que permite responder, ocultar y mandar privados) y se guarda en
+ * memoria. Si ya es un token de página, la consulta falla y se usa tal cual.
+ */
+async function tokenPagina(): Promise<string> {
+  const { token, pageId } = metaComentariosConfig();
+  if (!token) throw new GraphError("Falta META_PAGE_TOKEN", 0);
+  const cache = globalThis.__metaTokenPagina;
+  if (cache && cache.base === token) return cache.token;
+  let final = token;
+  if (pageId) {
+    try {
+      const r = await graph<{ access_token?: string }>(pageId, { params: { fields: "access_token" }, usar: "base" });
+      if (r.access_token) final = r.access_token;
+    } catch {
+      /* ya era token de página */
+    }
+  }
+  globalThis.__metaTokenPagina = { base: token, token: final };
+  return final;
+}
+
 async function graph<T>(
   path: string,
-  init: { method?: "GET" | "POST" | "DELETE"; params?: Record<string, string>; body?: unknown } = {}
+  init: {
+    method?: "GET" | "POST" | "DELETE";
+    params?: Record<string, string>;
+    body?: unknown;
+    /** "base": el token tal cual (anuncios); "pagina" (default): el de la página. */
+    usar?: "base" | "pagina";
+  } = {}
 ): Promise<T> {
-  const { token } = metaComentariosConfig();
-  if (!token) throw new GraphError("Falta META_PAGE_TOKEN", 0);
+  const base = metaComentariosConfig().token;
+  if (!base) throw new GraphError("Falta META_PAGE_TOKEN", 0);
+  const token = init.usar === "base" ? base : await tokenPagina();
   const url = new URL(`${BASE}/${path.replace(/^\//, "")}`);
   for (const [k, v] of Object.entries(init.params ?? {})) url.searchParams.set(k, v);
   const res = await fetch(url, {
@@ -217,6 +251,7 @@ export async function comentariosInstagram(opts: { posts?: number; porPost?: num
       const ads = await graph<{ data?: Array<{ creative?: { effective_instagram_media_id?: string } }> }>(
         `act_${adAccountId}/ads`,
         {
+          usar: "base",
           params: {
             fields: "creative{effective_instagram_media_id}",
             effective_status: JSON.stringify(["ACTIVE"]),
