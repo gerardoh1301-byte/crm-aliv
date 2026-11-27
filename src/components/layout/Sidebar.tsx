@@ -24,6 +24,7 @@ import { etiquetaVersion } from "@/lib/version";
 import { useEsAdmin } from "@/lib/use-es-admin";
 import { leerConfigPublica } from "@/lib/config-publica";
 import { UserMenu } from "./UserMenu";
+import { useBarraLateralOculta } from "@/lib/use-barra-lateral";
 
 interface NavItem {
   href: string;
@@ -86,6 +87,9 @@ const footerItems: NavItem[] = [
 ];
 
 export function Sidebar() {
+  // El botón de la barra superior la oculta en escritorio (27/11).
+  const oculta = useBarraLateralOculta();
+  if (oculta) return null;
   return (
     <aside className="hidden md:flex md:w-64 md:flex-col bg-sidebar text-sidebar-foreground border-r border-sidebar-border min-h-screen sticky top-0 max-h-screen">
       <SidebarBrand />
