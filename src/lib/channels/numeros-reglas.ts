@@ -148,3 +148,9 @@ export function elegirCuentasConBot(cuentas: CuentaWhatsapp[], json: string | nu
   }
   return [...ids];
 }
+
+/** true si la conversación es de una cuenta que el miembro puede ver (ver `cuentasVisiblesPara`). */
+export function cuentaPermitida(accountId: string | null | undefined, cuentas: string[] | undefined): boolean {
+  if (!cuentas) return true;
+  return Boolean(accountId) && cuentas.includes(accountId as string);
+}

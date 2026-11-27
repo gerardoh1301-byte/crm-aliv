@@ -1,6 +1,7 @@
 import { redirect } from "next/navigation";
 import { listConversations } from "@/lib/conversations";
 import { getCurrentMember, visibleOwnerId } from "@/lib/team";
+import { cuentasVisiblesPara } from "@/lib/channels/numeros";
 import { ConversationsListLive } from "@/components/conversations/ConversationsListLive";
 import { MessageSquare } from "lucide-react";
 
@@ -13,6 +14,7 @@ export default async function ConversationsPage() {
 
   const conversations = await listConversations({
     ownerId: visibleOwnerId(member),
+    accountIds: await cuentasVisiblesPara(member),
   });
 
   return (

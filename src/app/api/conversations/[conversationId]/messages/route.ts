@@ -6,6 +6,7 @@ import {
 } from "@/lib/conversations";
 import { requireMember } from "@/lib/api-auth";
 import { canAccessContact } from "@/lib/team";
+import { cuentaPermitida, cuentasVisiblesPara } from "@/lib/channels/numeros";
 
 export const dynamic = "force-dynamic";
 
@@ -32,7 +33,7 @@ export async function GET(
   const accesible = contact
     ? canAccessContact(auth.member, contact)
     : auth.member.role === "admin";
-  if (!accesible) {
+  if (!accesible || !cuentaPermitida(conversation.accountId, await cuentasVisiblesPara(auth.member))) {
     return NextResponse.json({ error: "not_found" }, { status: 404 });
   }
   await markConversationAsRead(conversationId);

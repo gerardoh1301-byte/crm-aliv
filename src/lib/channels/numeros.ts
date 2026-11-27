@@ -209,3 +209,21 @@ export async function conversacionEnNumeroBot(conv: {
     .limit(1);
   return previo && (previo.accountId === bot.id || !previo.accountId) ? previo.id : null;
 }
+
+/**
+ * Cuentas de WhatsApp que puede ver un miembro en la bandeja (26/11: Rossana veía también el
+ * historial del 944 de sus clientes; en su perfil solo debe aparecer el 977126462).
+ *
+ * - admin: undefined (ve todo).
+ * - vendedor con número propio en `whatsapp.numeros_vendedor`: solo esas cuentas.
+ * - vendedor sin número propio (atiende en el número del bot): undefined, como antes.
+ */
+export async function cuentasVisiblesPara(member: { id: string; role: string }): Promise<string[] | undefined> {
+  if (member.role === "admin") return undefined;
+  const d = await leer();
+  const propias = d.cuentas.filter((c) => vendedorDelNumero(c, d.mapa) === member.id).map((c) => c.id);
+  return propias.length > 0 ? propias : undefined;
+}
+
+
+export { cuentaPermitida } from "./numeros-reglas";

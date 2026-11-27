@@ -9,6 +9,7 @@ import {
 import { ConversationsListLive } from "@/components/conversations/ConversationsListLive";
 import { ConversationView } from "@/components/conversations/ConversationView";
 import { canAccessContact, getCurrentMember, visibleOwnerId } from "@/lib/team";
+import { cuentaPermitida, cuentasVisiblesPara } from "@/lib/channels/numeros";
 
 // El inbox lee la base en cada request: nunca se prerenderiza en build.
 export const dynamic = "force-dynamic";
@@ -39,13 +40,15 @@ export default async function ConversationPage({ params }: Props) {
   const accesible = contact
     ? canAccessContact(member, contact)
     : member.role === "admin";
-  if (!accesible) notFound();
+  // Vendedor con número propio: un hilo de otro número (el del bot) tampoco existe para él.
+  const accountIds = await cuentasVisiblesPara(member);
+  if (!accesible || !cuentaPermitida(conversation.accountId, accountIds)) notFound();
 
   await markConversationAsRead(conversationId);
 
   const [conversations, contactThreads] = await Promise.all([
-    listConversations({ ownerId: visibleOwnerId(member) }),
-    contact ? listConversationsForContact(contact.id) : Promise.resolve([]),
+    listConversations({ ownerId: visibleOwnerId(member), accountIds }),
+    contact ? listConversationsForContact(contact.id, accountIds) : Promise.resolve([]),
   ]);
 
   return (

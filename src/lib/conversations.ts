@@ -1,7 +1,7 @@
 import "server-only";
 import { db } from "@/db";
 import { channelAccounts, contacts, conversations, messages } from "@/db/schema";
-import { and, asc, desc, eq, isNotNull, isNull, ne, or, sql } from "drizzle-orm";
+import { and, asc, desc, eq, inArray, isNotNull, isNull, ne, or, sql } from "drizzle-orm";
 import { isChannel, type Channel } from "@/lib/channels/types";
 
 /**
@@ -70,6 +70,8 @@ export interface ConversationDetail {
   needsHuman: boolean;
   needsHumanReason: string | null;
   metadata: unknown;
+  /** Número de WhatsApp (channel_accounts.id) por el que entra el hilo. */
+  accountId: string | null;
 }
 
 function toChannel(value: string): Channel {
@@ -87,10 +89,17 @@ function handleOf(row: {
   return row.participantId;
 }
 
+/** Filtro por número de WhatsApp. Lista vacía = nada (nunca "todo"). */
+function soloCuentas(accountIds: string[]) {
+  return accountIds.length ? inArray(conversations.accountId, accountIds) : sql`false`;
+}
+
 export async function listConversations(filter?: {
   channel?: Channel;
   /** Solo hilos de contactos con este propietario (visibilidad de asesor). */
   ownerId?: string;
+  /** Solo hilos de estas cuentas (vendedor con número propio: ver cuentasVisiblesPara). */
+  accountIds?: string[];
 }): Promise<ConversationListItem[]> {
   const base = db
     .select({
@@ -156,7 +165,9 @@ export async function listConversations(filter?: {
         filter?.channel ? eq(conversations.channel, filter.channel) : undefined,
         // Un asesor ve UNICAMENTE los hilos de los contactos que tiene asignados.
         // Los no asignados o asignados a otros asesores solo los ve el admin (maestro).
-        filter?.ownerId ? eq(contacts.ownerId, filter.ownerId) : undefined
+        filter?.ownerId ? eq(contacts.ownerId, filter.ownerId) : undefined,
+        // Vendedor con número propio: solo el historial de ese número, no el del bot.
+        filter?.accountIds ? soloCuentas(filter.accountIds) : undefined
       )
     )
     .orderBy(
@@ -254,6 +265,7 @@ export async function getConversation(conversationId: string): Promise<{
       needsHuman: (contact?.needsHuman ?? false) || conv.needsHuman,
       needsHumanReason: conv.needsHumanReason ?? contact?.needsHumanReason ?? null,
       metadata: conv.metadata,
+      accountId: conv.accountId ?? null,
     },
     contact: contact ?? null,
     messages: rows.map((m) => ({
@@ -289,7 +301,7 @@ export async function markConversationAsRead(
  * mes, se iba en la bandeja y el chat abierto que se piden cada pocos segundos). Se
  * calculan dentro de la base y solo viaja un md5.
  */
-export async function firmaBandeja(ownerId?: string): Promise<string> {
+export async function firmaBandeja(ownerId?: string, accountIds?: string[]): Promise<string> {
   const filas = await db.execute(sql`
     select md5(coalesce(string_agg(
       c.id || ':' || c.updated_at::text || ':' || coalesce(c.last_message_at::text, '') || ':' ||
@@ -297,7 +309,8 @@ export async function firmaBandeja(ownerId?: string): Promise<string> {
       coalesce((select max(updated_at)::text from deals), '')) as firma
     from conversations c left join contacts ct on ct.id = c.contact_id
     where c.last_message_at is not null
-    ${ownerId ? sql`and ct.owner_id = ${ownerId}` : sql``}`);
+    ${ownerId ? sql`and ct.owner_id = ${ownerId}` : sql``}
+    ${accountIds ? (accountIds.length ? sql`and c.account_id in (${sql.join(accountIds.map((a) => sql`${a}`), sql`, `)})` : sql`and false`) : sql``}`);
   const fila = (Array.isArray(filas) ? filas[0] : (filas as { rows?: unknown[] }).rows?.[0]) as { firma?: string } | undefined;
   return fila?.firma ?? "";
 }
@@ -314,7 +327,8 @@ export async function firmaMensajes(conversationId: string): Promise<string> {
 
 /** Todos los hilos de un contacto, para el panel de detalle. */
 export async function listConversationsForContact(
-  contactId: string
+  contactId: string,
+  accountIds?: string[]
 ): Promise<Array<{ conversationId: string; channel: Channel; lastAt: Date | null }>> {
   const rows = await db
     .select({
@@ -323,7 +337,7 @@ export async function listConversationsForContact(
       lastAt: conversations.lastMessageAt,
     })
     .from(conversations)
-    .where(eq(conversations.contactId, contactId))
+    .where(and(eq(conversations.contactId, contactId), accountIds ? soloCuentas(accountIds) : undefined))
     .orderBy(desc(conversations.lastMessageAt));
 
   return rows.map((r) => ({ ...r, channel: toChannel(r.channel) }));
