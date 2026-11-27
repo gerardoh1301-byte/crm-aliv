@@ -50,7 +50,15 @@ export async function POST(req: NextRequest) {
     if (member.role !== "admin") return NextResponse.json({ error: "Solo un administrador puede hacer esto." }, { status: 403 });
   }
 
-  let body: { pedidoId?: string; numeroOrden?: string; forzar?: boolean } = {};
+  let body: {
+    pedidoId?: string;
+    numeroOrden?: string;
+    forzar?: boolean;
+    /** Datos pendientes propios de este pedido (se suman a los que se detectan solos). */
+    pendientes?: string[];
+    /** Contexto breve del chat para Sofía. */
+    contexto?: string;
+  } = {};
   try {
     body = await req.json();
   } catch {
@@ -101,6 +109,12 @@ export async function POST(req: NextRequest) {
       dni: pedido.dniCliente,
       esAgencia,
       modalidadEntregaTexto: esAgencia ? "Agencia Shalom (Provincia)" : "Contraentrega Domicilio",
+      yaConfirmado: pedido.estado === "confirmado" || pedido.estado === "preparando",
+      notas: pedido.notas,
+      pendientesExtra: Array.isArray(body.pendientes)
+        ? body.pendientes.map((x) => String(x).trim()).filter(Boolean).slice(0, 5)
+        : undefined,
+      contexto: typeof body.contexto === "string" ? body.contexto.trim().slice(0, 400) : undefined,
     },
     { forzar: Boolean(body.forzar) }
   );

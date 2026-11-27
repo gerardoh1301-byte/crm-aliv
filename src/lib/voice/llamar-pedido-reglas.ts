@@ -78,6 +78,25 @@ export interface DatosPedidoParaLlamada {
   /** true = protocolo Agencia Shalom (adelanto S/20 + DNI + sede); false = COD domicilio (Lima o AliClik provincia). */
   esAgencia: boolean;
   modalidadEntregaTexto: string;
+  /** El cliente ya confirmó (regla de confirmación real): la llamada solo completa datos. */
+  yaConfirmado?: boolean;
+  /** Notas del pedido: si ya tiene «Horario:» no se vuelve a pedir. */
+  notas?: string | null;
+  /** Datos pendientes propios de este pedido, además de los que se detectan solos. */
+  pendientesExtra?: string[];
+  /** Contexto breve del chat para Sofía (lo que el cliente dijo o prometió). */
+  contexto?: string;
+}
+
+/**
+ * true si la dirección trae número de casa: «Av. Tomás Valle 917», «Mz D Lt 18», «Nro 121».
+ * «Calle 11 San…» no cuenta: el 11 es el nombre de la calle, no el número de la casa.
+ */
+export function tieneNumeroDeCasa(direccion: string | null | undefined): boolean {
+  const d = String(direccion ?? "");
+  if (/(?:^|[^\p{L}])(n[°ºo]\.?|nro\.?|num\.?|#)\s*\d+/iu.test(d)) return true;
+  if (/(?:^|[^\p{L}])(mz|mza|manzana)(?!\p{L})[\s\S]*?(?:^|[^\p{L}])(lt|lote)(?!\p{L})/iu.test(d)) return true;
+  return /(?:^|[^\p{L}])(av|avenida|jr|jir[oó]n|calle|ca|cl|psje?|pasaje|prolongaci[oó]n|prol|carretera|urb)\.?\s+\p{L}[\p{L}.\s]*?\s\d{1,5}(?!\d)/iu.test(d);
 }
 
 export interface VariablesDinamicasLlamada {
@@ -184,9 +203,9 @@ export function construirVariablesLlamadaPedido(p: DatosPedidoParaLlamada): Vari
 
   if (!p.esAgencia) {
     // MODALIDAD 1: Contraentrega a Domicilio (Lima o Provincia con cobertura AliClik)
-    const faltantes: string[] = [];
-    if (!direccion || !/\d/.test(direccion)) {
-      faltantes.push("dirección exacta con calle y número");
+    const faltantes: string[] = [...(p.pendientesExtra ?? [])];
+    if (!direccion || !tieneNumeroDeCasa(direccion)) {
+      faltantes.push("la dirección exacta con calle y número de casa (o manzana y lote)");
     }
     if (!tieneRef) {
       faltantes.push("una referencia clara de su domicilio (color de fachada, frente a qué está o paradero cercano)");
@@ -194,7 +213,12 @@ export function construirVariablesLlamadaPedido(p: DatosPedidoParaLlamada): Vari
     if (!distrito) {
       faltantes.push("el distrito exacto");
     }
-    faltantes.push("el día y rango de horario en que se encuentra para recibir al repartidor");
+    if (!/Horario:/i.test(p.notas ?? "")) {
+      faltantes.push("el día y rango de horario en que se encuentra para recibir al repartidor");
+    }
+    if (/Sin pin del cliente/i.test(p.notas ?? "")) {
+      faltantes.push("que al colgar te mande su ubicación por WhatsApp (clip → Ubicación)");
+    }
 
     const dirMostrar = [direccion, distrito, ciudad].filter(Boolean).join(", ") || ciudad;
     const dirVoz = normalizarTextoParaVoz(dirMostrar);
@@ -203,12 +227,25 @@ export function construirVariablesLlamadaPedido(p: DatosPedidoParaLlamada): Vari
       ? `¡Hola, ${primerNombre}! Qué tal, te saluda Sofía de Aliv Perú. Te llamo rapidito porque recibimos tu pedido de ${prodVoz} por ${totalNum} soles con envío gratis a ${dirVoz}, pagas al recibir. ¿Me confirmas si todo está correcto para programarte la entrega?`
       : `¡Hola! Qué tal, te saluda Sofía de Aliv Perú. Te llamo rapidito porque recibimos tu pedido de ${prodVoz} por ${totalNum} soles con envío gratis a ${dirVoz}, pagas al recibir. ¿Me confirmas si todo está correcto para programarte la entrega?`;
 
+    const primerFaltante = faltantes[0] ?? "el día y horario de entrega";
+    const saludoFinal = p.yaConfirmado
+      ? `¡Hola${primerNombre ? `, ${primerNombre}` : ""}! Qué tal, te saluda Sofía de Aliv Perú. Tu pedido de ${prodVoz} ya está confirmado. Te llamo rapidito solo para completar un dato y programar tu entrega: ${primerFaltante}.`
+      : saludo;
+
     const instrucciones = [
+      ...(p.yaConfirmado
+        ? [
+            `EL CLIENTE YA CONFIRMÓ SU PEDIDO. NO le preguntes si lo desea ni le repitas todo el pedido: tu único objetivo es completar los datos pendientes.`,
+          ]
+        : []),
+      ...(p.contexto ? [`CONTEXTO DEL CHAT: ${p.contexto}`] : []),
       `MODALIDAD DEL PEDIDO: CONTRAENTREGA A DOMICILIO (PAGA AL RECIBIR S/ ${totalNum}).`,
       `PROHIBIDO pedir adelanto de S/ 20, PROHIBIDO mencionar agencia Shalom y PROHIBIDO pedir DNI.`,
       `Dirección registrada en formulario: "${dirMostrar}".`,
       `Tu objetivo en esta llamada corta (máximo 60 segundos):`,
-      `1. Confirmar que el cliente desea recibir su pedido #${ordenLimpia} (${p.productosTexto} por S/ ${totalNum}, pago contraentrega al recibir por Yape, Plin o efectivo).`,
+      p.yaConfirmado
+        ? `1. Recordarle en una frase que paga S/ ${totalNum} al recibir (Yape, Plin o efectivo), sin adelantos.`
+        : `1. Confirmar que el cliente desea recibir su pedido #${ordenLimpia} (${p.productosTexto} por S/ ${totalNum}, pago contraentrega al recibir por Yape, Plin o efectivo).`,
       `2. Pedirle OBLIGATORIAMENTE lo que falta para que el motorizado llegue sin problemas: ${faltantes.join(", ")}.`,
       `3. Repetirle brevemente la referencia y el horario acordado, agradecerle con calidez peruana y despedirte.`,
     ].join("\n");
@@ -232,7 +269,7 @@ export function construirVariablesLlamadaPedido(p: DatosPedidoParaLlamada): Vari
       dni_actual: dniLimpio ?? "",
       agencias_shalom_cercanas: "",
       datos_faltantes_pedir: faltantes.join("; "),
-      saludo_inicial: saludo,
+      saludo_inicial: saludoFinal,
       instrucciones_especificas: instrucciones,
     };
   }
@@ -242,7 +279,7 @@ export function construirVariablesLlamadaPedido(p: DatosPedidoParaLlamada): Vari
   const sedesTexto = sedes.length > 0 ? sedes.join(" | ") : `Agencia Shalom de ${ciudad}`;
   const primeraSede = sedes[0] ?? `la agencia Shalom de ${ciudad}`;
 
-  const faltantesShalom: string[] = [];
+  const faltantesShalom: string[] = [...(p.pendientesExtra ?? [])];
   if (!tieneDni) {
     faltantesShalom.push("su número de DNI de 8 dígitos para emitir la guía oficial de remisión en Shalom");
   }
@@ -256,6 +293,7 @@ export function construirVariablesLlamadaPedido(p: DatosPedidoParaLlamada): Vari
     : `¡Hola! Qué tal, te saluda Sofía de Aliv Perú. Te llamo rapidito porque recibimos tu pedido de ${prodVozShalom} por ${totalNum} soles con envío gratis a ${ciudad}. Para tu zona despachamos por agencia Shalom y cerca tienes la sede de ${sedeVozShalom}. ¿Te queda cómoda esa agencia para recogerlo?`;
 
   const instruccionesShalom = [
+    ...(p.contexto ? [`CONTEXTO DEL CHAT: ${p.contexto}`] : []),
     `MODALIDAD DEL PEDIDO: ENVÍO A PROVINCIA POR AGENCIA SHALOM (Total: S/ ${totalNum} | Adelanto para emitir guía: S/ 20 | Saldo al llegar a agencia: S/ ${saldoNum}).`,
     `Agencias Shalom oficiales disponibles en ${ciudad}: ${sedesTexto}.`,
     `Tu objetivo en esta llamada corta (máximo 75 segundos):`,
@@ -327,4 +365,5 @@ REGLAS DE VOZ Y ESTILO PERUANO:
 - Cuando el cliente te dé una referencia de su casa, un horario o su DNI de 8 dígitos, repítelo brevemente para confirmar que lo anotaste bien.
 - Si {{modalidad}} es COD_DOMICILIO: el cliente paga los {{total_soles}} soles AL RECIBIR en su domicilio. JAMÁS pidas adelanto de 20 soles ni menciones agencia Shalom. Solo confirma el pedido, pide una referencia clara de su casa o fachada y el día y horario en que puede recibir al repartidor.
 - Si {{modalidad}} es AGENCIA_SHALOM: confirma en cuál de las agencias Shalom ({{agencias_shalom_cercanas}}) le queda más cómodo recoger, pídele su número de DNI de 8 dígitos para la guía oficial, e indícale que en su WhatsApp ya tiene nuestro número de Yape oficial 951 365 418 (a nombre de Gerardo Huaynalaya) para que envíe la captura del adelanto de 20 soles y el saldo de {{saldo_soles}} soles lo paga cuando el paquete llegue a su agencia.
+- Si las INSTRUCCIONES ESPECÍFICAS dicen que el cliente YA CONFIRMÓ, no vuelvas a pedirle confirmación: ve directo a completar los datos pendientes. Si traen un CONTEXTO DEL CHAT, úsalo para no preguntar lo que el cliente ya dijo.
 - Una vez que tengas los datos confirmados, agradécele con calidez y despídete.`;
