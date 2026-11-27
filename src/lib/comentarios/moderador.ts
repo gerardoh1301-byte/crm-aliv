@@ -124,7 +124,9 @@ export async function moderarComentarios(
 
     for (const c of nuevos) {
       const ia = clasif.get(c.id);
-      const categoria = ia?.categoria ?? clasificarSinIA(c.texto);
+      // Menos de 2 letras (una tecla suelta, un emoji): nada que responder.
+      const letras = (c.texto.match(/\p{L}/gu) ?? []).length;
+      const categoria = letras < 2 ? clasificarSinIA(c.texto.replace(/\p{L}/gu, "")) : ia?.categoria ?? clasificarSinIA(c.texto);
       const plan = planPara(categoria, c.esRespuesta);
       const nombre = primerNombre(c.autorNombre);
       let accion: string = plan.publico;
@@ -186,7 +188,7 @@ export async function moderarComentarios(
         categoria,
         accion,
         respuesta,
-        privado: plan.privado ? (activo ? privadoOk : true) : false,
+        privado: plan.privado && !c.yaRespondido ? (activo ? privadoOk : true) : false,
         ...(errores.length ? { error: errores.join(" | ") } : {}),
       };
       res.detalles.push(detalle);
@@ -256,6 +258,7 @@ Clasifica cada comentario en UNA categoría:
 Ante la duda entre negativo y queja, elige "queja". Ante la duda entre interes y neutro, elige "interes".
 
 Para "interes" y "positivo" escribe "respuesta": 1 o 2 frases cortas y cálidas, en español peruano neutro, con 1 emoji, tuteando, con el nombre del autor si lo hay. Responde lo que preguntó si está en las condiciones de arriba; NO des precios (cambian por promoción), di que por WhatsApp le pasan precios y promociones. Termina invitando a escribir por WhatsApp. NO pongas links ni números (los agrega el sistema). Varía las palabras entre comentarios.
+No inventes testimonios ni cifras ("muchos clientes", "miles de personas"); si preguntan si alguien lo probó, invita a escribir por WhatsApp para resolver sus dudas.
 Salud (obligatorio): nunca digas que cura, desintoxica, elimina o adelgaza; es un complemento que apoya a tu cuerpo. Si menciona enfermedad, embarazo o medicamentos, sugiere consultarlo con su médico y que por WhatsApp le orientamos.
 Para las demás categorías "respuesta" es null.
 
