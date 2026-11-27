@@ -70,7 +70,9 @@ declare global {
   var __moderandoComentarios: boolean | undefined;
 }
 
-export async function moderarComentarios(opts: { limite?: number } = {}): Promise<ResultadoModeracion> {
+export async function moderarComentarios(
+  opts: { limite?: number; /** Solo en modo prueba: mirar más atrás para revisar la clasificación. */ horasPrueba?: number } = {}
+): Promise<ResultadoModeracion> {
   const activo = moderacionActiva();
   const cfg = metaComentariosConfig();
   const res: ResultadoModeracion = {
@@ -99,7 +101,8 @@ export async function moderarComentarios(opts: { limite?: number } = {}): Promis
     const todos = [...fb.comentarios, ...ig.comentarios];
     res.leidos = todos.length;
 
-    const desde = Date.now() - maxHoras() * 3600_000;
+    const horas = !activo && opts.horasPrueba ? opts.horasPrueba : maxHoras();
+    const desde = Date.now() - horas * 3600_000;
     const candidatos = todos.filter(
       (c) =>
         c.creado.getTime() >= desde &&

@@ -20,7 +20,8 @@ export async function GET(request: NextRequest) {
   if (request.nextUrl.searchParams.get("diagnostico")) {
     return NextResponse.json({ ok: true, diagnostico: await diagnosticoMeta() });
   }
-  const res = await moderarComentarios();
+  const horas = Number(request.nextUrl.searchParams.get("horas"));
+  const res = await moderarComentarios({ horasPrueba: Number.isFinite(horas) && horas > 0 ? Math.min(horas, 24 * 60) : undefined });
   return NextResponse.json({ ok: true, ...res });
 }
 
