@@ -20,6 +20,7 @@ import { sincronizarDealEnSheets } from "@/lib/sheets/envios-sync";
 import { notificarCambioDealAlErp } from "@/lib/finanzas/notificar-erp";
 import { generarNumeroChat } from "@/lib/pedidos/numeracion";
 import { esReemplazable, MARCA_REEMPLAZADO } from "@/lib/pedidos/reemplazo";
+import { evaluarPedido, marcarConfirmado } from "@/lib/pedidos/confirmacion-servidor";
 import { mostrarNumeroOrden } from "@/lib/pedidos/numero-formato";
 import { esNumeroEntrenador, notificarSupervisoresCritico } from "@/lib/alerts/supervisor-alerts";
 import type { ModuloServidor, HandlerModulo, ToolModulo } from "@/lib/modules/types";
@@ -39,7 +40,8 @@ import { crearOActualizarDealPostventa } from "@/lib/postventa/engine";
 import { textoRastreoShalom } from "@/lib/agencias/shalom-rastreo";
 
 const MAPA_ESTADO_A_ETAPA: Record<EstadoPedido, string> = {
-  por_confirmar_cod: "agendar_entrega",
+  // Regla de confirmación real: sin un sí del cliente, el pedido es intención de compra.
+  por_confirmar_cod: "carrito_armado",
   confirmado: "agendar_entrega",
   preparando: "agendar_entrega",
   enviado: "en_reparto",
@@ -1164,7 +1166,7 @@ const tools: ToolModulo[] = [
       function: {
         name: "confirmar_pedido",
         description:
-          "Confirma un pedido web (alivstore.shop) que esta 'Por confirmar' cuando el propio cliente escribe para confirmarlo, por ejemplo con el boton 'Confirmar por WhatsApp' de la pagina de gracias ('Hola Aliv, quiero confirmar mi pedido'). Solo encuentra pedidos de este mismo cliente (mismo telefono). Sin numero, toma su pedido pendiente mas reciente de los ultimos 7 dias. Devuelve productos, total y direccion para repetirselos.",
+          "Confirma un pedido web (alivstore.shop) que esta 'Por confirmar'. El mensaje automatico de la pagina de gracias ('Hola Aliv, quiero confirmar mi pedido') NO lo confirma: con ese mensaje la herramienta devuelve los datos para que se los repitas y le preguntes '¿Confirmas tu pedido?'. Llamala otra vez cuando el cliente responda que si con sus palabras; en agencia Shalom solo confirma con el adelanto verificado. Solo encuentra pedidos de este mismo cliente (mismo telefono). Sin numero, toma su pedido pendiente mas reciente de los ultimos 7 dias. Devuelve productos, total y direccion para repetirselos.",
         parameters: {
           type: "object",
           properties: {
@@ -1224,21 +1226,25 @@ const tools: ToolModulo[] = [
         };
       }
 
-      await db
-        .update(pedidosOrdenes)
-        .set({ estado: "confirmado", updatedAt: new Date() })
-        .where(eq(pedidosOrdenes.id, pedido.id));
-      await sincronizarEtapaPipeline(
-        pedido.contactId,
-        "confirmado",
-        `${pedido.numeroOrden} · ${pedido.items[0]?.titulo ?? "Pedido web"}`,
-        Number(pedido.total)
-      );
-      await db.insert(activities).values({
-        type: "note",
-        description: `[IA] Pedido web ${pedido.numeroOrden} confirmado por el cliente desde el chat`,
-        contactId: pedido.contactId,
-      });
+      // Regla de confirmación real: el mensaje automático de la landing no confirma.
+      const evaluacion = await evaluarPedido(pedido);
+      if (!evaluacion.confirmado) {
+        return {
+          ok: true,
+          data: {
+            encontrado: true,
+            confirmado: false,
+            pendiente_confirmacion: true,
+            motivo: evaluacion.motivo,
+            instruccion:
+              "NO le digas que su pedido ya quedó confirmado. Repítele productos, total y dirección y pregúntale «¿Confirmas tu pedido?». " +
+              "Si falta la dirección exacta (calle y número, Mz/Lote o agencia), pídela. En agencia Shalom el pedido se confirma recién con el adelanto verificado. " +
+              "Cuando responda que sí, vuelve a llamar confirmar_pedido.",
+            ...detalle,
+          },
+        };
+      }
+      await marcarConfirmado(pedido, evaluacion.motivo);
       await sincronizarConGoogleDrive().catch(() => {});
 
       return { ok: true, data: { encontrado: true, confirmado: true, ...detalle } };

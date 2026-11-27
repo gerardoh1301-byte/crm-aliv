@@ -20,12 +20,15 @@ import { cleanStr, esEtiquetaDeEtapa, obtenerEtiquetaDeEtapa, quitarLogisticaSiC
  *
  * La UI sigue pudiendo crear etapas a mano; esas quedan sin key y sobreviven.
  */
-/** true si la tarjeta tiene un pedido registrado (pedidos_ordenes.deal_id). */
+/**
+ * true si la tarjeta tiene un pedido confirmado de verdad (regla de confirmación real):
+ * un pedido «por confirmar» sigue siendo intención de compra aunque tenga la etiqueta.
+ */
 async function tienePedido(dealId: string): Promise<boolean> {
   const [p] = await db
     .select({ id: pedidosOrdenes.id })
     .from(pedidosOrdenes)
-    .where(eq(pedidosOrdenes.dealId, dealId))
+    .where(and(eq(pedidosOrdenes.dealId, dealId), sql`${pedidosOrdenes.estado} <> 'por_confirmar_cod'`))
     .limit(1);
   return Boolean(p);
 }

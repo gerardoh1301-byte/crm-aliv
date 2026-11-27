@@ -11,7 +11,8 @@ import { esContestadora, firmaTwilioValida, urlCallbackAmd } from "@/lib/voice/t
  * de inmediato: la IA no le habla a la contestadora y se ahorran minutos de Twilio y ElevenLabs.
  */
 export async function POST(request: NextRequest) {
-  const form = await request.formData();
+  const form = await request.formData().catch(() => null);
+  if (!form) return NextResponse.json({ ok: false, motivo: "Formulario vacío" }, { status: 400 });
   const params: Record<string, string> = {};
   form.forEach((v, k) => {
     params[k] = String(v);

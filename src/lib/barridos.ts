@@ -36,6 +36,9 @@ const ENDPOINTS = [
   "/api/agent/llamadas-pendientes",
   // Pedidos web de las últimas semanas: AG/CE según cobertura AliClik (una vez por pedido)
   "/api/agent/reclasificar-pedidos-web",
+  // Regla de confirmación real: «Pedido confirmado» solo con un sí del cliente, llamada IA
+  // confirmada o adelanto verificado; lo demás queda en «Intención de compra».
+  "/api/agent/confirmaciones",
   // Posventa y recompra: incorpora los entregados (backfill idempotente, últimos 30 días)
   // y envía los mensajes del día 1-3, 7 y 25 en horario permitido.
   "/api/agent/postventa?backfill=true",
