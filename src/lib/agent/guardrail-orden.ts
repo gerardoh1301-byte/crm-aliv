@@ -59,6 +59,21 @@ export function construirOrdenVerificada(pedido: {
   };
 }
 
+/**
+ * Instrucción para la segunda vuelta del modelo cuando su respuesta mencionó un monto o una
+ * cantidad que no calzan con la orden (27/11).
+ */
+export function correccionGuardrailOrden(orden: OrdenVerificada, detalle?: string): string {
+  const adelanto = orden.adelanto ?? 20;
+  const saldo = Math.max(0, orden.total - adelanto);
+  const num = orden.numeroOrden ? ` ${mostrarNumeroOrden(orden.numeroOrden)}` : "";
+  return [
+    `Tu respuesta anterior NO se envió porque tenía un dato equivocado${detalle ? ` (${detalle})` : ""}.`,
+    `Datos reales del pedido${num}: ${orden.unidades} ${orden.unidades === 1 ? "unidad" : "unidades"} de ${orden.producto ?? "NAC600"}, total S/ ${orden.total.toFixed(2)}; adelanto S/ ${adelanto.toFixed(2)}; saldo S/ ${saldo.toFixed(2)}.`,
+    "Vuelve a responder al ÚLTIMO mensaje del cliente, corto y natural. No menciones ningún otro monto ni otra cantidad; si no hace falta hablar de montos, no los menciones. No des claves de recojo.",
+  ].join(" ");
+}
+
 function armarMensajeDerivacionSeguro(
   orden: OrdenVerificada | null,
   motivo: string

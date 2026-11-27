@@ -33,7 +33,7 @@ import { corregirPromesaEntregaCod } from "@/lib/aliclik/entrega-fecha";
 import { getOpenRouterClient, getAgentModel, hasOpenRouterKey, createChatCompletionWithFallback } from "./openrouter";
 import { autoDetectarYAgendarHorario } from "./scheduler";
 import { pedidosOrdenes } from "../../../modules/pedidos/tabla";
-import { construirOrdenVerificada, validarRespuestaBotContraOrden } from "./guardrail-orden";
+import { construirOrdenVerificada, correccionGuardrailOrden, validarRespuestaBotContraOrden } from "./guardrail-orden";
 
 const MAX_TOOL_ROUNDS = 6;
 /** Herramientas que solo registran en el CRM: su resultado no cambia lo que se le dice al cliente. */
@@ -296,6 +296,8 @@ async function executeAgentTurn(
   const herramientasRespaldo: HerramientaEjecutada[] = [];
   let textoParcialRespaldo = "";
   let pedidoTextoExplicito = false;
+  // Una sola segunda vuelta cuando el guardrail de la orden frena un monto o cantidad (27/11).
+  let reintentoGuardrail = false;
 
   try {
     for (let round = 0; round < MAX_TOOL_ROUNDS; round++) {
@@ -401,15 +403,32 @@ async function executeAgentTurn(
 
       // C2: Validar determinísticamente que el bot nunca escriba una clave ni un monto/cantidad que contradiga la orden
       const checkOrden = validarRespuestaBotContraOrden(reply, ordenActiva);
+      // 27/11: un monto o cantidad inventados (orden #1213 de S/ 199 y el bot dijo «S/ 150») se
+      // corrigen con una segunda vuelta que le recuerda al modelo los datos reales, en vez de
+      // mandar de frente la derivación genérica, que no responde lo que dijo el cliente.
+      if (
+        checkOrden.bloqueado &&
+        ordenActiva &&
+        (checkOrden.motivo === "monto_contradice_orden" || checkOrden.motivo === "cantidad_contradice_orden") &&
+        !reintentoGuardrail &&
+        deadlineMs - Date.now() > 8000
+      ) {
+        reintentoGuardrail = true;
+        console.warn(`[guardrail-orden] Reintento en conv ${conversation.id}: ${checkOrden.detalle}`);
+        llmMessages.push({ role: "assistant", content: reply });
+        llmMessages.push({ role: "system", content: correccionGuardrailOrden(ordenActiva, checkOrden.detalle) });
+        continue;
+      }
       if (checkOrden.bloqueado) {
         console.warn(`[guardrail-orden] Bloqueado en conv ${conversation.id}: ${checkOrden.motivo} - ${checkOrden.detalle}`);
+        const textoBloqueado = reply;
         reply = checkOrden.textoSeguro;
         await Promise.all([
           db.update(contacts).set({ needsHuman: true, updatedAt: new Date() }).where(eq(contacts.id, contact.id)),
           db.update(conversations).set({ needsHuman: true, updatedAt: new Date() }).where(eq(conversations.id, conversation.id)),
           db.insert(activities).values({
             type: "note",
-            description: `[GUARDRAIL C2] Respuesta del bot intervenida (${checkOrden.motivo}): ${checkOrden.detalle}. Se derivó el chat a un asesor humano.`,
+            description: `[GUARDRAIL C2] Respuesta del bot intervenida (${checkOrden.motivo}): ${checkOrden.detalle}. Se derivó el chat a un asesor humano. Texto bloqueado: «${textoBloqueado.slice(0, 400)}»`,
             contactId: contact.id,
           }),
         ]);
@@ -428,6 +447,12 @@ async function executeAgentTurn(
           contactId: contact.id,
           conversationId: conversation.id,
         }).catch((err) => console.warn("[agent] aviso a supervisores falló:", err));
+      }
+
+      // La derivación genérica no se repite: si ya salió igual en las últimas 12 h, el cliente
+      // no recibe otra copia (el equipo ya fue avisado arriba).
+      if (checkOrden.bloqueado && (await derivacionYaEnviada(conversation.id, reply))) {
+        return { ok: true, reason: "guardrail_derivacion_repetida", toolCalls };
       }
 
       reply = conPreguntaDeAvance(reply, guion, executedTools, checkOrden.bloqueado || postulante);
@@ -638,6 +663,23 @@ function conPreguntaDeAvance(
 ): string {
   if (intervenida || herramientas.some((h) => HERRAMIENTAS_SIN_PREGUNTA.includes(h))) return texto;
   return asegurarPreguntaDeAvance(texto, guion);
+}
+
+/** true si ese mismo texto ya salió en la conversación en las últimas 12 h. */
+async function derivacionYaEnviada(conversationId: string, texto: string): Promise<boolean> {
+  const [previo] = await db
+    .select({ id: messages.id })
+    .from(messages)
+    .where(
+      and(
+        eq(messages.conversationId, conversationId),
+        eq(messages.direction, "out"),
+        eq(messages.body, texto),
+        gte(messages.createdAt, new Date(Date.now() - 12 * 60 * 60 * 1000))
+      )
+    )
+    .limit(1);
+  return Boolean(previo);
 }
 
 const PEDIDO_RESPUESTA_TEXTO =
