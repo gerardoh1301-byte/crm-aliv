@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import Link from "next/link";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -22,6 +22,8 @@ import {
   DollarSign,
   Kanban,
   ArrowUpRight,
+  Trash2,
+  Undo2,
 } from "lucide-react";
 import { formatRelativeDate, formatDate } from "@/lib/constants";
 import { ACTIVITY_TYPE_CONFIG } from "@/lib/constants";
@@ -92,6 +94,9 @@ export default function ActivitiesPage() {
   const [followUps, setFollowUps] = useState<FollowUps | null>(null);
   const [loading, setLoading] = useState(true);
   const [showForm, setShowForm] = useState(false);
+  // Descartar: la tarjeta sale al instante y se borra a los 5 s, salvo «Deshacer».
+  const [descartada, setDescartada] = useState<ActivityItem | null>(null);
+  const borradoPendiente = useRef<{ id: string; timer: ReturnType<typeof setTimeout> } | null>(null);
 
   const loadData = () => {
     Promise.all([
@@ -107,6 +112,72 @@ export default function ActivitiesPage() {
   useEffect(() => {
     loadData();
   }, []);
+
+  const borrar = (id: string) => {
+    fetch(`/api/activities/${id}`, { method: "DELETE" })
+      .then((r) => {
+        if (!r.ok) loadData();
+      })
+      .catch(() => loadData());
+  };
+
+  // Al salir de la página con un descarte pendiente, se borra igual.
+  useEffect(
+    () => () => {
+      const p = borradoPendiente.current;
+      if (p) {
+        clearTimeout(p.timer);
+        fetch(`/api/activities/${p.id}`, { method: "DELETE", keepalive: true }).catch(() => {});
+      }
+    },
+    []
+  );
+
+  const quitarDeListas = (id: string) => {
+    setFollowUps((f) =>
+      f ? { ...f, overdue: f.overdue.filter((a) => a.id !== id), today: f.today.filter((a) => a.id !== id) } : f
+    );
+    setActivities((acts) => acts.filter((a) => a.id !== id));
+  };
+
+  const descartar = (item: ActivityItem) => {
+    // Un descarte anterior pendiente se confirma ya.
+    const previo = borradoPendiente.current;
+    if (previo) {
+      clearTimeout(previo.timer);
+      borrar(previo.id);
+    }
+    quitarDeListas(item.id);
+    setDescartada(item);
+    const timer = setTimeout(() => {
+      borrar(item.id);
+      borradoPendiente.current = null;
+      setDescartada((d) => (d?.id === item.id ? null : d));
+    }, 5000);
+    borradoPendiente.current = { id: item.id, timer };
+  };
+
+  const deshacer = () => {
+    const p = borradoPendiente.current;
+    if (p) clearTimeout(p.timer);
+    borradoPendiente.current = null;
+    setDescartada(null);
+    loadData();
+  };
+
+  const botonDescartar = (f: ActivityItem) => (
+    <Button
+      type="button"
+      variant="ghost"
+      size="sm"
+      onClick={() => descartar(f)}
+      title="Descartar: ya está atendido"
+      className="h-7 px-2 text-xs gap-1 text-muted-foreground hover:text-destructive hover:bg-destructive/10 shrink-0 cursor-pointer"
+    >
+      <Trash2 className="h-3.5 w-3.5" />
+      <span>Descartar</span>
+    </Button>
+  );
 
   if (loading) {
     return (
@@ -192,6 +263,8 @@ export default function ActivitiesPage() {
                       <p className="text-xs text-muted-foreground">
                         {f.contactName} &middot; {formatDate(f.scheduledAt)}
                       </p>
+                      <div className="flex items-center gap-1.5">
+                      {botonDescartar(f)}
                       <Link
                         href={pipelineHrefForActivity(f)}
                         className={cn(
@@ -203,6 +276,7 @@ export default function ActivitiesPage() {
                         <span>Ir al Pipeline</span>
                         <ArrowUpRight className="h-3 w-3" />
                       </Link>
+                      </div>
                     </div>
                   </div>
                 ))}
@@ -231,6 +305,8 @@ export default function ActivitiesPage() {
                       <p className="text-xs text-muted-foreground">
                         {f.contactName}
                       </p>
+                      <div className="flex items-center gap-1.5">
+                      {botonDescartar(f)}
                       <Link
                         href={pipelineHrefForActivity(f)}
                         className={cn(
@@ -242,6 +318,7 @@ export default function ActivitiesPage() {
                         <span>Ir al Pipeline</span>
                         <ArrowUpRight className="h-3 w-3" />
                       </Link>
+                      </div>
                     </div>
                   </div>
                 ))}
@@ -274,6 +351,19 @@ export default function ActivitiesPage() {
         </CardContent>
       </Card>
       </div>
+
+      {descartada && (
+        <div
+          role="status"
+          className="fixed bottom-4 left-1/2 -translate-x-1/2 z-50 flex items-center gap-3 rounded-lg border bg-card shadow-lg px-4 py-2.5 text-sm max-w-[calc(100vw-32px)]"
+        >
+          <span className="truncate">Actividad descartada · {descartada.contactName ?? "sin contacto"}</span>
+          <Button type="button" size="sm" variant="outline" onClick={deshacer} className="h-7 gap-1 shrink-0 cursor-pointer">
+            <Undo2 className="h-3.5 w-3.5" />
+            Deshacer
+          </Button>
+        </div>
+      )}
     </div>
   );
 }
