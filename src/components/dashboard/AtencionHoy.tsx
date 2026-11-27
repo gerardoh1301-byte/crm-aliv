@@ -1,10 +1,16 @@
 import Link from "next/link";
-import { AlertTriangle, Bot, Clock, PackageCheck, Wallet } from "lucide-react";
+import { AlertTriangle, Bot, Clock, PackageCheck, Phone, Wallet } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { AtencionHoy as Datos } from "@/lib/dashboard/atencion";
 
 /** Fila superior del Dashboard: lo que alguien tiene que hacer hoy. Cada tarjeta lleva a su lista. */
-export function AtencionHoy({ datos }: { datos: Datos }) {
+/** Llamadas por WhatsApp que hizo la propia vendedora (en su panel reemplaza la tarjeta del bot). */
+export interface MisLlamadas {
+  hoy: number;
+  semana: number;
+}
+
+export function AtencionHoy({ datos, misLlamadas }: { datos: Datos; misLlamadas?: MisLlamadas }) {
   const tarjetas = [
     {
       titulo: "Chats con alerta",
@@ -30,7 +36,14 @@ export function AtencionHoy({ datos }: { datos: Datos }) {
       icono: PackageCheck,
       urgente: false,
     },
-    {
+    misLlamadas ? {
+      titulo: "Tus llamadas",
+      valor: misLlamadas.hoy,
+      detalle: `hoy · ${misLlamadas.semana} en los últimos 7 días`,
+      href: "/activities",
+      icono: Phone,
+      urgente: false,
+    } : {
       titulo: "Respuesta del bot",
       valor: datos.botMedianaSeg === null ? "—" : `${datos.botMedianaSeg} s`,
       detalle: `${datos.botRespuestas24h} respuestas en 24 h (mediana)`,

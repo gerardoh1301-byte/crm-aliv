@@ -2,7 +2,7 @@ import "server-only";
 import { db } from "@/db";
 import { sql } from "drizzle-orm";
 import type { TeamMember } from "@/lib/team";
-import { quienLlamo, TIPO_LLAMADA_WHATSAPP } from "@/lib/llamada-whatsapp";
+import { descripcionLlamadaWhatsApp, quienLlamo, TIPO_LLAMADA_WHATSAPP } from "@/lib/llamada-whatsapp";
 
 export interface LlamadaRegistrada {
   /** ISO, hora del clic. */
@@ -28,4 +28,17 @@ export async function llamadasWhatsApp(member: TeamMember, dias: number): Promis
     contacto: String(r.contacto ?? "—"),
     telefono: r.telefono ? String(r.telefono) : null,
   }));
+}
+
+/** Clics en «Llamar» hechos por este miembro: hoy (día de Lima) y últimos 7 días. */
+export async function misLlamadasWhatsApp(member: TeamMember): Promise<{ hoy: number; semana: number }> {
+  const desc = descripcionLlamadaWhatsApp(member.name || member.email);
+  const [fila] = (await db.execute(sql`
+    select
+      count(*) filter (where (a.created_at at time zone 'America/Lima')::date = (now() at time zone 'America/Lima')::date) as hoy,
+      count(*) as semana
+    from activities a
+    where a.type = ${TIPO_LLAMADA_WHATSAPP} and a.description = ${desc}
+      and a.created_at >= now() - interval '7 days'`)) as unknown as Array<Record<string, unknown>>;
+  return { hoy: Number(fila?.hoy ?? 0), semana: Number(fila?.semana ?? 0) };
 }

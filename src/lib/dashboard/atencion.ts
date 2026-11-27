@@ -21,8 +21,24 @@ export interface AtencionHoy {
   botRespuestas24h: number;
 }
 
-export async function calcularAtencionHoy(soloMios: SQL | undefined): Promise<AtencionHoy> {
+/**
+ * @param soloMios filtro de propietario (asesor) o undefined (admin).
+ * @param cuentas vendedor con número propio: solo los chats de esas cuentas de WhatsApp
+ *   (el historial del número del bot no lo puede abrir, así que tampoco se cuenta).
+ */
+export async function calcularAtencionHoy(soloMios: SQL | undefined, cuentas?: string[]): Promise<AtencionHoy> {
   const filtroContacto = soloMios ? and(soloMios, noSimulador) : noSimulador;
+  const soloCuentas = cuentas
+    ? cuentas.length
+      ? inArray(conversations.accountId, cuentas)
+      : sql`false`
+    : undefined;
+  const msgsDeCuentas = cuentas
+    ? inArray(
+        messages.conversationId,
+        db.select({ id: conversations.id }).from(conversations).where(soloCuentas)
+      )
+    : undefined;
   const haceEspera = new Date(Date.now() - MINUTOS_ESPERA * 60_000);
   const hace24h = new Date(Date.now() - 24 * 3600_000);
   const hace48h = new Date(Date.now() - 48 * 3600_000);
@@ -36,7 +52,7 @@ export async function calcularAtencionHoy(soloMios: SQL | undefined): Promise<At
       })
       .from(conversations)
       .innerJoin(contacts, eq(conversations.contactId, contacts.id))
-      .where(and(filtroContacto, ne(conversations.provider, "simulador"))),
+      .where(and(filtroContacto, ne(conversations.provider, "simulador"), soloCuentas)),
     db
       .select({
         estado: pedidosOrdenes.estado,
@@ -58,7 +74,7 @@ export async function calcularAtencionHoy(soloMios: SQL | undefined): Promise<At
       })
       .from(messages)
       .innerJoin(contacts, eq(messages.contactId, contacts.id))
-      .where(and(filtroContacto, gte(messages.createdAt, hace24h), ne(messages.provider, "simulador")))
+      .where(and(filtroContacto, gte(messages.createdAt, hace24h), ne(messages.provider, "simulador"), msgsDeCuentas))
       .orderBy(messages.conversationId, messages.createdAt),
   ]);
 

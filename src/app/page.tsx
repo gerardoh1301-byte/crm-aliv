@@ -15,6 +15,8 @@ import { calcularAtencionHoy } from "@/lib/dashboard/atencion";
 import { pedidosCentroControl } from "@/lib/dashboard/centro-control";
 import { CentroControlEcommerce } from "@/components/dashboard/CentroControlEcommerce";
 import type { DashboardStats } from "@/types";
+import { cuentasVisiblesPara } from "@/lib/channels/numeros";
+import { misLlamadasWhatsApp } from "@/lib/reportes-llamadas";
 
 export const dynamic = "force-dynamic";
 
@@ -72,10 +74,13 @@ export default async function DashboardPage() {
       color: stage.color,
     }));
 
-  const [contactos7d, atencion, pedidosCentro] = await Promise.all([
+  const esAdmin = member.role === "admin";
+  const cuentasPropias = await cuentasVisiblesPara(member);
+  const [contactos7d, atencion, pedidosCentro, misLlamadas] = await Promise.all([
     serieContactos(member, 7),
-    calcularAtencionHoy(soloMios),
+    calcularAtencionHoy(soloMios, cuentasPropias),
     pedidosCentroControl(soloMios),
+    esAdmin ? Promise.resolve(undefined) : misLlamadasWhatsApp(member),
   ]);
 
   const recentActivities = await db
@@ -97,8 +102,12 @@ export default async function DashboardPage() {
   return (
     <div>
       <PageHeader
-        title="Dashboard"
-        subtitle="Lo que hay que atender hoy y el resumen de ventas"
+        title={esAdmin ? "Dashboard" : `Tu panel, ${(member.name || "").split(" ")[0] || "vendedora"}`}
+        subtitle={
+          esAdmin
+            ? "Lo que hay que atender hoy y el resumen de ventas"
+            : "Solo tus clientes, tus chats y tus pedidos"
+        }
       />
 
       <div className="space-y-5">
@@ -136,7 +145,7 @@ export default async function DashboardPage() {
 
       <NotificationBanner />
 
-      <AtencionHoy datos={atencion} />
+      <AtencionHoy datos={atencion} misLlamadas={misLlamadas} />
 
       <CentroControlEcommerce pedidos={pedidosCentro} />
 
