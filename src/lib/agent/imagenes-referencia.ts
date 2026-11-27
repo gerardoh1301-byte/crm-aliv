@@ -21,6 +21,12 @@ export function googleDriveCdnUrl(idOrUrl: string): string {
 /** Video de confianza de despachos (mejora 2b, 24/11): servido desde public/videos del CRM. */
 export const VIDEO_DESPACHOS_SHALOM = "https://crm-aliv.onrender.com/videos/shalom-almacen.mp4";
 
+/**
+ * Video de la mesa de empaques (27/11): 7 s, sin audio, cortado antes del primer plano de
+ * un rótulo con el nombre de un cliente. Va con el recordatorio del adelanto de provincia.
+ */
+export const VIDEO_EMPAQUES_PREPARANDO = "https://crm-aliv.onrender.com/videos/empaques-preparando.mp4";
+
 export const IMAGENES_REFERENCIA: ImagenReferencia[] = [
   // =========================================================================
   // --- 1. NAC600 + NAD+ (Carpeta Oficial Google Drive) ---

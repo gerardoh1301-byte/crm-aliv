@@ -7,6 +7,8 @@ import { activities, contacts, conversations, deals, messages, pipelineStages, w
 import { and, desc, eq, gte, lte, sql } from "drizzle-orm";
 import { getConfig } from "@/lib/config";
 import { deliverMessage } from "@/lib/channels/deliver";
+import type { OutboundMessage } from "@/lib/channels/conector";
+import { VIDEO_EMPAQUES_PREPARANDO } from "./imagenes-referencia";
 import { corregirFrasesSalud } from "./filtro-salud";
 import { aplicarEtiquetaAContacto } from "./etiquetado";
 import { pedidosOrdenes } from "../../../modules/pedidos/tabla";
@@ -756,6 +758,50 @@ export function elegirEnvioRescate(e: {
   return { modo: "plantilla", plantilla: e.plantilla };
 }
 
+/**
+ * Versión de aliv_recordatorio_adelanto con el video de empaques como encabezado. Hay que
+ * crearla en WhatsApp Manager (Utility, español, encabezado VIDEO, mismo cuerpo y botones).
+ * Mientras no esté aprobada, fuera de las 24 h sale la plantilla de siempre sin video.
+ */
+export const PLANTILLA_ADELANTO_VIDEO = "aliv_recordatorio_adelanto_video";
+
+/**
+ * Arma el mensaje del rescate. En el primer toque del adelanto de provincia ("tenemos
+ * separada tu orden... programar la salida de tu paquete") va el video de empaques:
+ * dentro de 24 h como adjunto del texto; fuera, solo si la plantilla con video está
+ * aprobada (WhatsApp no deja mandar un video suelto fuera de la ventana).
+ */
+export function mensajeRescate(e: {
+  envio: Exclude<EnvioRescate, { modo: "omitir" }>;
+  texto: string;
+  pasada: Pasada;
+  escenario: TipoEscenarioRescate;
+  plantillasAprobadas: ReadonlySet<string>;
+  video?: string;
+}): OutboundMessage {
+  const video = e.video ?? VIDEO_EMPAQUES_PREPARANDO;
+  const llevaVideo = e.pasada === "primero" && e.escenario === "adelanto_provincia" && /^https:\/\//.test(video);
+  if (e.envio.modo === "texto") {
+    return llevaVideo ? { text: e.texto, attachments: [{ type: "video", url: video }] } : { text: e.texto };
+  }
+  const p = e.envio.plantilla;
+  if (llevaVideo && p.name === "aliv_recordatorio_adelanto" && e.plantillasAprobadas.has(PLANTILLA_ADELANTO_VIDEO)) {
+    return {
+      template: {
+        name: PLANTILLA_ADELANTO_VIDEO,
+        language: p.language,
+        params: p.params,
+        components: [
+          { type: "header", parameters: [{ type: "video", video: { link: video } }] },
+          { type: "body", parameters: p.params.map((t) => ({ type: "text", text: String(t) })) },
+        ],
+        previewText: e.texto,
+      },
+    };
+  }
+  return { template: { ...p, previewText: e.texto } };
+}
+
 /** Prefijo de las notas que marcan un chat ya revisado sin envío (o con envío fallido). */
 export const PREFIJO_REVISADO = "[RESCATE REVISADO]";
 export const PREFIJO_REVISADO_FALLO = `${PREFIJO_REVISADO} Falló el envío`;
@@ -1002,9 +1048,13 @@ export async function auditarChatsAbandonados(opts?: { limite?: number; forzarHo
       // Fuera, la plantilla aprobada; el texto queda como vista previa en el CRM.
       const entrega = await deliverMessage(
         c.convId,
-        envio.modo === "texto"
-          ? { text: evaluacionFinal.mensajeRescate! }
-          : { template: { ...envio.plantilla, previewText: evaluacionFinal.mensajeRescate! } },
+        mensajeRescate({
+          envio,
+          texto: evaluacionFinal.mensajeRescate!,
+          pasada,
+          escenario: evaluacionFinal.escenario!,
+          plantillasAprobadas,
+        }),
         "agent"
       );
       if (!entrega.ok) {
