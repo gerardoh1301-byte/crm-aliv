@@ -62,3 +62,14 @@ describe("bot encendido en un número de vendedor (25/11: el 977 sin vendedor)",
     expect(elegirCuentasConBot(cuentas, "no es json")).toEqual([]);
   });
 });
+
+describe("números propios (27/11: los dos bots se respondían entre sí)", () => {
+  it("reconoce nuestros WhatsApp en cualquier formato y no a un cliente", async () => {
+    const { esNumeroPropio } = await import("@/lib/channels/numeros-reglas");
+    expect(esNumeroPropio("+51977126462", cuentas)).toBe(true);
+    expect(esNumeroPropio("977 126 462", cuentas)).toBe(true);
+    expect(esNumeroPropio("+51999888777", cuentas)).toBe(false);
+    expect(esNumeroPropio(null, cuentas)).toBe(false);
+    expect(esNumeroPropio("+51977126462", [{ ...vendedor, platform: "instagram" }])).toBe(false);
+  });
+});

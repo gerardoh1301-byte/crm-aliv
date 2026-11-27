@@ -12,6 +12,7 @@ import {
   elegirCuentaPedidosWeb,
   elegirCuentasConBot,
   esNumeroDeVendedor,
+  esNumeroPropio,
   vendedorDelNumero,
   type CuentaWhatsapp,
 } from "./numeros-reglas";
@@ -73,6 +74,11 @@ export async function esCuentaDeVendedor(accountId: string | null | undefined): 
   const d = await leer();
   if (accountId && d.conBot.includes(accountId)) return false;
   return esNumeroDeVendedor(accountId, d.bot, d.cuentas);
+}
+
+/** true si el teléfono del contacto es uno de nuestros propios números de WhatsApp. */
+export async function esContactoNumeroPropio(telefono: string | null | undefined): Promise<boolean> {
+  return esNumeroPropio(telefono, (await leer()).cuentas);
 }
 
 /** Cuenta por la que sale el primer mensaje de los pedidos de Shopify (null = la del bot). */

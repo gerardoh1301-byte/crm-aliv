@@ -149,6 +149,18 @@ export function elegirCuentasConBot(cuentas: CuentaWhatsapp[], json: string | nu
   return [...ids];
 }
 
+/**
+ * true si el teléfono es uno de nuestros propios números de WhatsApp. El bot no debe
+ * contestarles: desde que el 944 avisa al 977 y ahí también hay bot, los dos bots se
+ * respondían entre sí (27/11).
+ */
+export function esNumeroPropio(telefono: string | null | undefined, cuentas: CuentaWhatsapp[]): boolean {
+  const digitos = (v: string) => v.replace(/\D/g, "").slice(-9);
+  const tel = telefono ? digitos(telefono) : "";
+  if (tel.length !== 9) return false;
+  return cuentas.some((c) => c.platform === "whatsapp" && Boolean(c.username) && digitos(c.username as string) === tel);
+}
+
 /** true si la conversación es de una cuenta que el miembro puede ver (ver `cuentasVisiblesPara`). */
 export function cuentaPermitida(accountId: string | null | undefined, cuentas: string[] | undefined): boolean {
   if (!cuentas) return true;

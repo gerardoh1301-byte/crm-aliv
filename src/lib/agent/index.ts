@@ -10,6 +10,7 @@ import { pausaPorHumano } from "./toques";
 import { ultimoMensajeHumanoDesdeTelefono } from "./toques-servidor";
 import { deliverMessage, getConversationRow } from "@/lib/channels/deliver";
 import { isChannel, type Channel } from "@/lib/channels/types";
+import { esContactoNumeroPropio } from "@/lib/channels/numeros";
 import { displayName, listMembers } from "@/lib/team";
 import { alertarEquipo } from "./alertas";
 import { esNumeroEntrenador, notificarSupervisoresCritico } from "@/lib/alerts/supervisor-alerts";
@@ -109,6 +110,12 @@ async function executeAgentTurn(
     if (esSupervisorPagos(contact.phone) && (await manejarComandoSupervisor(conversation.id, contact.phone))) {
       return { ok: true, reason: "comando_supervisor" };
     }
+  }
+
+  // Chat entre nuestros propios números (ej. el aviso del 944 que llega al 977): el bot no
+  // contesta, porque el otro lado también tiene bot y se responderían sin parar.
+  if (conversation.channel === "whatsapp" && (await esContactoNumeroPropio(contact.phone))) {
+    return { ok: true, reason: "numero_propio" };
   }
 
   // El contacto es el kill-switch global; la conversacion pausa solo este hilo.
