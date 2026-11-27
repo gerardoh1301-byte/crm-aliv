@@ -218,3 +218,35 @@ describe("Extracción post-llamada (/api/webhooks/voice-ai)", () => {
     expect(res.estadoConfirmacion).toBe("no_contesto");
   });
 });
+
+describe("buzón de voz no confirma ni cancela (27/11)", () => {
+  const payload = (turnos: string[], confirmado?: boolean) => ({
+    data: {
+      transcript: [{ role: "agent", message: "Hola, te saluda Sofía" }, ...turnos.map((message) => ({ role: "user", message }))],
+      metadata: { call_duration_secs: 53 },
+      analysis: { data_collection_results: confirmado === undefined ? {} : { aitem_x: { name: "confirmado", value: confirmado } } },
+    },
+  });
+
+  it("un «confirmado: false» sobre el buzón queda como no contestó", async () => {
+    const { analizarPayloadPostLlamada } = await import("@/lib/voice/procesar-post-llamada-reglas");
+    const r = analizarPayloadPostLlamada(
+      payload(["...", "Lo sentimos, ha llegado al tiempo límite de mensaje de voz. Su mensaje fue grabado exitosamente. Gracias."], false)
+    );
+    expect(r.contestada).toBe(false);
+    expect(r.estadoConfirmacion).toBe("no_contesto");
+  });
+
+  it("el menú del buzón («Si usted tiene problemas…») no cuenta como un sí", async () => {
+    const { analizarPayloadPostLlamada } = await import("@/lib/voice/procesar-post-llamada-reglas");
+    const r = analizarPayloadPostLlamada(
+      payload([
+        "Su mensaje ha alcanzado la duración máxima. Escucha tu mensaje marcando 1.",
+        "Envía el mensaje marcando cinco.",
+        "Si usted tiene problemas con su buzón de voz, por favor contacte al centro de atención al cliente",
+      ])
+    );
+    expect(r.contestada).toBe(false);
+    expect(r.estadoConfirmacion).toBe("no_contesto");
+  });
+});

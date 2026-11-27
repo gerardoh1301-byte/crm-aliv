@@ -116,7 +116,7 @@ export function extraerHorarioDeTranscripcion(turnosUsuario: string[]): string |
 
 /** Detecta mensajes grabados de buzón de voz de operadoras peruanas (Claro, Movistar, Entel, Bitel). */
 const RE_BUZON_VOZ =
-  /\b(buz[oó]n de voz|casilla de voz|mensaje de voz|despu[eé]s del tono|tiempo l[ií]mite de mensaje|mensaje fue grabado|no se encuentra disponible|no puede contestar|llamada ser[aá] transferida|deje su mensaje|fuera del [aá]rea de cobertura|el n[uú]mero marcado|voicemail|leave a message)\b/i;
+  /\b(buz[oó]n de voz|casilla de voz|mensaje de voz|despu[eé]s del tono|tiempo l[ií]mite de mensaje|mensaje fue grabado|no se encuentra disponible|no puede contestar|llamada ser[aá] transferida|deje su mensaje|fuera del [aá]rea de cobertura|el n[uú]mero marcado|voicemail|leave a message|marcando (?:\d|uno|dos|tres|cuatro|cinco)|duraci[oó]n m[aá]xima)\b/i;
 
 export function esSoloBuzonOSilencio(turnosUsuario: string[]): boolean {
   const limpios = turnosUsuario
@@ -180,7 +180,8 @@ export function analizarPayloadPostLlamada(
 
   let estadoConfirmacion: DatosExtraidosLlamada["estadoConfirmacion"] = contestada ? "pendiente" : "no_contesto";
 
-  if (confirmadoDc) {
+  // Si solo habló el buzón de voz, el «confirmado: no» de la IA no es del cliente (27/11, #1202).
+  if (confirmadoDc && contestada) {
     if (/^(true|si|sí|confirmado|yes|1)$/i.test(confirmadoDc)) {
       estadoConfirmacion = "confirmado";
     } else if (/^(false|no|cancelado|rechazado|cancel)$/i.test(confirmadoDc)) {
