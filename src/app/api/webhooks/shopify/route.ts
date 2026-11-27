@@ -8,7 +8,7 @@ import { sincronizarConGoogleDrive } from "@/lib/drive-sync";
 import { alertarEquipo } from "@/lib/agent/alertas";
 import { notificarSupervisoresCritico } from "@/lib/alerts/supervisor-alerts";
 import { pedidosOrdenes, type ItemPedido } from "../../../../../modules/pedidos/tabla";
-import { sincronizarEtapaPipeline } from "../../../../../modules/pedidos/servidor";
+import { reemplazarPedidosAbiertos, sincronizarEtapaPipeline } from "../../../../../modules/pedidos/servidor";
 import { emitAutomationEvent } from "@/lib/automations";
 import { extraerDatosFormularioShopify } from "@/lib/shopify/form-extractor";
 import { marcarAbandonoRecuperado } from "@/lib/abandonos/servidor";
@@ -342,6 +342,16 @@ export async function POST(req: NextRequest) {
       }
 ${entregaWeb.marca}`,
     }).returning({ id: pedidosOrdenes.id });
+
+    // El cliente volvió a llenar el formulario: el pedido nuevo reemplaza al anterior abierto.
+    const reemplazados = await reemplazarPedidosAbiertos(contactId, { id: pedidoNuevo.id, numeroOrden, items, dealId });
+    if (reemplazados.length) {
+      await alertarEquipo({
+        contactId,
+        titulo: `Pedido reemplazado: ${nombre}`,
+        cuerpo: `${numeroOrden} reemplaza a ${reemplazados.join(", ")} (el cliente volvió a pedir). Se canceló el anterior.`,
+      }).catch(() => {});
+    }
 
     // R1: Detección inteligente de duplicados
     // a) Ráfaga (< 3 minutos): doble clic o reenvío inmediato del formulario web

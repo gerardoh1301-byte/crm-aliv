@@ -5,6 +5,7 @@ import { eq } from "drizzle-orm";
 import { pedidosOrdenes } from "../../../modules/pedidos/tabla";
 import { esNumeroEntrenador } from "@/lib/alerts/supervisor-alerts";
 import { contactoBloqueado } from "@/lib/contactos/bloqueo";
+import { parametrosAmd } from "@/lib/voice/twilio-amd";
 import {
   construirVariablesLlamadaPedido,
   dentroHorarioLlamadaIA,
@@ -205,6 +206,8 @@ export async function dispararLlamadaConfirmacionPedido(
       form.set("To", toNumber);
       form.set("From", config.twilioCallerId!);
       form.set("Twiml", twiml);
+      // Buzón de voz: Twilio lo detecta por el audio y /api/webhooks/twilio-amd cuelga.
+      for (const [k, v] of Object.entries(parametrosAmd())) form.set(k, v);
 
       const twilioRes = await fetch(
         `https://api.twilio.com/2010-04-01/Accounts/${config.twilioAccountSid}/Calls.json`,
@@ -293,7 +296,7 @@ export async function dispararLlamadaConfirmacionPedido(
       .where(eq(pedidosOrdenes.id, datos.pedidoId))
       .limit(1);
 
-    const marca = `${MARCA_LLAMADA_IA_INICIADA} ${new Date().toISOString()} conv=${conversationId ?? "n/a"} tel=${toNumber} modo=${variables.modalidad}`;
+    const marca = `${MARCA_LLAMADA_IA_INICIADA} ${new Date().toISOString()} conv=${conversationId ?? "n/a"}${callSid ? ` sid=${callSid}` : ""} tel=${toNumber} modo=${variables.modalidad}`;
     await Promise.all([
       db
         .update(pedidosOrdenes)

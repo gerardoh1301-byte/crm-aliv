@@ -3,6 +3,7 @@ import { db } from "@/db";
 import { contacts, pipelines, pipelineStages, deals } from "@/db/schema";
 import { and, asc, desc, eq, inArray, sql } from "drizzle-orm";
 import { getConfig } from "@/lib/config";
+import { pedidosOrdenes } from "../../../modules/pedidos/tabla";
 import { cleanStr, esEtiquetaDeEtapa, obtenerEtiquetaDeEtapa, quitarLogisticaSiCierra } from "@/lib/tags";
 
 /**
@@ -19,6 +20,16 @@ import { cleanStr, esEtiquetaDeEtapa, obtenerEtiquetaDeEtapa, quitarLogisticaSiC
  *
  * La UI sigue pudiendo crear etapas a mano; esas quedan sin key y sobreviven.
  */
+/** true si la tarjeta tiene un pedido registrado (pedidos_ordenes.deal_id). */
+async function tienePedido(dealId: string): Promise<boolean> {
+  const [p] = await db
+    .select({ id: pedidosOrdenes.id })
+    .from(pedidosOrdenes)
+    .where(eq(pedidosOrdenes.dealId, dealId))
+    .limit(1);
+  return Boolean(p);
+}
+
 export async function sincronizarPipeline(opts?: { borrarSobrantes?: boolean }) {
   const { pipeline } = getConfig();
 
@@ -171,19 +182,18 @@ export async function sincronizarPipeline(opts?: { borrarSobrantes?: boolean }) 
           continue;
         }
 
+        // Solo una tarjeta con pedido real puede estar en "Pedido confirmado": la etiqueta
+        // sola (abandono, chat, rescate) dejaba ahí tarjetas sin pedido en cada reinicio.
+        if (!(await tienePedido(deal.id))) continue;
+
         if (deal.stageId !== agendarStageId) {
           await db
             .update(deals)
             .set({ stageId: agendarStageId, updatedAt: new Date() })
             .where(eq(deals.id, deal.id));
         }
-      } else {
-        await db.insert(deals).values({
-          title: c.name || "Operación",
-          stageId: agendarStageId,
-          contactId: c.id,
-        });
       }
+      // Sin tarjeta no se inventa una: sin pedido no hay nada que despachar.
     }
   }
 
@@ -234,18 +244,14 @@ export async function sincronizarPipeline(opts?: { borrarSobrantes?: boolean }) 
           continue;
         }
 
+        if (!(await tienePedido(deal.id))) continue;
+
         if (deal.stageId !== adelantoStageId) {
           await db
             .update(deals)
             .set({ stageId: adelantoStageId, updatedAt: new Date() })
             .where(eq(deals.id, deal.id));
         }
-      } else {
-        await db.insert(deals).values({
-          title: c.name || "Operación",
-          stageId: adelantoStageId,
-          contactId: c.id,
-        });
       }
     }
   }

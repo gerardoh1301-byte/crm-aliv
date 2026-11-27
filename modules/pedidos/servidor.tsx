@@ -19,6 +19,7 @@ import { extraerDatosFormularioShopify } from "@/lib/shopify/form-extractor";
 import { sincronizarDealEnSheets } from "@/lib/sheets/envios-sync";
 import { notificarCambioDealAlErp } from "@/lib/finanzas/notificar-erp";
 import { generarNumeroChat } from "@/lib/pedidos/numeracion";
+import { esReemplazable, MARCA_REEMPLAZADO } from "@/lib/pedidos/reemplazo";
 import { mostrarNumeroOrden } from "@/lib/pedidos/numero-formato";
 import { esNumeroEntrenador, notificarSupervisoresCritico } from "@/lib/alerts/supervisor-alerts";
 import type { ModuloServidor, HandlerModulo, ToolModulo } from "@/lib/modules/types";
@@ -172,6 +173,62 @@ export async function sincronizarEtapaPipeline(
     console.error("[sincronizarEtapaPipeline] error:", err);
     return null;
   }
+}
+
+/**
+ * El cliente volvió a pedir con un pedido anterior todavía abierto (formulario reenviado
+ * horas o días después, o el bot registró otro): el nuevo reemplaza al anterior, que se
+ * cancela con una nota. Así no quedan dos tarjetas del mismo cliente en "Pedido confirmado".
+ * Lo que ya avanzó (guía, AliClik, adelanto verificado) o es de otro producto no se toca.
+ */
+export async function reemplazarPedidosAbiertos(
+  contactId: string,
+  nuevo: { id: string; numeroOrden: string; items: ItemPedido[]; dealId?: string | null }
+): Promise<string[]> {
+  const reemplazados: string[] = [];
+  try {
+    const previos = await db
+      .select({
+        id: pedidosOrdenes.id,
+        numeroOrden: pedidosOrdenes.numeroOrden,
+        estado: pedidosOrdenes.estado,
+        numeroGuia: pedidosOrdenes.numeroGuia,
+        notas: pedidosOrdenes.notas,
+        items: pedidosOrdenes.items,
+        total: pedidosOrdenes.total,
+        dealId: pedidosOrdenes.dealId,
+      })
+      .from(pedidosOrdenes)
+      .where(
+        and(
+          eq(pedidosOrdenes.contactId, contactId),
+          sql`${pedidosOrdenes.id} <> ${nuevo.id}`,
+          inArray(pedidosOrdenes.estado, ["por_confirmar_cod", "confirmado", "preparando"])
+        )
+      );
+
+    for (const p of previos) {
+      if (!esReemplazable(p, nuevo.items)) continue;
+      const marca = `${MARCA_REEMPLAZADO} ${new Date().toISOString()} por ${nuevo.numeroOrden}: el cliente volvió a pedir.`;
+      await db
+        .update(pedidosOrdenes)
+        .set({ estado: "cancelado", notas: [p.notas, marca].filter(Boolean).join("\n"), updatedAt: new Date() })
+        .where(eq(pedidosOrdenes.id, p.id));
+      if (p.dealId && p.dealId !== nuevo.dealId) {
+        const [d] = await db.select({ title: deals.title }).from(deals).where(eq(deals.id, p.dealId)).limit(1);
+        await sincronizarEtapaPipeline(contactId, "cancelado", d?.title ?? p.numeroOrden, Number(p.total) || 0, p.id, p.dealId);
+      }
+      await db.insert(activities).values({
+        type: "note",
+        description: `🔁 Pedido ${p.numeroOrden} cancelado: lo reemplaza ${nuevo.numeroOrden} (el cliente volvió a pedir). Queda una sola tarjeta.`,
+        contactId,
+      });
+      reemplazados.push(p.numeroOrden);
+    }
+  } catch (err) {
+    console.error("[reemplazarPedidosAbiertos] error:", err);
+  }
+  return reemplazados;
 }
 
 async function notificarDespachoPorChat(
@@ -912,6 +969,7 @@ const tools: ToolModulo[] = [
           notas: notasPedido,
         })
         .returning();
+      await reemplazarPedidosAbiertos(ctx.contactId, { id: orden.id, numeroOrden, items: itemsFinales, dealId });
 
       // Actualizar ficha del contacto con sus datos de envio
       const [contactoActual] = await db
