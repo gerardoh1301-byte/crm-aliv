@@ -9,17 +9,26 @@ export function minutosPausaTrasHumano(): number {
   return Number.isFinite(v) && v >= 0 ? v : 60;
 }
 
+/** Si el cliente escribe después de la persona y ella no contesta en este tiempo, contesta el bot. */
+export const ESPERA_RESPUESTA_HUMANO_MS = 5 * 60_000;
+
 /**
  * Si una persona del equipo escribió desde el teléfono hace poco, el bot no contesta encima:
  * espera y retoma solo si nadie respondió al cliente (lo decide el historial al reintentar).
+ * 27/11 (Wilson): si el cliente vuelve a escribir después de la persona y nadie le contesta en
+ * 5 min, el bot ya no espera la hora completa.
  */
 export function pausaPorHumano(
   ultimoMensajeHumano: Date | null,
   ahora: Date,
-  minutos: number = minutosPausaTrasHumano()
+  minutos: number = minutosPausaTrasHumano(),
+  ultimoMensajeCliente: Date | null = null
 ): { pausado: false } | { pausado: true; reanudarEnMs: number } {
   if (!ultimoMensajeHumano || minutos <= 0) return { pausado: false };
-  const fin = ultimoMensajeHumano.getTime() + minutos * 60_000;
+  let fin = ultimoMensajeHumano.getTime() + minutos * 60_000;
+  if (ultimoMensajeCliente && ultimoMensajeCliente.getTime() > ultimoMensajeHumano.getTime()) {
+    fin = Math.min(fin, ultimoMensajeCliente.getTime() + ESPERA_RESPUESTA_HUMANO_MS);
+  }
   if (ahora.getTime() >= fin) return { pausado: false };
   return { pausado: true, reanudarEnMs: fin - ahora.getTime() + 60_000 };
 }

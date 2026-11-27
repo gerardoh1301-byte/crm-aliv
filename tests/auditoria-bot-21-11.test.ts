@@ -53,6 +53,19 @@ describe("E6: bot, equipo y envíos automáticos no se pisan", () => {
     expect(pausaPorHumano(hace(5), ahora, 0)).toEqual({ pausado: false });
   });
 
+  it("si el cliente escribe después de la persona y nadie le contesta en 5 min, contesta el bot (Wilson 27/11)", () => {
+    // Vendedora a las -10, cliente a las -4: el bot espera 1 min más (5 min desde el cliente + 1 de margen).
+    const p = pausaPorHumano(hace(10), ahora, 60, hace(4));
+    expect(p.pausado).toBe(true);
+    if (p.pausado) expect(p.reanudarEnMs).toBe(2 * 60_000);
+    // Cliente escribió hace 6 min sin respuesta: ya no hay pausa.
+    expect(pausaPorHumano(hace(10), ahora, 60, hace(6))).toEqual({ pausado: false });
+    // El mensaje del cliente es anterior al de la persona: se respeta la hora completa.
+    const q = pausaPorHumano(hace(10), ahora, 60, hace(12));
+    expect(q.pausado).toBe(true);
+    if (q.pausado) expect(q.reanudarEnMs).toBe(51 * 60_000);
+  });
+
   it("tope de 3 mensajes nuestros seguidos sin respuesta", () => {
     expect(puedeEnviarOtroToque(0)).toBe(true);
     expect(puedeEnviarOtroToque(2)).toBe(true);

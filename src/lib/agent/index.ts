@@ -138,14 +138,19 @@ async function executeAgentTurn(
   // encima. Deja un reintento para cuando termine la pausa: si para entonces nadie le
   // respondió al cliente, contesta el bot (si alguien respondió, el historial lo frena).
   if (!esNumeroEntrenador(contact.phone)) {
-    const pausa = pausaPorHumano(await ultimoMensajeHumanoDesdeTelefono(conversation.id), new Date());
+    const [ultimoCliente] = await db
+      .select({ id: messages.id, createdAt: messages.createdAt })
+      .from(messages)
+      .where(and(eq(messages.conversationId, conversation.id), eq(messages.direction, "in")))
+      .orderBy(desc(messages.createdAt))
+      .limit(1);
+    const pausa = pausaPorHumano(
+      await ultimoMensajeHumanoDesdeTelefono(conversation.id),
+      new Date(),
+      undefined,
+      ultimoCliente?.createdAt ?? null
+    );
     if (pausa.pausado) {
-      const [ultimoCliente] = await db
-        .select({ id: messages.id })
-        .from(messages)
-        .where(and(eq(messages.conversationId, conversation.id), eq(messages.direction, "in")))
-        .orderBy(desc(messages.createdAt))
-        .limit(1);
       if (ultimoCliente) await enqueueAgentJob(contact.id, ultimoCliente.id, conversation.id, pausa.reanudarEnMs);
       return { ok: true, reason: "humano_atendiendo" };
     }
