@@ -71,7 +71,7 @@ declare global {
 }
 
 export async function moderarComentarios(
-  opts: { limite?: number; /** Solo en modo prueba: mirar más atrás para revisar la clasificación. */ horasPrueba?: number } = {}
+  opts: { limite?: number; /** Mirar más atrás que COMENTARIOS_MAX_HORAS (prueba o barrido manual de pendientes). */ horas?: number } = {}
 ): Promise<ResultadoModeracion> {
   const activo = moderacionActiva();
   const cfg = metaComentariosConfig();
@@ -101,7 +101,7 @@ export async function moderarComentarios(
     const todos = [...fb.comentarios, ...ig.comentarios];
     res.leidos = todos.length;
 
-    const horas = !activo && opts.horasPrueba ? opts.horasPrueba : maxHoras();
+    const horas = opts.horas ?? maxHoras();
     const desde = Date.now() - horas * 3600_000;
     const candidatos = todos.filter(
       (c) =>
