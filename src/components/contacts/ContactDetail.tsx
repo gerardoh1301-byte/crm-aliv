@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { enlaceLlamadaWhatsApp, PESTANA_WHATSAPP_WEB } from "@/lib/llamada-whatsapp";
+import { enlaceLlamadaWhatsApp, PESTANA_WHATSAPP_WEB, registrarLlamadaWhatsApp } from "@/lib/llamada-whatsapp";
 import { useRouter } from "next/navigation";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -35,6 +35,7 @@ import type { ActivityType, LeadSource } from "@/types";
 
 const activityIcons: Record<string, typeof Phone> = {
   call: Phone,
+  llamada_whatsapp: Phone,
   email: Mail,
   meeting: Users,
   note: FileText,
@@ -214,6 +215,7 @@ export function ContactDetailClient({
                     rel="noopener noreferrer"
                     className="p-1 rounded hover:bg-blue-50 cursor-pointer"
                     title="Llamar por WhatsApp Web"
+                    onClick={() => registrarLlamadaWhatsApp(contact.id)}
                   >
                     <Phone className="h-3.5 w-3.5 text-blue-600" />
                   </a>

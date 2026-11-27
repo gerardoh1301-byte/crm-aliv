@@ -1,4 +1,4 @@
-export type ActivityType = "call" | "email" | "meeting" | "note" | "follow_up" | "delivery" | "payment";
+export type ActivityType = "call" | "email" | "meeting" | "note" | "follow_up" | "delivery" | "payment" | "llamada_whatsapp";
 
 export type LeadSource =
   | "website"

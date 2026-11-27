@@ -30,6 +30,7 @@ export const ACTIVITY_TYPE_CONFIG: Record<
   follow_up: { label: "Seguimiento", icon: "Clock" },
   delivery: { label: "Entrega / Envío", icon: "Truck" },
   payment: { label: "Cobro / Pago", icon: "DollarSign" },
+  llamada_whatsapp: { label: "Llamada WhatsApp", icon: "Phone" },
 };
 
 /** Montos en centavos; la moneda sale de config/cliente.ts (`moneda`). */

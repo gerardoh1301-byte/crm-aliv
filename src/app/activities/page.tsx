@@ -33,6 +33,7 @@ import type { ActivityType } from "@/types";
 
 const typeIcons: Record<string, typeof Phone> = {
   call: Phone,
+  llamada_whatsapp: Phone,
   email: Mail,
   meeting: Users,
   note: FileText,
