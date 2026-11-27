@@ -73,20 +73,20 @@ describe("resumen diario de pendientes", () => {
       pendientes: [p({}), p({ ownerId: null, nombre: "Sin dueño" })],
       actividad: { chatsNuevos: 12, mensajesClientes: 80, pedidosNuevos: 3, etapas: [{ nombre: "Pedido confirmado", n: 5 }, { nombre: "Vacía", n: 0 }] },
       vendedores: [{ id: "m-lourdes", nombre: "Lourdes" }],
-      envios: [{ nombre: "Lourdes", ok: true }, { nombre: "Stephano", ok: false, error: "fuera_de_ventana_24h" }],
+      envios: [{ nombre: "Lourdes", ok: true }, { nombre: "Rossana", ok: false, error: "fuera_de_ventana_24h" }],
       ahora,
     });
     expect(t).toContain("Resumen del día 25/11");
     expect(t).toContain("Hoy: 12 chats nuevos · 3 pedidos nuevos");
     expect(t).toContain("💬 2 esperan respuesta");
     expect(t).toContain("Por vendedor: Lourdes 1 · Sin asignar 1");
-    expect(t).toContain("No les llegó su resumen: Stephano");
+    expect(t).toContain("No les llegó su resumen: Rossana");
     expect(t).not.toContain("Lourdes,");
     expect(t.length).toBeLessThan(500);
   });
 
-  it("Stephano recibe los avisos comerciales y de atención como Lourdes, no los de dinero", () => {
-    const s = SUPERVISORES.find((x) => x.nombre === "Stephano")!;
+  it("Rossana recibe los avisos comerciales y de atención como Lourdes, no los de dinero", () => {
+    const s = SUPERVISORES.find((x) => x.nombre === "Rossana")!;
     expect(s.digitos).toBe("977126462");
     expect(destinatariosAviso("pedido_chat")).toContain("977126462");
     expect(destinatariosAviso("comprobante_pago")).not.toContain("977126462");
