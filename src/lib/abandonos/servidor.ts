@@ -1,6 +1,7 @@
 import "server-only";
 import { db } from "@/db";
 import { esNumeroEntrenador } from "@/lib/alerts/supervisor-alerts";
+import { contactoBloqueado } from "@/lib/contactos/bloqueo";
 import {
   activities,
   contacts,
@@ -129,6 +130,10 @@ export async function registrarAbandono(
     .from(contacts)
     .where(eq(contacts.phone, telefono))
     .limit(1);
+
+  if (existente && contactoBloqueado(existente.tags)) {
+    return { ok: true, estado: "bloqueado", contactId: existente.id };
+  }
 
   if (existente) {
     // Ya compró hace poco: no es un abandono (suele ser alguien mirando su propio pedido).
@@ -364,6 +369,7 @@ export async function procesarAbandonos(opts: { ahora?: Date; limite?: number } 
   for (const c of candidatos) {
     // Lista blanca: un supervisor que prueba el formulario no recibe la secuencia de abandono.
     if (esNumeroEntrenador(c.phone)) continue;
+    if (contactoBloqueado(c.tags)) continue;
     res.revisados++;
     const a = ((c.customFields as Record<string, unknown> | null)?.abandono ?? null) as AbandonoGuardado | null;
     const capturadoEn = a?.capturadoEn ? new Date(a.capturadoEn) : c.updatedAt;

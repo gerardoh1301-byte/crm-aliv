@@ -4,6 +4,7 @@ import { activities, contacts, crmSettings } from "@/db/schema";
 import { eq } from "drizzle-orm";
 import { pedidosOrdenes } from "../../../modules/pedidos/tabla";
 import { esNumeroEntrenador } from "@/lib/alerts/supervisor-alerts";
+import { contactoBloqueado } from "@/lib/contactos/bloqueo";
 import {
   construirVariablesLlamadaPedido,
   dentroHorarioLlamadaIA,
@@ -100,6 +101,16 @@ export async function dispararLlamadaConfirmacionPedido(
       omitido: true,
       motivo: `Teléfono "${datos.telefono ?? ""}" no es un celular peruano válido (+519XXXXXXXX)`,
     };
+  }
+
+  // Bloqueado por spam: nunca se le llama, ni siquiera forzando desde el CRM.
+  const [ctBloqueo] = await db
+    .select({ tags: contacts.tags })
+    .from(contacts)
+    .where(eq(contacts.id, datos.contactId))
+    .limit(1);
+  if (contactoBloqueado(ctBloqueo?.tags)) {
+    return { ok: false, omitido: true, motivo: "Contacto bloqueado por spam (etiqueta bloqueado_spam)" };
   }
 
   if (!opts.forzar && esNumeroEntrenador(toNumber)) {
