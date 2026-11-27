@@ -423,6 +423,8 @@ Recuerda acudir con tu DNI físico original para el retiro. ¡Que disfrutes tus 
             to: `+${phone}`,
             contactId: data.contactId,
             text: texto,
+            // La clave sale del número del vendedor dueño del cliente (27/11).
+            desdeNumeroVendedor: true,
           }),
         });
 

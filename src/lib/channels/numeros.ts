@@ -167,6 +167,19 @@ export async function conversacionEnNumeroDelMiembro(
   return cuenta ? conversacionEnCuenta(contactId, cuenta, false) : null;
 }
 
+/**
+ * Chat del contacto en el número propio del vendedor dueño del cliente (contacts.owner_id).
+ * Lo usa «Enviar Clave Auto» para que la clave salga del número del vendedor (27/11).
+ * null si el dueño no tiene número propio: se sigue por el hilo de siempre.
+ */
+export async function conversacionEnNumeroDelDueno(contactId: string): Promise<string | null> {
+  const [c] = await db.select({ ownerId: contacts.ownerId }).from(contacts).where(eq(contacts.id, contactId)).limit(1);
+  if (!c?.ownerId) return null;
+  const d = await leer();
+  const cuenta = d.cuentas.find((x) => vendedorDelNumero(x, d.mapa) === c.ownerId);
+  return cuenta ? conversacionEnCuenta(contactId, cuenta, false) : null;
+}
+
 /** Últimos 3 dígitos del número de cada cuenta de WhatsApp («944», «977»), para rotular hilos. */
 export async function numerosCortosDeCuentas(): Promise<Record<string, string>> {
   const out: Record<string, string> = {};

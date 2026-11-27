@@ -15,6 +15,8 @@ import { getAccountForChannel } from "@/lib/channels/accounts";
 import { whatsappProvider } from "@/lib/channels/provider";
 import { requireMember } from "@/lib/api-auth";
 import { isOutsideFreeFormWindow } from "@/lib/channels/types";
+import { conversations } from "@/db/schema";
+import { conversacionEnNumeroDelDueno } from "@/lib/channels/numeros";
 
 /**
  * Envio de WhatsApp identificando al destinatario por TELEFONO.
@@ -36,6 +38,8 @@ interface SendBody {
     /** Texto ya renderizado (variables rellenas) para mostrar en el chat. */
     previewText?: string;
   };
+  /** Salir por el número propio del vendedor dueño del cliente (clave de recojo, 27/11). */
+  desdeNumeroVendedor?: boolean;
 }
 
 export async function POST(request: NextRequest) {
@@ -84,7 +88,17 @@ export async function POST(request: NextRequest) {
   const contactId =
     body.contactId ?? (await findOrCreateContactByPhone(normalizedTo, tenantId));
 
-  const existing = await findConversationForContact(contactId, "whatsapp");
+  // 27/11: la clave de recojo sale del número del vendedor dueño del cliente (el 977 de
+  // Rossana), no del último hilo (que suele ser el 944 del bot).
+  let existing: Awaited<ReturnType<typeof findConversationForContact>> = null;
+  if (body.desdeNumeroVendedor) {
+    const idVendedor = await conversacionEnNumeroDelDueno(contactId);
+    if (idVendedor) {
+      const [fila] = await db.select().from(conversations).where(eq(conversations.id, idVendedor)).limit(1);
+      existing = fila ?? null;
+    }
+  }
+  existing ??= await findConversationForContact(contactId, "whatsapp");
 
   // Hilo abierto: sale por el camino comun (adapter + persistencia unificada).
   if (existing) {
