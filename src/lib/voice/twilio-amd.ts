@@ -9,10 +9,13 @@ import { createHmac, timingSafeEqual } from "node:crypto";
 
 export const RUTA_AMD = "/api/webhooks/twilio-amd";
 
+/**
+ * Siempre el CRM en producción (como el webhook post-llamada de ElevenLabs): una llamada
+ * lanzada desde la PC con un APP_BASE_URL viejo (túnel local) dejaba el aviso de Twilio
+ * en el aire (HTTP 502, 27/11). VOICE_WEBHOOK_BASE_URL lo cambia si hiciera falta.
+ */
 export function urlCallbackAmd(): string {
-  const base = (process.env.APP_BASE_URL || process.env.NEXT_PUBLIC_APP_URL || "https://crm-aliv.onrender.com")
-    .trim()
-    .replace(/\/$/, "");
+  const base = (process.env.VOICE_WEBHOOK_BASE_URL || "https://crm-aliv.onrender.com").trim().replace(/\/$/, "");
   return `${base}${RUTA_AMD}`;
 }
 
