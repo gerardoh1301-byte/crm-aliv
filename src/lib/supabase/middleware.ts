@@ -18,6 +18,8 @@ const PUBLIC_API_PREFIXES = [
   "/api/metricas",
   "/api/alertas",
   "/api/shalom/verificar-envios",
+  // Estados leídos en la web de Shalom por la revisión diaria (AGENT_WORKER_SECRET).
+  "/api/shalom/reportar-estados",
   "/api/comentarios/moderar",
   "/api/shalom-pro",
   // Copia diaria de los chats en Drive: la llama barridos.ts con AGENT_WORKER_SECRET.

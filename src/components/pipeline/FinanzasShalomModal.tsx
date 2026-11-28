@@ -142,6 +142,7 @@ export function FinanzasShalomModal({
               <select value={fleteCuenta} onChange={(e) => setFleteCuenta(e.target.value)}
                 className="h-8 rounded-md border bg-background px-2 text-xs" aria-label="Pagado con">
                 <option value="BCP">BCP / Yape</option>
+                <option value="BBVA">Tarjeta BBVA</option>
                 <option value="EFECTIVO">Efectivo</option>
               </select>
               <Input type="date" value={fleteFecha} onChange={(e) => setFleteFecha(e.target.value)}

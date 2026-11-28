@@ -13,7 +13,15 @@ import {
 } from "@/db/schema";
 import { pedidosOrdenes } from "../../../modules/pedidos/tabla";
 import { and, desc, eq, gt, isNotNull, sql } from "drizzle-orm";
-import { consultarEstadoShalom, debeAvisarEnvioConfirmado, MARCA_ENVIO_CONFIRMADO } from "./shalom-rastreo";
+import {
+  consultarEstadoShalom,
+  debeAvisarEnvioConfirmado,
+  MARCA_ENVIO_CONFIRMADO,
+  type ResultadoRastreoShalom,
+} from "./shalom-rastreo";
+import { textoLlamarClienteAgencia } from "./estados-externos-shalom";
+import { fueraDeVentana24h } from "@/lib/channels/ventana-24h";
+import { SUPERVISORES } from "@/lib/alerts/perfiles-supervisor";
 import { deliverMessage } from "@/lib/channels/deliver";
 import { aplicarEtiquetaAContacto } from "../agent/etiquetado";
 import { setDealStage } from "@/lib/deals/stage";
@@ -23,7 +31,16 @@ import { decidirToqueAgencia, mensajeToqueAgencia, PREFIJO_LLAMADA_AGENCIA } fro
 export interface OpcionesNotificarLlegada {
   forzarReenvio?: boolean;
   contactIdEspecifico?: string;
+  /**
+   * Estados leídos en la web de Shalom (guía → resultado). Desde el 27/11 Shalom exige
+   * reCAPTCHA y el servidor no puede consultar su API: la revisión diaria en el navegador
+   * los envía aquí. Si viene, solo se procesan esas guías y no se llama a Shalom.
+   */
+  estadosExternos?: Map<string, ResultadoRastreoShalom>;
 }
+
+/** Marca de la actividad que deja el aviso a la vendedora (para no repetirlo en 20 h). */
+const MARCA_LLAMAR_VENDEDORA = "[SHALOM LLAMAR VENDEDORA]";
 
 export interface ResultadoNotificacionLlegada {
   totalVerificados: number;
@@ -228,7 +245,14 @@ export async function verificarYNotificarLlegadasShalom(
       continue;
     }
 
-    const rastro = await consultarEstadoShalom(c.numeroGuia, c.codigoRastreo);
+    let rastro: ResultadoRastreoShalom;
+    if (opts?.estadosExternos) {
+      const externo = opts.estadosExternos.get(c.numeroGuia.replace(/\D/g, ""));
+      if (!externo) continue;
+      rastro = externo;
+    } else {
+      rastro = await consultarEstadoShalom(c.numeroGuia, c.codigoRastreo);
+    }
     if (!rastro.ok) {
       detalles.push({
         numeroOrden: c.numeroOrden,
@@ -528,6 +552,35 @@ ${marca}` : marca;
         continue;
       }
 
+      // 27/11 (pedido de Gerardo): si el cliente no tiene la ventana de 24 h abierta, el bot
+      // no le manda plantilla: se avisa a su vendedora para que lo llame (una vez cada 20 h).
+      if (c.convChannel === "whatsapp" && fueraDeVentana24h(ultimoIn?.createdAt ?? null)) {
+        const avisada = await avisarVendedoraLlamar({
+          contactId: c.contactId,
+          dealId: c.dealId,
+          convId: c.convId,
+          cliente: c.contactName,
+          telefono: c.contactPhone,
+          numeroOrden: c.numeroOrden,
+          agencia: agenciaNombre,
+          dias: horasEnAgencia !== null ? Math.floor(horasEnAgencia / 24) : null,
+        });
+        detalles.push({
+          numeroOrden: c.numeroOrden,
+          cliente: c.contactName,
+          phone: c.contactPhone,
+          guia: c.numeroGuia,
+          agencia: agenciaNombre,
+          saldo: saldoSoles,
+          estadoLive: "En destino (sin ventana 24 h)",
+          notificado: false,
+          motivoNoNotificado: avisada
+            ? `Sin ventana de 24 h: se avisó a ${avisada} para que llame al cliente`
+            : "Sin ventana de 24 h: la vendedora ya fue avisada en las últimas 20 h",
+        });
+        continue;
+      }
+
       // Si estamos fuera de horario comercial seguro y no se fuerza manualmente, diferir el mensaje
       if (!forzar && !esHorarioSeguroMensajes()) {
         detalles.push({
@@ -745,4 +798,82 @@ ${marca}` : marca;
     excluidos,
     detalles,
   };
+}
+
+/**
+ * Paquete en agencia y cliente sin ventana de 24 h: tarea de llamada + aviso a la vendedora
+ * dueña del contacto (WhatsApp interno si es supervisora, y campanita del CRM). Sin dueño
+ * con número, el aviso va a las vendedoras de la lista de supervisores. Devuelve a quién se
+ * avisó, o null si ya se había avisado en las últimas 20 h.
+ */
+async function avisarVendedoraLlamar(d: {
+  contactId: string;
+  dealId: string | null;
+  convId: string | null;
+  cliente: string;
+  telefono: string | null;
+  numeroOrden: string;
+  agencia: string;
+  dias: number | null;
+}): Promise<string | null> {
+  const [reciente] = await db
+    .select({ id: activities.id })
+    .from(activities)
+    .where(
+      and(
+        eq(activities.contactId, d.contactId),
+        sql`${activities.description} LIKE ${MARCA_LLAMAR_VENDEDORA + "%"}`,
+        gt(activities.createdAt, sql`now() - interval '20 hours'`)
+      )
+    )
+    .limit(1);
+  if (reciente) return null;
+
+  const [contacto] = await db
+    .select({ ownerId: contacts.ownerId })
+    .from(contacts)
+    .where(eq(contacts.id, d.contactId))
+    .limit(1);
+  const ownerId = contacto?.ownerId ?? null;
+  const duena = ownerId ? SUPERVISORES.find((s) => s.miembroId === ownerId) : undefined;
+  const destinos = duena ? [duena] : SUPERVISORES.filter((s) => s.perfil === "vendedor");
+
+  const texto = textoLlamarClienteAgencia(d);
+  const { enviarTextoInterno } = await import("@/lib/alerts/conversacion-supervisor");
+  const avisadas: string[] = [];
+  for (const s of destinos) {
+    const r = await enviarTextoInterno(s.digitos, texto).catch(() => ({ ok: false }));
+    if (r.ok) avisadas.push(s.nombre);
+  }
+
+  const miembros = ownerId ? [ownerId] : destinos.map((s) => s.miembroId).filter((x): x is string => Boolean(x));
+  for (const memberId of miembros) {
+    await notifyMember({
+      memberId,
+      kind: "shalom_llamar_cliente",
+      title: `📞 Llamar a ${d.cliente}: paquete en Shalom`,
+      body: `Pedido ${d.numeroOrden} en Shalom ${d.agencia}. Sin ventana de WhatsApp: llámalo para que recoja.`,
+      url: d.convId ? `/conversations/${d.convId}` : "/pipeline",
+      contactId: d.contactId,
+      tag: `shalom-llamar-${d.contactId}`,
+    }).catch((err) => console.warn("[notificar-llegada] Error campanita vendedora:", err));
+  }
+
+  const quien = avisadas.length ? avisadas.join(" y ") : duena?.nombre || "la vendedora (solo campanita)";
+  await db.insert(activities).values([
+    {
+      type: "call",
+      description: `${PREFIJO_LLAMADA_AGENCIA} Llamar a ${d.cliente}: pedido ${d.numeroOrden} llegó a Shalom ${d.agencia} y no tiene ventana de WhatsApp abierta.`,
+      contactId: d.contactId,
+      dealId: d.dealId,
+      scheduledAt: new Date(),
+    },
+    {
+      type: "note",
+      description: `${MARCA_LLAMAR_VENDEDORA} Paquete en ${d.agencia}, cliente sin ventana de 24 h: aviso a ${quien} para que lo llame.`,
+      contactId: d.contactId,
+      dealId: d.dealId,
+    },
+  ]);
+  return quien;
 }

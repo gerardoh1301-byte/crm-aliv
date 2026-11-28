@@ -11,7 +11,7 @@ import {
 } from "@/lib/finanzas/tags-shalom";
 
 const FECHA_RE = /^\d{4}-\d{2}-\d{2}$/;
-const CUENTAS = new Set(["BCP", "ALICLIK", "EFECTIVO"]);
+const CUENTAS = new Set(["BCP", "ALICLIK", "EFECTIVO", "BBVA"]);
 
 export function fechaLimaHoy(): string {
   return new Intl.DateTimeFormat("en-CA", { timeZone: "America/Lima" }).format(new Date());
