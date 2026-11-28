@@ -3,7 +3,7 @@ import { db } from "@/db";
 import { activities, contacts, conversations, crmSettings, messages, teamMembers } from "@/db/schema";
 import { and, desc, eq, gte, like } from "drizzle-orm";
 import { deliverMessage } from "@/lib/channels/deliver";
-import { atiendeVendedorEn, vendedorDeCuenta } from "@/lib/channels/numeros";
+import { atiendeVendedorEn, esContactoNumeroPropio, vendedorDeCuenta } from "@/lib/channels/numeros";
 import { enviarTextoInterno } from "@/lib/alerts/conversacion-supervisor";
 import { SUPERVISOR_ADMINISTRADOR } from "@/lib/alerts/perfiles-supervisor";
 import { esNumeroEntrenador } from "@/lib/alerts/supervisor-alerts";
@@ -66,6 +66,8 @@ export async function avisarMensajeVendedora(
       .where(eq(contacts.id, conv.contactId))
       .limit(1);
     if (!c || esNumeroEntrenador(c.phone) || contactoBloqueado(c.tags)) return;
+    // Avisos internos del 944 a la vendedora (ventana renovada, pendientes): no son clientes.
+    if (await esContactoNumeroPropio(c.phone)) return;
 
     const [vendedora] = await db
       .select({ name: teamMembers.name })
