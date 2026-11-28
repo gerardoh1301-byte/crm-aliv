@@ -1,7 +1,7 @@
 import "server-only";
 import { db } from "@/db";
 import { activities, contacts, crmSettings } from "@/db/schema";
-import { eq } from "drizzle-orm";
+import { and, eq, gte, like } from "drizzle-orm";
 import { pedidosOrdenes } from "../../../modules/pedidos/tabla";
 import { esNumeroEntrenador } from "@/lib/alerts/supervisor-alerts";
 import { contactoBloqueado } from "@/lib/contactos/bloqueo";
@@ -11,6 +11,10 @@ import {
   dentroHorarioLlamadaIA,
   MARCA_LLAMADA_IA_INICIADA,
   MARCA_LLAMADA_IA_PENDIENTE_HORARIO,
+  MARCA_LLAMADA_IA_RESULTADO,
+  DIAS_RECORDAR_NO_CONTESTO,
+  motivoOmitirLlamada,
+  resultadosLlamadaEnNotas,
   normalizarTelefonoE164Peru,
   type DatosPedidoParaLlamada,
   type VariablesDinamicasLlamada,
@@ -120,6 +124,42 @@ export async function dispararLlamadaConfirmacionPedido(
       omitido: true,
       motivo: "Número de supervisor en lista blanca; no se dispara llamada automática",
     };
+  }
+
+  // Cerrojo de créditos (27/11): no gastar una llamada si no hace falta o si el cliente ya no contestó antes.
+  if (!opts.forzar) {
+    const desde = new Date(Date.now() - DIAS_RECORDAR_NO_CONTESTO * 86_400_000);
+    const [[actual], previos] = await Promise.all([
+      db
+        .select({ estado: pedidosOrdenes.estado })
+        .from(pedidosOrdenes)
+        .where(eq(pedidosOrdenes.id, datos.pedidoId))
+        .limit(1),
+      db
+        .select({ notas: pedidosOrdenes.notas })
+        .from(pedidosOrdenes)
+        .where(
+          and(
+            eq(pedidosOrdenes.contactId, datos.contactId),
+            gte(pedidosOrdenes.createdAt, desde),
+            like(pedidosOrdenes.notas, `%${MARCA_LLAMADA_IA_RESULTADO}%`)
+          )
+        ),
+    ]);
+    const motivo = motivoOmitirLlamada({
+      numeroOrden: datos.numeroOrden,
+      estadoPedido: actual?.estado ?? null,
+      yaConfirmado: datos.yaConfirmado,
+      resultadosPrevios: previos.flatMap((r) => resultadosLlamadaEnNotas(r.notas)),
+    });
+    if (motivo) {
+      await db.insert(activities).values({
+        type: "note",
+        description: `🔕 [IA Voz] Sin llamada para ${datos.numeroOrden}: ${motivo}.`,
+        contactId: datos.contactId,
+      });
+      return { ok: false, omitido: true, motivo };
+    }
   }
 
   // Horario comercial de llamadas automáticas: 7:00 a. m. a 10:00 p. m. (hora Perú).

@@ -42,6 +42,42 @@ export function dentroHorarioLlamadaIA(ahora: Date = new Date()): boolean {
   return hora >= HORARIO_LLAMADA_IA.inicioHora && hora < HORARIO_LLAMADA_IA.finHora;
 }
 
+/** Días hacia atrás en que una llamada sin respuesta (silencio o buzón) evita volver a llamar al mismo cliente. */
+export const DIAS_RECORDAR_NO_CONTESTO = 30;
+
+/** Lee los resultados `[LLAMADA_IA_RESULTADO] … estado=xxx` guardados en las notas de los pedidos. */
+export function resultadosLlamadaEnNotas(notas: string | null | undefined): string[] {
+  const out: string[] = [];
+  const re = /\[LLAMADA_IA_RESULTADO\][^\n]*?estado=([a-z_]+)/g;
+  for (const m of String(notas ?? "").matchAll(re)) out.push(m[1]);
+  return out;
+}
+
+/**
+ * Cerrojo de créditos (27/11): motivo para NO llamar, o null si la llamada vale la pena.
+ * - Pedidos creados desde el chat (CHAT-…): el cliente ya está en WhatsApp.
+ * - Pedido que ya no está por confirmar (confirmado por chat, adelanto, AliClik o cancelado).
+ * - Cliente que ya dejó una llamada anterior en silencio o buzón: se confirma por WhatsApp.
+ * Llamar a mano con «forzar» se salta este cerrojo.
+ */
+export function motivoOmitirLlamada(i: {
+  numeroOrden: string;
+  estadoPedido?: string | null;
+  yaConfirmado?: boolean;
+  resultadosPrevios?: string[];
+}): string | null {
+  if (/^CHAT-/i.test(i.numeroOrden.trim())) {
+    return "Pedido creado desde el chat: se confirma por WhatsApp, sin llamada";
+  }
+  if (!i.yaConfirmado && i.estadoPedido && i.estadoPedido !== "por_confirmar_cod") {
+    return `El pedido ya no está por confirmar (estado ${i.estadoPedido}): no se llama`;
+  }
+  if ((i.resultadosPrevios ?? []).includes("no_contesto")) {
+    return "El cliente no contestó una llamada anterior (silencio o buzón): se confirma por WhatsApp, sin gastar otra llamada";
+  }
+  return null;
+}
+
 export function formatearProductoParaVoz(rawProds: string | null | undefined): string {
   const s = String(rawProds ?? "").trim();
   if (!s) return "tu pedido de Aliv Perú";
