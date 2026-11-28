@@ -461,6 +461,12 @@ export async function ingestMessage(
     }
   }
 
+  // Gerardo no puede abrir el WhatsApp de la vendedora: cada mensaje en vivo le llega al 951.
+  if (enVivo && conv.contactId) {
+    void import("@/lib/supervisor/reenvio-vendedora")
+      .then((m) => m.avisarMensajeVendedora(conv, { body: input.body, type: input.type ?? "text" }))
+      .catch((err) => console.warn("[ingest] reenvío a Gerardo falló:", err));
+  }
   // En el número de un vendedor el bot nunca se reactiva solo.
   if (!numeroDeVendedor) await maybeReactivateAfterInactivity(conv.id, conv.contactId);
 

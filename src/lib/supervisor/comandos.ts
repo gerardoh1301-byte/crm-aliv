@@ -5,6 +5,7 @@ import { and, desc, eq, gt, ilike, ne, or, sql, type SQL } from "drizzle-orm";
 import { pedidosOrdenes } from "@modules/pedidos/tabla";
 import { ESTADOS_PEDIDO, type EstadoPedido } from "@modules/pedidos/tipos";
 import { deliverMessage } from "@/lib/channels/deliver";
+import { interpretarRespuestaVendedora } from "./reenvio-vendedora-reglas";
 import { SUPERVISOR_PAGOS, normalizarTelefono } from "@/lib/alerts/supervisor-alerts";
 import { extraerFinanzasShalom } from "@/lib/finanzas/tags-shalom";
 import { registrarFinanzasShalom } from "@/lib/finanzas/registrar-shalom";
@@ -1309,6 +1310,21 @@ export async function manejarComandoSupervisor(conversationId: string, phone: st
         ? "🧪 *Modo prueba* por 1 hora: lo que escribas (salvo órdenes como «SI 1160») lo contesta el *Bot Vendedor* como a un cliente. Escribe *modo asistente* para volver."
         : "🤖 *Bot Asistente*: te contesto yo con los datos del CRM. Para probar el *Bot Vendedor* escribe *modo prueba*."
     );
+    return true;
+  }
+
+  // «r 4464 …»: respuesta a un cliente que escribió al número de la vendedora (977).
+  const respuestaVendedora = interpretarRespuestaVendedora(ultimo.body);
+  if (respuestaVendedora) {
+    let texto: string;
+    try {
+      const { atenderRespuestaVendedora } = await import("./reenvio-vendedora");
+      texto = await atenderRespuestaVendedora(respuestaVendedora);
+    } catch (err) {
+      console.error("[supervisor-comandos] error al responder por el 977:", err);
+      texto = "❌ Hubo un error y no se envió nada al cliente.";
+    }
+    await responder(conversationId, texto);
     return true;
   }
 
